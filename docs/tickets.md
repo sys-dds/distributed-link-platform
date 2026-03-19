@@ -16,8 +16,54 @@ _None._
 
 ## Next likely tickets
 
-### TICKET-002 — Introduce link domain model and application boundary
+### TICKET-003 — Add create short-link endpoint with in-memory storage
 Status: Ready
+
+#### title[]
+Add create short-link endpoint with in-memory storage
+
+#### technical_detail[]
+Expose the first real link creation API through HTTP. Add a `POST /api/v1/links` endpoint that accepts a slug and original URL, validates the request through the existing link domain/application code, stores the created link in an in-memory store, and returns a clean JSON response. Reject duplicate slugs. Do not add database persistence yet.
+
+#### feature_delivered_by_end[]
+A client can create a short link through a real HTTP API and receive a usable response, with created links stored in memory for the current app lifecycle.
+
+#### how_this_unlocks_next_feature[]
+Creates the first real end-to-end business feature and sets up the redirect ticket to resolve links from the in-memory store before database persistence is introduced later.
+
+#### acceptance_criteria[]
+- `POST /api/v1/links` exists
+- Request accepts `slug` and `originalUrl`
+- Valid requests return a successful JSON response
+- Duplicate slugs are rejected
+- Invalid inputs are rejected
+- Created links are stored in memory
+- Existing app behavior still works
+- Existing tests still pass
+- New API tests pass
+- Postman collection and README are updated for the new endpoint
+
+#### code_target[]
+- `apps/api`
+- `postman`
+- `README.md`
+- `docs/tickets.md`
+
+#### proof[]
+- successful create-link request in local testing
+- passing automated tests
+- updated Postman collection
+- clean file structure
+
+### TICKET-004 - Add redirect endpoint
+Status: Draft
+
+---
+
+## Completed tickets
+
+### TICKET-002 - Introduce link domain model and application boundary
+Status: Done
 
 #### title[]
 Introduce link domain model and application boundary
@@ -49,17 +95,13 @@ Creates the internal business foundation needed before exposing create short-lin
 - existing tests still pass
 - link domain code has a clear home
 
-### TICKET-003 — Add create short-link endpoint
-Status: Draft
+#### delivery_note[]
+- Files changed: `docs/tickets.md`, `apps/api/src/main/java/com/linkplatform/api/link/**`, `apps/api/src/test/java/com/linkplatform/api/link/**`
+- Domain types introduced: `Link`, `LinkSlug`, `OriginalUrl`, `CreateLinkCommand`, `LinkApplicationService`
+- Tests added: focused unit tests for `LinkSlug`, `OriginalUrl`, and `DefaultLinkApplicationService`
+- Deliberately postponed: HTTP endpoints, persistence, repositories, entities, and database schema changes
 
-### TICKET-004 — Add redirect endpoint
-Status: Draft
-
----
-
-## Completed tickets
-
-### TICKET-001 — Bootstrap backend foundation
+### TICKET-001 - Bootstrap backend foundation
 Status: Done
 
 #### title[]
