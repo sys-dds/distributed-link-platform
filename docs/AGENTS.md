@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Engineering quality bar
-
+Do not suggest alternative stacks or expand scope; implement the locked decisions exactly.
 Target senior/staff-level engineering quality.
 
 Temporary artifacts rule:

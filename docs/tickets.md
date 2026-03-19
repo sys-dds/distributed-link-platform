@@ -1,5 +1,3 @@
-Do not suggest alternative stacks or expand scope; implement the locked decisions exactly.
-
 # Link Platform Tickets
 
 ## Ticket status meanings
@@ -12,32 +10,35 @@ Do not suggest alternative stacks or expand scope; implement the locked decision
 
 ## Current ticket
 
-_None. See completed tickets._
+_None._
 
 ---
 
 ## Next likely tickets
 
-### TICKET-002 - Add link domain skeleton
-Status: Draft
+### TICKET-002 — Introduce link domain model and application boundary
+Status: Ready
 
 #### title[]
-Add initial link domain skeleton
+Introduce link domain model and application boundary
 
 #### technical_detail[]
-Create the first business-area structure for link handling without implementing full short-link behavior yet. Introduce the minimum domain package layout, placeholder service boundaries, and shared naming conventions needed for upcoming link creation and redirect work.
+Create the first real business-area structure for link handling inside the backend application. Add the minimum domain model and application/service boundary needed for upcoming short-link creation work. Do not add HTTP endpoints or persistence yet.
 
 #### feature_delivered_by_end[]
-A clean business-area skeleton exists for link-related code so future endpoint and persistence work has a stable place to live.
+A dedicated link business area exists with clean internal structure and naming, giving future create-link and redirect work a stable home.
 
 #### how_this_unlocks_next_feature[]
-Creates a safe place to add the create short-link API and redirect flow without mixing business code into bootstrap or system packages.
+Creates the internal business foundation needed before exposing create short-link APIs or wiring persistence.
 
 #### acceptance_criteria[]
-- A dedicated link business-area package exists
-- Naming is clean and consistent with current project structure
-- No fake future complexity is introduced
+- A dedicated `link` package or module exists in `apps/api`
+- Core link domain types exist with clean naming
+- A minimal application/service boundary exists for future link operations
+- No HTTP endpoint is added yet
+- No persistence implementation is added yet
 - Existing app behavior still works
+- Existing tests still pass
 
 #### code_target[]
 - `apps/api`
@@ -46,18 +47,19 @@ Creates a safe place to add the create short-link API and redirect flow without 
 - clean file structure
 - project still builds
 - existing tests still pass
+- link domain code has a clear home
 
-### TICKET-003 - Add create short-link endpoint
+### TICKET-003 — Add create short-link endpoint
 Status: Draft
 
-### TICKET-004 - Add redirect endpoint
+### TICKET-004 — Add redirect endpoint
 Status: Draft
 
 ---
 
 ## Completed tickets
 
-### TICKET-001 - Bootstrap backend foundation
+### TICKET-001 — Bootstrap backend foundation
 Status: Done
 
 #### title[]
