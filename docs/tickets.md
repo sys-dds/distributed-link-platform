@@ -12,8 +12,53 @@ Do not suggest alternative stacks or expand scope; implement the locked decision
 
 ## Current ticket
 
-### TICKET-001 — Bootstrap backend foundation
-Status: Ready
+_None. See completed tickets._
+
+---
+
+## Next likely tickets
+
+### TICKET-002 - Add link domain skeleton
+Status: Draft
+
+#### title[]
+Add initial link domain skeleton
+
+#### technical_detail[]
+Create the first business-area structure for link handling without implementing full short-link behavior yet. Introduce the minimum domain package layout, placeholder service boundaries, and shared naming conventions needed for upcoming link creation and redirect work.
+
+#### feature_delivered_by_end[]
+A clean business-area skeleton exists for link-related code so future endpoint and persistence work has a stable place to live.
+
+#### how_this_unlocks_next_feature[]
+Creates a safe place to add the create short-link API and redirect flow without mixing business code into bootstrap or system packages.
+
+#### acceptance_criteria[]
+- A dedicated link business-area package exists
+- Naming is clean and consistent with current project structure
+- No fake future complexity is introduced
+- Existing app behavior still works
+
+#### code_target[]
+- `apps/api`
+
+#### proof[]
+- clean file structure
+- project still builds
+- existing tests still pass
+
+### TICKET-003 - Add create short-link endpoint
+Status: Draft
+
+### TICKET-004 - Add redirect endpoint
+Status: Draft
+
+---
+
+## Completed tickets
+
+### TICKET-001 - Bootstrap backend foundation
+Status: Done
 
 #### title[]
 Bootstrap backend repo and runnable foundation
@@ -59,47 +104,8 @@ This creates the minimal real environment needed before adding link domain logic
 - passing test output
 - importable Postman collection
 
----
-
-## Next likely tickets
-
-### TICKET-002 — Add link domain skeleton
-Status: Draft
-
-#### title[]
-Add initial link domain skeleton
-
-#### technical_detail[]
-Create the first business-area structure for link handling without implementing full short-link behavior yet. Introduce the minimum domain package layout, placeholder service boundaries, and shared naming conventions needed for upcoming link creation and redirect work.
-
-#### feature_delivered_by_end[]
-A clean business-area skeleton exists for link-related code so future endpoint and persistence work has a stable place to live.
-
-#### how_this_unlocks_next_feature[]
-Creates a safe place to add the create short-link API and redirect flow without mixing business code into bootstrap or system packages.
-
-#### acceptance_criteria[]
-- A dedicated link business-area package exists
-- Naming is clean and consistent with current project structure
-- No fake future complexity is introduced
-- Existing app behavior still works
-
-#### code_target[]
-- `apps/api`
-
-#### proof[]
-- clean file structure
-- project still builds
-- existing tests still pass
-
-### TICKET-003 — Add create short-link endpoint
-Status: Draft
-
-### TICKET-004 — Add redirect endpoint
-Status: Draft
-
----
-
-## Completed tickets
-
-_None yet._
+#### delivery_note[]
+- Files changed: `README.md`, `.gitignore`, `docs/tickets.md`, `apps/api/**`, `infra/docker-compose/docker-compose.yml`, `postman/**`
+- Endpoints exposed: `GET /actuator/health`, `GET /api/v1/system/ping`
+- Tests added: Spring Boot context load test and MockMvc ping endpoint test
+- Migration/tooling choice: Flyway with SQL migration scripts, Maven Wrapper pinned to 3.9.14

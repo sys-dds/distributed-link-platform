@@ -1,0 +1,50 @@
+{
+  "info": {
+    "_postman_id": "cc1cbf00-f925-46ee-8eac-084dcf3f28f0",
+    "name": "Link Platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Manual verification requests for TICKET-001 foundation endpoints."
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/actuator/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "actuator",
+            "health"
+          ]
+        },
+        "description": "Infrastructure health check exposed by Spring Boot Actuator."
+      },
+      "response": []
+    },
+    {
+      "name": "System Ping",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/system/ping",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "system",
+            "ping"
+          ]
+        },
+        "description": "Application-level ping endpoint for Link Platform."
+      },
+      "response": []
+    }
+  ]
+}

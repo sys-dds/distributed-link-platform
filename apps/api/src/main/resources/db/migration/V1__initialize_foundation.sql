@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS app_bootstrap_marker (
+    marker_key VARCHAR(50) PRIMARY KEY,
+    description VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

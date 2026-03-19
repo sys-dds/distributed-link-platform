@@ -1,6 +1,10 @@
 # =========================
 # OS-generated junk
 # =========================
+apps/api/.mvn/repository/
+apps/api/.mvn/wrapper/apache-maven-*/
+**/target/
+*.log
 
 # macOS
 .DS_Store
@@ -64,6 +68,10 @@ nbdist/
 # =========================
 
 target/
+.mvn/wrapper/apache-maven-*/
+.mvn/wrapper/*.zip
+.mvn/wrapper/*.tar.gz
+.mvn/repository/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
@@ -144,3 +152,4 @@ pnpm-debug.log*
 *.tmp
 *.bak
 *.orig
+*.temp
