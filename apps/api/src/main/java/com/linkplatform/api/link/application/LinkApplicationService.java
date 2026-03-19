@@ -4,5 +4,7 @@ import com.linkplatform.api.link.domain.Link;
 
 public interface LinkApplicationService {
 
-    Link prepareLink(CreateLinkCommand command);
+    Link createLink(CreateLinkCommand command);
+
+    Link resolveLink(String slug);
 }

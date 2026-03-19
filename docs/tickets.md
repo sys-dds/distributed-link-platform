@@ -16,8 +16,57 @@ _None._
 
 ## Next likely tickets
 
-### TICKET-003 — Add create short-link endpoint with in-memory storage
-Status: Ready
+_None yet._
+
+---
+
+## Completed tickets
+
+### TICKET-004 - Add redirect endpoint backed by in-memory lookup
+Status: Done
+
+#### title[]
+Add redirect endpoint backed by in-memory lookup
+
+#### technical_detail[]
+Expose the first redirect flow for short links. Add a `GET /{slug}` endpoint that looks up the slug from the existing in-memory link store and responds with an HTTP redirect to the stored original URL. Return a clear 404 response when the slug does not exist. Do not add database persistence yet.
+
+#### feature_delivered_by_end[]
+A client can resolve a previously created short link and be redirected to its original URL using the current in-memory store.
+
+#### how_this_unlocks_next_feature[]
+Completes the first end-to-end shortener flow and creates the base behavior that later persistence, analytics, and caching will build on.
+
+#### acceptance_criteria[]
+- `GET /{slug}` exists
+- Existing in-memory created links can be resolved by slug
+- Successful lookup returns an HTTP redirect with a `Location` header
+- Missing slugs return HTTP 404
+- Existing app behavior still works
+- Existing tests still pass
+- New redirect tests pass
+- Postman collection and README are updated for the new endpoint
+
+#### code_target[]
+- `apps/api`
+- `postman`
+- `README.md`
+- `docs/tickets.md`
+
+#### proof[]
+- successful redirect request in local testing
+- missing slug returns 404
+- passing automated tests
+- updated Postman collection
+
+#### delivery_note[]
+- Files changed: `docs/tickets.md`, `README.md`, `postman/Link-Platform.postman_collection.json`, `apps/api/src/main/java/com/linkplatform/api/link/**`, `apps/api/src/test/java/com/linkplatform/api/link/**`
+- Endpoint added: `GET /{slug}`
+- Tests added: redirect success and missing-slug API tests, plus application-service resolve tests
+- Deliberately postponed: database persistence, analytics, click tracking, reserved-route hardening, and schema changes
+
+### TICKET-003 - Add create short-link endpoint with in-memory storage
+Status: Done
 
 #### title[]
 Add create short-link endpoint with in-memory storage
@@ -55,12 +104,11 @@ Creates the first real end-to-end business feature and sets up the redirect tick
 - updated Postman collection
 - clean file structure
 
-### TICKET-004 - Add redirect endpoint
-Status: Draft
-
----
-
-## Completed tickets
+#### delivery_note[]
+- Files changed: `docs/tickets.md`, `README.md`, `postman/Link-Platform.postman_collection.json`, `apps/api/src/main/java/com/linkplatform/api/link/**`, `apps/api/src/test/java/com/linkplatform/api/link/**`
+- Endpoint added: `POST /api/v1/links`
+- Tests added: API tests for successful creation, duplicate slug rejection, and invalid input rejection, plus updated application-service duplicate slug test
+- Deliberately postponed: redirect endpoint, database persistence, repository implementation, entities, and schema changes
 
 ### TICKET-002 - Introduce link domain model and application boundary
 Status: Done

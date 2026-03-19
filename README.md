@@ -1,6 +1,6 @@
 # Link Platform
 
-Link Platform is a backend-first URL shortener being built incrementally. `TICKET-001` delivers the smallest production-shaped foundation: a Spring Boot API, PostgreSQL via Docker Compose, Flyway migrations, health verification, a system ping API, automated tests, and manual verification assets.
+Link Platform is a backend-first URL shortener being built incrementally. The current repo foundation includes the first short-link loop: a Spring Boot API, PostgreSQL via Docker Compose for local infrastructure, Flyway migrations, health verification, a system ping API, a `POST /api/v1/links` endpoint backed by in-memory storage, redirect-by-slug via `GET /{slug}`, automated tests, and manual verification assets.
 
 ## Version choices
 
@@ -119,18 +119,31 @@ The tests use H2 in PostgreSQL compatibility mode so they stay small and reliabl
 
 - Health: `http://localhost:8080/actuator/health`
 - Ping: `http://localhost:8080/api/v1/system/ping`
+- Create link: `http://localhost:8080/api/v1/links`
+- Redirect by slug: `http://localhost:8080/launch-page`
 
 ### curl examples
 
 ```powershell
 curl http://localhost:8080/actuator/health
 curl http://localhost:8080/api/v1/system/ping
+curl -X POST http://localhost:8080/api/v1/links `
+  -H "Content-Type: application/json" `
+  -d '{"slug":"launch-page","originalUrl":"https://example.com/launch"}'
+curl -i http://localhost:8080/launch-page
 ```
 
 Expected responses:
 
 - `GET /actuator/health` returns HTTP 200 with a JSON payload containing `"status":"UP"`
 - `GET /api/v1/system/ping` returns HTTP 200 with a JSON payload containing `"status":"ok"` and `"service":"link-platform-api"`
+- `POST /api/v1/links` returns HTTP 201 with a JSON payload containing the created `slug` and `originalUrl`
+- `GET /{slug}` returns HTTP 307 with a `Location` header pointing to the stored original URL
+
+Duplicate or invalid create-link requests return a clear client error:
+
+- duplicate slug: HTTP 409
+- invalid slug or invalid URL: HTTP 400
 
 ### Postman
 
@@ -139,12 +152,21 @@ Import:
 - [`postman/Link-Platform.postman_collection.json`](postman/Link-Platform.postman_collection.json)
 - [`postman/Link-Platform.local.postman_environment.json`](postman/Link-Platform.local.postman_environment.json)
 
-Then select the `Link Platform Local` environment and run the `Health` and `System Ping` requests.
+The local environment includes:
+
+- `baseUrl`
+- `createLinkSlug`
+- `createLinkOriginalUrl`
+
+Then select the `Link Platform Local` environment and run the `Health`, `System Ping`, `Create Link`, and `Redirect Link` requests.
+
+After creating a link, run the `Redirect Link` request to verify the temporary redirect response.
 
 ## What is intentionally not tested yet
 
 - No PostgreSQL container integration test yet
-- No persistence behavior test yet
-- No business-domain endpoint tests yet
+- No database-backed persistence test yet
+- No concurrency stress test for duplicate slug creation yet
+- No reserved-route collision test yet
 
-Those are deferred until the project has real link behavior to validate.
+Those are deferred until the project moves beyond the current in-memory create-link implementation.
