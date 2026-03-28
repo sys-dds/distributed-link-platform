@@ -3,7 +3,7 @@
     "_postman_id": "cc1cbf00-f925-46ee-8eac-084dcf3f28f0",
     "name": "Link Platform",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Manual verification requests for the Link Platform foundation, in-memory create-link flow, and redirect-by-slug flow."
+    "description": "Manual verification requests for the Link Platform foundation, PostgreSQL-backed create-link flow, and redirect-by-slug flow."
   },
   "item": [
     {
@@ -71,7 +71,7 @@
             "links"
           ]
         },
-        "description": "Creates a short link in the current application instance using in-memory storage."
+        "description": "Creates a short link in the current application instance and persists it to PostgreSQL."
       },
       "response": []
     },
@@ -89,7 +89,7 @@
             "{{createLinkSlug}}"
           ]
         },
-        "description": "Resolves a previously created slug and returns a temporary redirect to the stored original URL."
+        "description": "Resolves a previously created slug from PostgreSQL-backed storage and returns a temporary redirect to the stored original URL."
       },
       "response": []
     }

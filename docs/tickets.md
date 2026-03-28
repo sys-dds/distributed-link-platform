@@ -10,8 +10,20 @@
 
 ## Current ticket
 
-### TICKET-005 — Persist links to PostgreSQL and replace in-memory runtime storage
-Status: Ready
+_None._
+
+---
+
+## Next likely tickets
+
+_None yet._
+
+---
+
+## Completed tickets
+
+### TICKET-005 - Persist links to PostgreSQL and replace in-memory runtime storage
+Status: Done
 
 #### title[]
 Persist links to PostgreSQL and replace in-memory runtime storage
@@ -48,15 +60,12 @@ Moves the project from demo-only temporary state to durable behavior, creating t
 - duplicate slug rejection still works
 - migration applied successfully
 
----
-
-## Next likely tickets
-
-_None yet._
-
----
-
-## Completed tickets
+#### delivery_note[]
+- Files changed: `docs/tickets.md`, `README.md`, `apps/api/pom.xml`, `apps/api/src/main/java/com/linkplatform/api/link/application/**`, `apps/api/src/main/resources/db/migration/V2__create_links_table.sql`, `apps/api/src/test/java/com/linkplatform/api/link/application/**`, `postman/Link-Platform.postman_collection.json`
+- Storage implementation used: PostgreSQL-backed `PostgresLinkStore` via Spring JDBC
+- Migration added: `V2__create_links_table.sql`
+- Tests added: PostgreSQL-backed Testcontainers integration test for create, resolve, and duplicate slug rejection
+- Deliberately postponed: analytics, caching, click tracking, reserved-route hardening, and broader schema expansion
 
 ### TICKET-004 - Add redirect endpoint backed by in-memory lookup
 Status: Done

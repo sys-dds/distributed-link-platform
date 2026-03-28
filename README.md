@@ -1,6 +1,6 @@
 # Link Platform
 
-Link Platform is a backend-first URL shortener being built incrementally. The current repo foundation includes the first short-link loop: a Spring Boot API, PostgreSQL via Docker Compose for local infrastructure, Flyway migrations, health verification, a system ping API, a `POST /api/v1/links` endpoint backed by in-memory storage, redirect-by-slug via `GET /{slug}`, automated tests, and manual verification assets.
+Link Platform is a backend-first URL shortener being built incrementally. The current repo foundation includes the first durable short-link loop: a Spring Boot API, PostgreSQL via Docker Compose for local infrastructure, Flyway migrations, health verification, a system ping API, a `POST /api/v1/links` endpoint persisted to PostgreSQL, redirect-by-slug via `GET /{slug}`, automated tests, and manual verification assets.
 
 ## Version choices
 
@@ -111,7 +111,7 @@ From [`apps/api`](apps/api):
 .\mvnw.cmd test
 ```
 
-The tests use H2 in PostgreSQL compatibility mode so they stay small and reliable without requiring Docker for every test run.
+The regular API and domain tests use H2 in PostgreSQL compatibility mode so they stay small and reliable. The suite also includes a focused PostgreSQL-backed persistence integration test using Testcontainers, so Docker Desktop should be running for the full test suite.
 
 ## Manual verification
 
@@ -162,11 +162,19 @@ Then select the `Link Platform Local` environment and run the `Health`, `System 
 
 After creating a link, run the `Redirect Link` request to verify the temporary redirect response.
 
+For a quick persistence check against PostgreSQL:
+
+1. Start PostgreSQL with Docker Compose.
+2. Start the API.
+3. Create a link with `POST /api/v1/links`.
+4. Call `GET /{slug}` and confirm the redirect works.
+5. Stop and start the API again.
+6. Call `GET /{slug}` again and confirm the redirect still works from PostgreSQL-backed storage.
+
 ## What is intentionally not tested yet
 
-- No PostgreSQL container integration test yet
-- No database-backed persistence test yet
 - No concurrency stress test for duplicate slug creation yet
 - No reserved-route collision test yet
+- No end-to-end restart verification is automated yet
 
-Those are deferred until the project moves beyond the current in-memory create-link implementation.
+Those are deferred until the project moves beyond the current PostgreSQL-backed foundation.
