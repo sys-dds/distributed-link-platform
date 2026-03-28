@@ -10,7 +10,43 @@
 
 ## Current ticket
 
-_None._
+### TICKET-005 — Persist links to PostgreSQL and replace in-memory runtime storage
+Status: Ready
+
+#### title[]
+Persist links to PostgreSQL and replace in-memory runtime storage
+
+#### technical_detail[]
+Replace the current in-memory runtime link storage with a PostgreSQL-backed implementation while keeping the existing HTTP API behavior unchanged. Add the first `links` table migration, persist created links to PostgreSQL, resolve redirect lookups from PostgreSQL, and preserve duplicate-slug rejection. Do not add analytics, caching, or schema beyond what is needed for basic create and redirect behavior.
+
+#### feature_delivered_by_end[]
+A created short link survives beyond process memory and both create-link and redirect flows work against PostgreSQL as the runtime source of truth.
+
+#### how_this_unlocks_next_feature[]
+Moves the project from demo-only temporary state to durable behavior, creating the foundation for later validation hardening, analytics, rate limiting, and operational testing.
+
+#### acceptance_criteria[]
+- A Flyway migration exists for the first `links` table
+- Runtime create-link flow persists links to PostgreSQL
+- Runtime redirect flow resolves links from PostgreSQL
+- Duplicate slugs are still rejected with a clear client error
+- Existing API routes and response shape remain stable unless a small change is clearly justified
+- Existing app behavior still works
+- Existing tests still pass
+- New persistence-focused tests pass
+- README and docs are updated to reflect PostgreSQL-backed runtime behavior
+
+#### code_target[]
+- `apps/api`
+- `infra/docker-compose`
+- `README.md`
+- `docs/tickets.md`
+
+#### proof[]
+- passing automated tests
+- successful create then redirect flow backed by PostgreSQL
+- duplicate slug rejection still works
+- migration applied successfully
 
 ---
 
