@@ -76,4 +76,18 @@ class LinkControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").exists());
     }
+
+    @Test
+    void createLinkRejectsReservedSlugCaseInsensitively() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "Api",
+                                  "originalUrl": "https://example.com/conflict"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Link slug is reserved and cannot be used: Api"));
+    }
 }
