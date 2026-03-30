@@ -39,17 +39,26 @@ class LinkRedirectControllerTest {
 
         mockMvc.perform(get("/launch-page"))
                 .andExpect(status().isTemporaryRedirect())
-                .andExpect(header().string("Location", "https://example.com/launch"));
+                .andExpect(header().string("Location", "https://example.com/launch"))
+                .andExpect(content().string(""));
     }
 
     @Test
     void redirectReturnsNotFoundForMissingSlug() throws Exception {
         mockMvc.perform(get("/missing-link"))
-                .andExpect(status().isNotFound())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("about:blank"))
-                .andExpect(jsonPath("$.title").value("Not Found"))
-                .andExpect(jsonPath("$.status").value(404))
-                .andExpect(jsonPath("$.detail").value("Link slug not found: missing-link"));
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
+    }
+
+    private static org.springframework.test.web.servlet.ResultMatcher problemDetail(
+            int status, String title, String detail) {
+        return result -> {
+            status().is(status).match(result);
+            content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON).match(result);
+            jsonPath("$.type").value("about:blank").match(result);
+            jsonPath("$.title").value(title).match(result);
+            jsonPath("$.status").value(status).match(result);
+            jsonPath("$.detail").value(detail).match(result);
+            jsonPath("$.message").doesNotExist().match(result);
+        };
     }
 }
