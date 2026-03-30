@@ -3,6 +3,7 @@ package com.linkplatform.api.link.api;
 import com.linkplatform.api.link.application.DuplicateLinkSlugException;
 import com.linkplatform.api.link.application.LinkNotFoundException;
 import com.linkplatform.api.link.application.ReservedLinkSlugException;
+import com.linkplatform.api.link.application.SelfTargetLinkException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -23,6 +24,11 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(ReservedLinkSlugException.class)
     public ResponseEntity<ErrorResponse> handleReservedSlug(ReservedLinkSlugException exception) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
+    }
+
+    @ExceptionHandler(SelfTargetLinkException.class)
+    public ResponseEntity<ErrorResponse> handleSelfTarget(SelfTargetLinkException exception) {
         return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
     }
 

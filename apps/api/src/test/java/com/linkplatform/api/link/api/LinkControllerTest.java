@@ -90,4 +90,18 @@ class LinkControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Link slug is reserved and cannot be used: Api"));
     }
+
+    @Test
+    void createLinkRejectsSelfTargetUrl() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "self-loop",
+                                  "originalUrl": "http://LOCALHOST:8080/about"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Original URL cannot point to the Link Platform itself: http://LOCALHOST:8080/about"));
+    }
 }

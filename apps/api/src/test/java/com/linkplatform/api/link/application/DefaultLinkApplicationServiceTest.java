@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Test;
 class DefaultLinkApplicationServiceTest {
 
     private final TestLinkStore linkStore = new TestLinkStore();
-    private final DefaultLinkApplicationService service = new DefaultLinkApplicationService(linkStore);
+    private final DefaultLinkApplicationService service =
+            new DefaultLinkApplicationService(linkStore, "http://LOCALHOST:80");
 
     @Test
     void createsAndStoresValidatedLinkFromCommand() {
@@ -55,6 +56,14 @@ class DefaultLinkApplicationServiceTest {
     void rejectsReservedSlugCaseInsensitivelyBeforePersistence() {
         assertThrows(ReservedLinkSlugException.class,
                 () -> service.createLink(new CreateLinkCommand("AcTuAtOr", "https://example.com/system")));
+
+        assertEquals(0, linkStore.saveAttempts());
+    }
+
+    @Test
+    void rejectsSelfTargetUrlBeforePersistenceIncludingDefaultPortEquivalence() {
+        assertThrows(SelfTargetLinkException.class,
+                () -> service.createLink(new CreateLinkCommand("self-loop", "http://localhost/about")));
 
         assertEquals(0, linkStore.saveAttempts());
     }

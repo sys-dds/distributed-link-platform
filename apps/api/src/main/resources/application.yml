@@ -12,6 +12,9 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+link-platform:
+  public-base-url: ${LINK_PLATFORM_PUBLIC_BASE_URL:http://localhost:8080}
+
 management:
   endpoints:
     web:
