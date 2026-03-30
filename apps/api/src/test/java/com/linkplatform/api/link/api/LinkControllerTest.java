@@ -34,8 +34,19 @@ class LinkControllerTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(content().json("""
+                        {
+                          "slug": "launch-page",
+                          "originalUrl": "https://example.com/launch"
+                        }
+                        """))
                 .andExpect(jsonPath("$.slug").value("launch-page"))
-                .andExpect(jsonPath("$.originalUrl").value("https://example.com/launch"));
+                .andExpect(jsonPath("$.originalUrl").value("https://example.com/launch"))
+                .andExpect(jsonPath("$.type").doesNotExist())
+                .andExpect(jsonPath("$.title").doesNotExist())
+                .andExpect(jsonPath("$.status").doesNotExist())
+                .andExpect(jsonPath("$.detail").doesNotExist());
     }
 
     @Test
@@ -60,12 +71,7 @@ class LinkControllerTest {
                                   "originalUrl": "https://example.com/second"
                                 }
                                 """))
-                .andExpect(status().isConflict())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("about:blank"))
-                .andExpect(jsonPath("$.title").value("Conflict"))
-                .andExpect(jsonPath("$.status").value(409))
-                .andExpect(jsonPath("$.detail").value("Link slug already exists: repeatable"));
+                .andExpect(problemDetail(409, "Conflict", "Link slug already exists: repeatable"));
     }
 
     @Test
@@ -83,7 +89,10 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.type").value("about:blank"))
                 .andExpect(jsonPath("$.title").value("Bad Request"))
                 .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.detail").exists());
+                .andExpect(jsonPath("$.detail").exists())
+                .andExpect(jsonPath("$.slug").doesNotExist())
+                .andExpect(jsonPath("$.originalUrl").doesNotExist())
+                .andExpect(jsonPath("$.message").doesNotExist());
     }
 
     @Test
@@ -96,12 +105,7 @@ class LinkControllerTest {
                                   "originalUrl": "https://example.com/conflict"
                                 }
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("about:blank"))
-                .andExpect(jsonPath("$.title").value("Bad Request"))
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.detail").value("Link slug is reserved and cannot be used: Api"));
+                .andExpect(problemDetail(400, "Bad Request", "Link slug is reserved and cannot be used: Api"));
     }
 
     @Test
@@ -114,11 +118,22 @@ class LinkControllerTest {
                                   "originalUrl": "http://LOCALHOST:8080/about"
                                 }
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("about:blank"))
-                .andExpect(jsonPath("$.title").value("Bad Request"))
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.detail").value("Original URL cannot point to the Link Platform itself: http://LOCALHOST:8080/about"));
+                .andExpect(problemDetail(400, "Bad Request",
+                        "Original URL cannot point to the Link Platform itself: http://LOCALHOST:8080/about"));
+    }
+
+    private static org.springframework.test.web.servlet.ResultMatcher problemDetail(
+            int status, String title, String detail) {
+        return result -> {
+            status().is(status).match(result);
+            content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON).match(result);
+            jsonPath("$.type").value("about:blank").match(result);
+            jsonPath("$.title").value(title).match(result);
+            jsonPath("$.status").value(status).match(result);
+            jsonPath("$.detail").value(detail).match(result);
+            jsonPath("$.slug").doesNotExist().match(result);
+            jsonPath("$.originalUrl").doesNotExist().match(result);
+            jsonPath("$.message").doesNotExist().match(result);
+        };
     }
 }
