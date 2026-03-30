@@ -153,6 +153,13 @@ Duplicate or invalid create-link requests return a clear client error:
 - self-target URL matching `LINK_PLATFORM_PUBLIC_BASE_URL` origin: HTTP 400
 - invalid slug or invalid URL: HTTP 400
 
+Current handled API errors use RFC 7807 Problem Details with fields such as:
+
+- `type`
+- `title`
+- `status`
+- `detail`
+
 ### Postman
 
 Import:
@@ -181,6 +188,18 @@ For a quick persistence check against PostgreSQL:
 7. Call `GET /{slug}` for the valid slug and confirm the redirect works.
 8. Stop and start the API again.
 9. Call `GET /{slug}` again and confirm the redirect still works from PostgreSQL-backed storage.
+
+Representative error checks:
+
+1. `400 Bad Request`
+   Example: reserved slug or self-target URL
+   Confirm the response body is RFC 7807 Problem Details JSON
+2. `409 Conflict`
+   Example: create the same valid slug twice
+   Confirm the response body is RFC 7807 Problem Details JSON
+3. `404 Not Found`
+   Example: `GET /missing-link`
+   Confirm the response body is RFC 7807 Problem Details JSON
 
 ## What is intentionally not tested yet
 

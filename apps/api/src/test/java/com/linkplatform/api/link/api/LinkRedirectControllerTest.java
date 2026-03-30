@@ -2,6 +2,7 @@ package com.linkplatform.api.link.api;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -45,6 +46,10 @@ class LinkRedirectControllerTest {
     void redirectReturnsNotFoundForMissingSlug() throws Exception {
         mockMvc.perform(get("/missing-link"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message").value("Link slug not found: missing-link"));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.type").value("about:blank"))
+                .andExpect(jsonPath("$.title").value("Not Found"))
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.detail").value("Link slug not found: missing-link"));
     }
 }
