@@ -1,51 +1,45 @@
-TICKET-007 - Prevent self-referential target URLs using configured public base URL
-
 Status: Ready
 
 title[]
 
-Prevent self-referential target URLs using configured public base URL
+Standardize API error responses using RFC 7807 Problem Details
 
 technical_detail[]
 
-Harden the create-link flow so clients cannot create short links whose originalUrl points back to the Link Platform itself. This ticket must prevent self-referential target URLs before persistence while keeping the current create-link, redirect, reserved-slug, and PostgreSQL-backed persistence behavior working for valid external URLs.
+Harden the Link Platform API by replacing the current ad hoc JSON error response shape with a consistent RFC 7807 Problem Details response for handled client and not-found errors. This ticket must keep the existing business rules and status codes unchanged while standardizing the response contract returned by the API.
 
-The implementation must introduce one small explicit application configuration value representing the platform’s public base URL. The self-target rule must use that configured public base URL rather than guessing from request headers or relying on ad hoc runtime inference. The comparison should be reasonably robust for this stage and handle normal URL variations such as host casing and default port equivalence where directly relevant.
+At minimum, the handled error paths for invalid input, reserved slug rejection, self-target URL rejection, duplicate slug rejection, and missing slug resolution must return RFC 7807-shaped responses. The implementation should prefer the framework-native smallest clean approach rather than introducing a custom error framework.
 
-The rule must reject URLs that target the platform itself so the system does not allow links that loop back into the same service. Rejection must happen before persistence so invalid self-referential URLs never reach storage. Keep the implementation minimal and focused on current correctness.
+The response contract should be consistent and predictable for current API consumers. It should include the standard Problem Details core fields appropriate for this stage, and the API should continue to return the same HTTP status codes it returns today for the same failure conditions.
 
-Do not broaden this ticket into general URL normalization or broader URL policy work. Do not add reserved-route changes beyond what already exists. Do not add expiration rules, analytics, caching, auth, or a new error framework. Keep the current API response shape and current error handling style unless a very small localized change is directly needed to produce a clear client error.
+Do not broaden this ticket into new validation rules, URL normalization, reserved-route expansion, self-target logic changes, persistence changes, authentication, analytics, caching, or a broader API redesign. Success response bodies must remain unchanged. Keep the implementation focused on error response standardization only.
 
 feature_delivered_by_end[]
 
-The platform rejects short-link targets that point back to the platform itself, preventing redirect loops while preserving the normal create and redirect flow for valid external URLs.
+The API returns a consistent RFC 7807-style error payload for current handled error cases, making failures easier to consume and reason about without changing the existing business behavior.
 
 how_this_unlocks_next_feature[]
 
-This strengthens core API correctness and makes future validation and error-shaping work safer by preventing a class of broken redirects at the boundary.
+This creates a stable error contract before broader validation and API-hardening work, and it makes future correctness rules easier to add without growing a patchwork of inconsistent error bodies.
 
 acceptance_criteria[]
-Creating a link whose originalUrl points to the platform’s own configured public base URL is rejected with a clear client error
-Self-target validation happens before persistence
-The self-target rule uses explicit application configuration rather than request-header inference
-The comparison handles normal URL variations reasonably for this stage, including host casing and default-port equivalence where relevant
-Valid external URLs still create successfully
-Existing redirect behavior still works
-Existing reserved-slug behavior still works
-Existing duplicate slug behavior still works
+Current handled client and not-found error paths return RFC 7807 Problem Details responses
+Existing status codes remain unchanged for the same failure conditions
+At minimum, invalid input, reserved slug rejection, self-target URL rejection, duplicate slug rejection, and missing slug resolution are covered
+Success response shapes remain unchanged
+Existing business rules remain unchanged
 Existing tests still pass or are updated appropriately
-New tests cover self-target rejection at both the application/service level and HTTP/API level
-No unnecessary schema or infrastructure changes are introduced
+New API tests verify the standardized error response shape
+No unnecessary infrastructure, schema, or persistence changes are introduced
 code_target[]
 apps/api
-README.md only if required for config or manual testing clarification
-postman only if a negative self-target request adds clear value
+README.md only if manual testing guidance or response examples need clarification
+postman only if validating the new error shape adds clear value
 proof[]
-self-target URL creation returns a clear client error
-valid external URL creation still succeeds
-valid redirect still succeeds
-existing reserved-slug behavior remains unaffected
+handled API errors return RFC 7807-shaped responses
+current success responses remain unchanged
+status codes remain unchanged
 passing automated tests
 delivery_note[]
 
-Deliberately postponed: broader URL normalization, canonicalization policy, expiration rules, RFC 7807 response format, advanced host validation, and any schema changes beyond what already exists.
+Deliberately postponed: new validation rules, broader URL normalization/canonicalization, reserved-route expansion, self-target policy changes, auth, caching, analytics, and any persistence/schema changes beyond what already exists.
