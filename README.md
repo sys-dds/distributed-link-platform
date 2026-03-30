@@ -124,6 +124,8 @@ The regular API and domain tests use H2 in PostgreSQL compatibility mode so they
 ### Browser or HTTP client
 
 - Health: `http://localhost:8080/actuator/health`
+- Liveness probe: `http://localhost:8080/actuator/health/liveness`
+- Readiness probe: `http://localhost:8080/actuator/health/readiness`
 - Ping: `http://localhost:8080/api/v1/system/ping`
 - Create link: `http://localhost:8080/api/v1/links`
 - Redirect by slug: `http://localhost:8080/launch-page`
@@ -132,6 +134,8 @@ The regular API and domain tests use H2 in PostgreSQL compatibility mode so they
 
 ```powershell
 curl http://localhost:8080/actuator/health
+curl http://localhost:8080/actuator/health/liveness
+curl http://localhost:8080/actuator/health/readiness
 curl http://localhost:8080/api/v1/system/ping
 curl -X POST http://localhost:8080/api/v1/links `
   -H "Content-Type: application/json" `
@@ -142,6 +146,8 @@ curl -i http://localhost:8080/launch-page
 Expected responses:
 
 - `GET /actuator/health` returns HTTP 200 with a JSON payload containing `"status":"UP"`
+- `GET /actuator/health/liveness` returns HTTP 200 with a JSON payload containing `"status":"UP"`
+- `GET /actuator/health/readiness` returns HTTP 200 with a JSON payload containing `"status":"UP"`
 - `GET /api/v1/system/ping` returns HTTP 200 with a JSON payload containing `"status":"ok"` and `"service":"link-platform-api"`
 - `POST /api/v1/links` returns HTTP 201 with a JSON payload containing the created `slug` and `originalUrl`
 - `GET /{slug}` returns HTTP 307 with a `Location` header pointing to the stored original URL
@@ -173,7 +179,7 @@ The local environment includes:
 - `createLinkSlug`
 - `createLinkOriginalUrl`
 
-Then select the `Link Platform Local` environment and run the `Health`, `System Ping`, `Create Link`, and `Redirect Link` requests.
+Then select the `Link Platform Local` environment and run the `Health`, `Liveness`, `Readiness`, `System Ping`, `Create Link`, and `Redirect Link` requests.
 
 After creating a link, run the `Redirect Link` request to verify the temporary redirect response.
 
@@ -200,6 +206,15 @@ Representative error checks:
 3. `404 Not Found`
    Example: `GET /missing-link`
    Confirm the response body is RFC 7807 Problem Details JSON
+
+Representative probe checks:
+
+1. `GET /actuator/health`
+   Confirm the response is HTTP 200 with `"status":"UP"`
+2. `GET /actuator/health/liveness`
+   Confirm the response is HTTP 200 with `"status":"UP"`
+3. `GET /actuator/health/readiness`
+   Confirm the response is HTTP 200 with `"status":"UP"`
 
 ## What is intentionally not tested yet
 

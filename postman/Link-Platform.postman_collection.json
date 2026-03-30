@@ -26,6 +26,46 @@
       "response": []
     },
     {
+      "name": "Liveness",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/actuator/health/liveness",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "actuator",
+            "health",
+            "liveness"
+          ]
+        },
+        "description": "Process liveness probe exposed by Spring Boot Actuator."
+      },
+      "response": []
+    },
+    {
+      "name": "Readiness",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/actuator/health/readiness",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "actuator",
+            "health",
+            "readiness"
+          ]
+        },
+        "description": "Readiness probe exposed by Spring Boot Actuator for current runtime dependencies."
+      },
+      "response": []
+    },
+    {
       "name": "System Ping",
       "request": {
         "method": "GET",
