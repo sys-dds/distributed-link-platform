@@ -143,6 +143,7 @@ Expected responses:
 Duplicate or invalid create-link requests return a clear client error:
 
 - duplicate slug: HTTP 409
+- reserved slug (`api`, `actuator`, `error`, case-insensitive): HTTP 400
 - invalid slug or invalid URL: HTTP 400
 
 ### Postman
@@ -166,15 +167,16 @@ For a quick persistence check against PostgreSQL:
 
 1. Start PostgreSQL with Docker Compose.
 2. Start the API.
-3. Create a link with `POST /api/v1/links`.
-4. Call `GET /{slug}` and confirm the redirect works.
-5. Stop and start the API again.
-6. Call `GET /{slug}` again and confirm the redirect still works from PostgreSQL-backed storage.
+3. Try creating a valid link with `POST /api/v1/links` using a slug like `launch-page`.
+4. Try creating a reserved slug such as `api` or `Actuator` and confirm it is rejected with HTTP 400 before persistence.
+5. Call `GET /{slug}` for the valid slug and confirm the redirect works.
+6. Stop and start the API again.
+7. Call `GET /{slug}` again and confirm the redirect still works from PostgreSQL-backed storage.
 
 ## What is intentionally not tested yet
 
 - No concurrency stress test for duplicate slug creation yet
-- No reserved-route collision test yet
+- No broader reserved-route matrix beyond the current top-level conflicts yet
 - No end-to-end restart verification is automated yet
 
 Those are deferred until the project moves beyond the current PostgreSQL-backed foundation.

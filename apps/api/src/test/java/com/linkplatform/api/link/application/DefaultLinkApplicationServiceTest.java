@@ -11,7 +11,8 @@ import org.junit.jupiter.api.Test;
 
 class DefaultLinkApplicationServiceTest {
 
-    private final DefaultLinkApplicationService service = new DefaultLinkApplicationService(new TestLinkStore());
+    private final TestLinkStore linkStore = new TestLinkStore();
+    private final DefaultLinkApplicationService service = new DefaultLinkApplicationService(linkStore);
 
     @Test
     void createsAndStoresValidatedLinkFromCommand() {
@@ -50,18 +51,32 @@ class DefaultLinkApplicationServiceTest {
         assertThrows(LinkNotFoundException.class, () -> service.resolveLink("missing-link"));
     }
 
+    @Test
+    void rejectsReservedSlugCaseInsensitivelyBeforePersistence() {
+        assertThrows(ReservedLinkSlugException.class,
+                () -> service.createLink(new CreateLinkCommand("AcTuAtOr", "https://example.com/system")));
+
+        assertEquals(0, linkStore.saveAttempts());
+    }
+
     private static final class TestLinkStore implements LinkStore {
 
         private final Map<String, Link> linksBySlug = new ConcurrentHashMap<>();
+        private int saveAttempts;
 
         @Override
         public boolean save(Link link) {
+            saveAttempts++;
             return linksBySlug.putIfAbsent(link.slug().value(), link) == null;
         }
 
         @Override
         public Optional<Link> findBySlug(String slug) {
             return Optional.ofNullable(linksBySlug.get(slug));
+        }
+
+        private int saveAttempts() {
+            return saveAttempts;
         }
     }
 }
