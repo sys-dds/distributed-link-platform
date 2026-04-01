@@ -1,56 +1,63 @@
-TICKET-014 - Add link expiration and lifecycle-aware reads
+TICKET-015 - Add link search and lifecycle-aware control-plane filtering
 title[]
 
-Add link expiration and lifecycle-aware reads
+Add link search and lifecycle-aware control-plane filtering
 
 technical_detail[]
 
-Expand the Link Platform lifecycle model by adding optional expiration support to links and enforcing expiration in both the control-plane read APIs and the redirect path.
+Expand the control-plane read surface so clients can find links more practically instead of only fetching one slug or listing recent active links.
 
-This ticket should introduce an optional expiration timestamp for links. A link may either have no expiration or have a concrete expiration time. The platform must allow expiration to be set at create time and updated later through the existing control-plane mutation flow.
+This ticket should extend the existing link list endpoint with a small, useful search and filtering capability backed by PostgreSQL. Keep the current control-plane style and current lifecycle rules intact.
 
-Once a link is expired, it must no longer behave like an active link:
+At minimum, the list API should support:
 
-redirects for expired links must return not found using the current RFC 7807 response style
-single-link control-plane reads for expired links must return not found using the current RFC 7807 response style
-list results should exclude expired links by default so the control plane shows currently active links unless later tickets add historical views
+searching by slug
+searching by original URL
+filtering by lifecycle state:
+active
+expired
+all
 
-Keep the implementation intentionally small and lifecycle-focused. Reuse the existing PostgreSQL-backed design and current application service style. Do not add a scheduler, background cleanup worker, soft-delete system, restore flow, or archival system in this ticket. Expiration should be enforced at read/resolve time using the current clock.
+The default behavior should remain safe and practical for the current stage:
 
-The list endpoint should continue to work with deterministic ordering for active links. The update API should support changing the expiration timestamp along with the current destination URL mutation capability, but the slug must remain immutable.
+default lifecycle filter should continue to represent currently active links
+ordering should remain deterministic
+the current limit handling should continue to apply
 
-Do not broaden this ticket into quotas, plans, analytics, auth, ownership, caching, or advanced search/filtering. Keep the scope focused on expiration as a first-class lifecycle rule.
+Keep the implementation intentionally small. This is not a full search platform. Do not add full-text search, tags, hostname extraction, ranking, advanced pagination, fuzzy matching, or indexing beyond what is directly useful for this ticket. Use simple explicit query parameters and a direct JDBC-backed implementation that matches the current code style.
+
+The single-link read, create, update, delete, redirect, expiration, validation, Problem Details handling, and observability behavior should remain unchanged outside of the new list-search/filter capability.
 
 feature_delivered_by_end[]
 
-Links can optionally expire, expired links no longer resolve or appear in active reads, and the control plane can create and update links with expiration data.
+The control plane can search and filter links by basic fields and lifecycle state, making the system meaningfully easier to inspect and use as a real admin surface.
 
 how_this_unlocks_next_feature[]
 
-This adds a real lifecycle rule that later plans/quotas, notifications, analytics, and admin features can build on, while making the link model more realistic and production-shaped.
+This creates the discovery surface that later ownership, search refinement, feeds, analytics views, and admin workflows can build on without inventing basic filtering from scratch.
 
 acceptance_criteria[]
-A link can be created with no expiration or with an expiration timestamp
-A link can be updated to change its expiration timestamp
-Expired links do not redirect
-Expired links are not returned by single-link reads
-Expired links are excluded from the default recent-links list
-Active links continue to behave normally
-Existing target URL validation rules remain unchanged
-Existing Problem Details error style remains unchanged
-Existing create/update/delete/read/list behavior for non-expired links remains unchanged
+The existing list endpoint supports searching by slug
+The existing list endpoint supports searching by original URL
+The existing list endpoint supports lifecycle filtering for active, expired, and all
+Default list behavior remains active-only
+List ordering remains deterministic
+Existing limit behavior remains in place
+Invalid filter values return a clear client error
+Existing create/update/delete/read/redirect behavior remains unchanged
+Existing Problem Details handling style remains unchanged
 Existing tests still pass or are updated appropriately
-New focused tests cover expiration behavior
-Only the minimum schema and persistence changes required for expiration are introduced
+New focused tests cover search and lifecycle filtering behavior
+No unnecessary schema or infrastructure changes are introduced unless a very small persistence change is directly justified
 code_target[]
 apps/api
 proof[]
-creating a link with expiration works
-updating expiration works
-expired links return not found on read and redirect
-active links still read and redirect correctly
-expired links are excluded from default list results
+searching by slug works
+searching by original URL works
+filtering active/expired/all works
+default list still returns active links only
+invalid filter values return a clear client error
 passing automated tests
 delivery_note[]
 
-Deliberately postponed: background cleanup, archival/history views, restore/undelete flows, quotas/plans, notifications, auth, ownership, caching, and advanced search/filtering.
+Deliberately postponed: full-text search, fuzzy matching, ranking, hostname/tag search, advanced pagination, ownership/auth, quotas, analytics, caching, and UI/admin work.
