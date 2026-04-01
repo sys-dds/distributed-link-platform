@@ -1,18 +1,21 @@
 package com.linkplatform.api.link.api;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.beans.factory.annotation.Autowired;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -22,6 +25,9 @@ class LinkControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void createLinkReturnsCreatedResponse() throws Exception {
@@ -120,6 +126,72 @@ class LinkControllerTest {
                                 """))
                 .andExpect(problemDetail(400, "Bad Request",
                         "Original URL cannot point to the Link Platform itself: http://LOCALHOST:8080/about"));
+    }
+
+    @Test
+    void getLinkReturnsExistingLink() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "read-me",
+                                  "originalUrl": "https://example.com/read-me"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/links/read-me"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.slug").value("read-me"))
+                .andExpect(jsonPath("$.originalUrl").value("https://example.com/read-me"))
+                .andExpect(jsonPath("$.createdAt").exists());
+    }
+
+    @Test
+    void getLinkReturnsNotFoundForMissingSlug() throws Exception {
+        mockMvc.perform(get("/api/v1/links/missing-link"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
+    }
+
+    @Test
+    void listLinksReturnsRecentLinksInDeterministicOrder() throws Exception {
+        insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
+        insertLink("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
+        insertLink("newest", "https://example.com/newest", OffsetDateTime.parse("2026-04-01T09:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/links"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].slug").value("newest"))
+                .andExpect(jsonPath("$[1].slug").value("alpha"))
+                .andExpect(jsonPath("$[2].slug").value("beta"))
+                .andExpect(jsonPath("$[0].createdAt").exists());
+    }
+
+    @Test
+    void listLinksHonorsLimit() throws Exception {
+        insertLink("one", "https://example.com/one", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
+        insertLink("two", "https://example.com/two", OffsetDateTime.parse("2026-04-01T09:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/links").param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("two"));
+    }
+
+    @Test
+    void listLinksRejectsInvalidLimit() throws Exception {
+        mockMvc.perform(get("/api/v1/links").param("limit", "0"))
+                .andExpect(problemDetail(400, "Bad Request", "Limit must be between 1 and 100"));
+    }
+
+    private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt) {
+        jdbcTemplate.update(
+                "INSERT INTO links (slug, original_url, created_at) VALUES (?, ?, ?)",
+                slug,
+                originalUrl,
+                createdAt);
     }
 
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(
