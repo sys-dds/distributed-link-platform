@@ -20,22 +20,24 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public boolean save(Link link) {
+    public boolean save(Link link, OffsetDateTime expiresAt) {
         try {
             return jdbcTemplate.update(
-                    "INSERT INTO links (slug, original_url) VALUES (?, ?)",
+                    "INSERT INTO links (slug, original_url, expires_at) VALUES (?, ?, ?)",
                     link.slug().value(),
-                    link.originalUrl().value()) == 1;
+                    link.originalUrl().value(),
+                    expiresAt) == 1;
         } catch (DuplicateKeyException exception) {
             return false;
         }
     }
 
     @Override
-    public boolean updateOriginalUrl(String slug, String originalUrl) {
+    public boolean update(String slug, String originalUrl, OffsetDateTime expiresAt) {
         return jdbcTemplate.update(
-                "UPDATE links SET original_url = ? WHERE slug = ?",
+                "UPDATE links SET original_url = ?, expires_at = ? WHERE slug = ?",
                 originalUrl,
+                expiresAt,
                 slug) == 1;
     }
 
@@ -45,41 +47,57 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public Optional<Link> findBySlug(String slug) {
+    public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
-                        "SELECT slug, original_url FROM links WHERE slug = ?",
+                        """
+                        SELECT slug, original_url
+                        FROM links
+                        WHERE slug = ?
+                          AND (expires_at IS NULL OR expires_at > ?)
+                        """,
                         (resultSet, rowNum) -> toLink(resultSet.getString("slug"), resultSet.getString("original_url")),
-                        slug)
+                        slug,
+                        now)
                 .stream()
                 .findFirst();
     }
 
     @Override
-    public Optional<LinkDetails> findDetailsBySlug(String slug) {
+    public Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
-                        "SELECT slug, original_url, created_at FROM links WHERE slug = ?",
+                        """
+                        SELECT slug, original_url, created_at, expires_at
+                        FROM links
+                        WHERE slug = ?
+                          AND (expires_at IS NULL OR expires_at > ?)
+                        """,
                         (resultSet, rowNum) -> toLinkDetails(
                                 resultSet.getString("slug"),
                                 resultSet.getString("original_url"),
-                                resultSet.getObject("created_at", OffsetDateTime.class)),
-                        slug)
+                                resultSet.getObject("created_at", OffsetDateTime.class),
+                                resultSet.getObject("expires_at", OffsetDateTime.class)),
+                        slug,
+                        now)
                 .stream()
                 .findFirst();
     }
 
     @Override
-    public List<LinkDetails> findRecent(int limit) {
+    public List<LinkDetails> findRecent(int limit, OffsetDateTime now) {
         return jdbcTemplate.query(
                 """
-                SELECT slug, original_url, created_at
+                SELECT slug, original_url, created_at, expires_at
                 FROM links
+                WHERE expires_at IS NULL OR expires_at > ?
                 ORDER BY created_at DESC, slug ASC
                 LIMIT ?
                 """,
                 (resultSet, rowNum) -> toLinkDetails(
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
-                        resultSet.getObject("created_at", OffsetDateTime.class)),
+                        resultSet.getObject("created_at", OffsetDateTime.class),
+                        resultSet.getObject("expires_at", OffsetDateTime.class)),
+                now,
                 limit);
     }
 
@@ -87,7 +105,11 @@ public class PostgresLinkStore implements LinkStore {
         return new Link(new LinkSlug(slug), new OriginalUrl(originalUrl));
     }
 
-    private LinkDetails toLinkDetails(String slug, String originalUrl, OffsetDateTime createdAt) {
-        return new LinkDetails(slug, originalUrl, createdAt);
+    private LinkDetails toLinkDetails(
+            String slug,
+            String originalUrl,
+            OffsetDateTime createdAt,
+            OffsetDateTime expiresAt) {
+        return new LinkDetails(slug, originalUrl, createdAt, expiresAt);
     }
 }

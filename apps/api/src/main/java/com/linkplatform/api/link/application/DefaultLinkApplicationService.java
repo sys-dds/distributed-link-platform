@@ -3,6 +3,8 @@ package com.linkplatform.api.link.application;
 import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.net.URI;
 import java.util.List;
 import java.util.Locale;
@@ -17,12 +19,14 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     private final LinkStore linkStore;
     private final URI publicBaseUri;
+    private final Clock clock;
 
     public DefaultLinkApplicationService(
             LinkStore linkStore,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
         this.linkStore = linkStore;
         this.publicBaseUri = URI.create(publicBaseUrl);
+        this.clock = Clock.systemUTC();
     }
 
     @Override
@@ -31,7 +35,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         rejectReservedSlug(link.slug());
         rejectSelfTargetUrl(link.originalUrl());
 
-        if (!linkStore.save(link)) {
+        if (!linkStore.save(link, command.expiresAt())) {
             throw new DuplicateLinkSlugException(link.slug().value());
         }
 
@@ -39,16 +43,16 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
-    public LinkDetails updateLink(String slug, String originalUrl) {
+    public LinkDetails updateLink(String slug, String originalUrl, OffsetDateTime expiresAt) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OriginalUrl validatedOriginalUrl = new OriginalUrl(originalUrl);
         rejectSelfTargetUrl(validatedOriginalUrl);
 
-        if (!linkStore.updateOriginalUrl(linkSlug.value(), validatedOriginalUrl.value())) {
+        if (!linkStore.update(linkSlug.value(), validatedOriginalUrl.value(), expiresAt)) {
             throw new LinkNotFoundException(linkSlug.value());
         }
 
-        return linkStore.findDetailsBySlug(linkSlug.value())
+        return linkStore.findDetailsBySlug(linkSlug.value(), now())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
     }
 
@@ -65,7 +69,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     public Link resolveLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
 
-        return linkStore.findBySlug(linkSlug.value())
+        return linkStore.findBySlug(linkSlug.value(), now())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
     }
 
@@ -73,13 +77,13 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     public LinkDetails getLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
 
-        return linkStore.findDetailsBySlug(linkSlug.value())
+        return linkStore.findDetailsBySlug(linkSlug.value(), now())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
     }
 
     @Override
     public List<LinkDetails> listRecentLinks(int limit) {
-        return linkStore.findRecent(limit);
+        return linkStore.findRecent(limit, now());
     }
 
     private void rejectReservedSlug(LinkSlug slug) {
@@ -114,5 +118,9 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         }
 
         return 80;
+    }
+
+    private OffsetDateTime now() {
+        return OffsetDateTime.now(clock);
     }
 }
