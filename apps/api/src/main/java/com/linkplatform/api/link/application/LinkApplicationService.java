@@ -7,7 +7,7 @@ public interface LinkApplicationService {
 
     Link createLink(CreateLinkCommand command);
 
-    LinkDetails updateLink(String slug, String originalUrl);
+    LinkDetails updateLink(String slug, String originalUrl, java.time.OffsetDateTime expiresAt);
 
     void deleteLink(String slug);
 

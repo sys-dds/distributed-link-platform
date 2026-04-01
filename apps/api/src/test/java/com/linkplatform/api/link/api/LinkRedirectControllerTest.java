@@ -69,6 +69,23 @@ class LinkRedirectControllerTest {
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: gone-link"));
     }
 
+    @Test
+    void expiredLinkNoLongerRedirects() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "expired-link",
+                                  "originalUrl": "https://example.com/expired",
+                                  "expiresAt": "2020-04-01T08:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/expired-link"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: expired-link"));
+    }
+
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(
             int status, String title, String detail) {
         return result -> {

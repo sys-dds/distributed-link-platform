@@ -1,4 +1,6 @@
 package com.linkplatform.api.link.api;
 
-public record UpdateLinkRequest(String originalUrl) {
+import java.time.OffsetDateTime;
+
+public record UpdateLinkRequest(String originalUrl, OffsetDateTime expiresAt) {
 }

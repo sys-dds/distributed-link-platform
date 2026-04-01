@@ -33,13 +33,14 @@ public class LinkController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CreateLinkResponse createLink(@RequestBody CreateLinkRequest request) {
-        Link link = linkApplicationService.createLink(new CreateLinkCommand(request.slug(), request.originalUrl()));
+        Link link = linkApplicationService.createLink(
+                new CreateLinkCommand(request.slug(), request.originalUrl(), request.expiresAt()));
         return new CreateLinkResponse(link.slug().value(), link.originalUrl().value());
     }
 
     @PutMapping("/{slug}")
     public LinkResponse updateLink(@PathVariable String slug, @RequestBody UpdateLinkRequest request) {
-        return toResponse(linkApplicationService.updateLink(slug, request.originalUrl()));
+        return toResponse(linkApplicationService.updateLink(slug, request.originalUrl(), request.expiresAt()));
     }
 
     @GetMapping("/{slug}")
@@ -68,6 +69,10 @@ public class LinkController {
     }
 
     private LinkResponse toResponse(LinkDetails linkDetails) {
-        return new LinkResponse(linkDetails.slug(), linkDetails.originalUrl(), linkDetails.createdAt());
+        return new LinkResponse(
+                linkDetails.slug(),
+                linkDetails.originalUrl(),
+                linkDetails.createdAt(),
+                linkDetails.expiresAt());
     }
 }

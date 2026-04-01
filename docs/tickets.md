@@ -1,57 +1,56 @@
-TICKET-013 - Add basic link lifecycle mutation APIs
+TICKET-014 - Add link expiration and lifecycle-aware reads
 title[]
 
-Add basic link lifecycle mutation APIs
+Add link expiration and lifecycle-aware reads
 
 technical_detail[]
 
-Expand the control-plane API by adding the first mutation endpoints for existing links. This ticket should let clients update a link’s destination URL and delete an existing link, while keeping the current create-link, redirect, read/list, validation, Problem Details, persistence, and observability behavior intact.
+Expand the Link Platform lifecycle model by adding optional expiration support to links and enforcing expiration in both the control-plane read APIs and the redirect path.
 
-At minimum, the implementation should add:
+This ticket should introduce an optional expiration timestamp for links. A link may either have no expiration or have a concrete expiration time. The platform must allow expiration to be set at create time and updated later through the existing control-plane mutation flow.
 
-an endpoint to update the originalUrl of an existing link identified by slug
-an endpoint to delete an existing link identified by slug
+Once a link is expired, it must no longer behave like an active link:
 
-The slug should remain immutable. This ticket must not introduce slug renaming.
+redirects for expired links must return not found using the current RFC 7807 response style
+single-link control-plane reads for expired links must return not found using the current RFC 7807 response style
+list results should exclude expired links by default so the control plane shows currently active links unless later tickets add historical views
 
-The update behavior must reuse the current validation rules that already apply to target URLs, including invalid URL rejection and self-target rejection. The update flow should return a clean success response for the updated link and should return the existing RFC 7807 not-found response shape when the slug does not exist.
+Keep the implementation intentionally small and lifecycle-focused. Reuse the existing PostgreSQL-backed design and current application service style. Do not add a scheduler, background cleanup worker, soft-delete system, restore flow, or archival system in this ticket. Expiration should be enforced at read/resolve time using the current clock.
 
-The delete behavior should remove the link from the current runtime source of truth so that:
+The list endpoint should continue to work with deterministic ordering for active links. The update API should support changing the expiration timestamp along with the current destination URL mutation capability, but the slug must remain immutable.
 
-future control-plane reads for that slug return not found
-future redirects for that slug return not found
-
-Keep the implementation intentionally small. Prefer extending the current application service and JDBC persistence style rather than adding new abstraction layers. Do not broaden this ticket into search, auth, ownership, quotas, analytics, caching, soft-delete lifecycle, audit history, or optimistic locking yet.
+Do not broaden this ticket into quotas, plans, analytics, auth, ownership, caching, or advanced search/filtering. Keep the scope focused on expiration as a first-class lifecycle rule.
 
 feature_delivered_by_end[]
 
-The platform supports basic lifecycle management for links through update and delete APIs, making the control plane meaningfully useful beyond create/read/list.
+Links can optionally expire, expired links no longer resolve or appear in active reads, and the control plane can create and update links with expiration data.
 
 how_this_unlocks_next_feature[]
 
-This completes the first practical link-management surface that later ownership, search, feeds, quotas, and concurrency-control work can build on.
+This adds a real lifecycle rule that later plans/quotas, notifications, analytics, and admin features can build on, while making the link model more realistic and production-shaped.
 
 acceptance_criteria[]
-A client can update the destination URL of an existing link by slug
-Updating a missing slug returns the current RFC 7807 not-found response style
-Updating a link reuses the current URL validation rules, including self-target rejection
-A client can delete an existing link by slug
-Deleting a missing slug returns the current RFC 7807 not-found response style
-After deletion, single-link reads for that slug return not found
-After deletion, redirects for that slug return not found
-Existing create-link behavior remains unchanged
-Existing read/list behavior remains unchanged
+A link can be created with no expiration or with an expiration timestamp
+A link can be updated to change its expiration timestamp
+Expired links do not redirect
+Expired links are not returned by single-link reads
+Expired links are excluded from the default recent-links list
+Active links continue to behave normally
+Existing target URL validation rules remain unchanged
+Existing Problem Details error style remains unchanged
+Existing create/update/delete/read/list behavior for non-expired links remains unchanged
 Existing tests still pass or are updated appropriately
-New focused tests cover update and delete behavior
-No unnecessary schema or infrastructure changes are introduced unless a very small persistence change is directly justified
+New focused tests cover expiration behavior
+Only the minimum schema and persistence changes required for expiration are introduced
 code_target[]
 apps/api
 proof[]
-updating an existing link works
-updating a missing link returns the current Problem Details 404
-deleting an existing link works
-deleted links no longer resolve through control-plane read or redirect
+creating a link with expiration works
+updating expiration works
+expired links return not found on read and redirect
+active links still read and redirect correctly
+expired links are excluded from default list results
 passing automated tests
 delivery_note[]
 
-Deliberately postponed: slug renaming, soft delete, audit history, ownership, auth, quotas, search, analytics, caching, and optimistic locking.
+Deliberately postponed: background cleanup, archival/history views, restore/undelete flows, quotas/plans, notifications, auth, ownership, caching, and advanced search/filtering.
