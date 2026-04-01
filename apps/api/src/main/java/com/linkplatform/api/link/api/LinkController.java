@@ -3,8 +3,10 @@ package com.linkplatform.api.link.api;
 import com.linkplatform.api.link.application.CreateLinkCommand;
 import com.linkplatform.api.link.application.LinkDetails;
 import com.linkplatform.api.link.application.LinkApplicationService;
+import com.linkplatform.api.link.application.LinkLifecycleState;
 import com.linkplatform.api.link.domain.Link;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,9 +51,12 @@ public class LinkController {
     }
 
     @GetMapping
-    public List<LinkResponse> listLinks(@RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
+    public List<LinkResponse> listLinks(
+            @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "active") String state) {
         validateLimit(limit);
-        return linkApplicationService.listRecentLinks(limit).stream()
+        return linkApplicationService.listRecentLinks(limit, q, parseState(state)).stream()
                 .map(this::toResponse)
                 .toList();
     }
@@ -65,6 +70,14 @@ public class LinkController {
     private void validateLimit(int limit) {
         if (limit < 1 || limit > MAX_LIMIT) {
             throw new IllegalArgumentException("Limit must be between 1 and " + MAX_LIMIT);
+        }
+    }
+
+    private LinkLifecycleState parseState(String state) {
+        try {
+            return LinkLifecycleState.valueOf(state.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("State must be one of: active, expired, all");
         }
     }
 

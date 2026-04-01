@@ -69,7 +69,7 @@ class DefaultLinkApplicationServiceTest {
     void listsRecentLinksFromStore() {
         service.createLink(new CreateLinkCommand("alpha", "https://example.com/alpha", null));
 
-        List<LinkDetails> recentLinks = service.listRecentLinks(10);
+        List<LinkDetails> recentLinks = service.listRecentLinks(10, null, LinkLifecycleState.ACTIVE);
 
         assertEquals(1, recentLinks.size());
         assertEquals("alpha", recentLinks.getFirst().slug());
@@ -210,9 +210,10 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
-        public List<LinkDetails> findRecent(int limit, OffsetDateTime now) {
+        public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state) {
             return linksBySlug.values().stream()
-                    .filter(link -> !isExpired(link.slug().value(), now))
+                    .filter(link -> matchesState(link.slug().value(), now, state))
+                    .filter(link -> matchesQuery(link, query))
                     .limit(limit)
                     .map(link -> new LinkDetails(
                             link.slug().value(),
@@ -220,6 +221,24 @@ class DefaultLinkApplicationServiceTest {
                             OffsetDateTime.parse("2026-04-01T08:00:00Z"),
                             expiresAtBySlug.get(link.slug().value())))
                     .toList();
+        }
+
+        private boolean matchesState(String slug, OffsetDateTime now, LinkLifecycleState state) {
+            return switch (state) {
+                case ACTIVE -> !isExpired(slug, now);
+                case EXPIRED -> isExpired(slug, now);
+                case ALL -> true;
+            };
+        }
+
+        private boolean matchesQuery(Link link, String query) {
+            if (query == null || query.isBlank()) {
+                return true;
+            }
+
+            String normalizedQuery = query.toLowerCase();
+            return link.slug().value().toLowerCase().contains(normalizedQuery)
+                    || link.originalUrl().value().toLowerCase().contains(normalizedQuery);
         }
 
         private boolean isExpired(String slug, OffsetDateTime now) {

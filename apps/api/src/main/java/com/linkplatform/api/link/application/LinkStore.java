@@ -17,5 +17,5 @@ public interface LinkStore {
 
     Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);
 
-    List<LinkDetails> findRecent(int limit, OffsetDateTime now);
+    List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state);
 }
