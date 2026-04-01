@@ -1,7 +1,9 @@
 package com.linkplatform.api.link.api;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -184,6 +186,115 @@ class LinkControllerTest {
     void listLinksRejectsInvalidLimit() throws Exception {
         mockMvc.perform(get("/api/v1/links").param("limit", "0"))
                 .andExpect(problemDetail(400, "Bad Request", "Limit must be between 1 and 100"));
+    }
+
+    @Test
+    void updateLinkUpdatesExistingLink() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "editable",
+                                  "originalUrl": "https://example.com/original"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/api/v1/links/editable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/updated"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slug").value("editable"))
+                .andExpect(jsonPath("$.originalUrl").value("https://example.com/updated"))
+                .andExpect(jsonPath("$.createdAt").exists());
+    }
+
+    @Test
+    void updateLinkReturnsNotFoundForMissingSlug() throws Exception {
+        mockMvc.perform(put("/api/v1/links/missing-link")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/updated"
+                                }
+                                """))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
+    }
+
+    @Test
+    void updateLinkRejectsInvalidUrl() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "editable",
+                                  "originalUrl": "https://example.com/original"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/api/v1/links/editable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "not-a-url"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").exists());
+    }
+
+    @Test
+    void updateLinkRejectsSelfTargetUrl() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "editable",
+                                  "originalUrl": "https://example.com/original"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/api/v1/links/editable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "http://localhost:8080/about"
+                                }
+                                """))
+                .andExpect(problemDetail(400, "Bad Request",
+                        "Original URL cannot point to the Link Platform itself: http://localhost:8080/about"));
+    }
+
+    @Test
+    void deleteLinkDeletesExistingLink() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "delete-me",
+                                  "originalUrl": "https://example.com/delete-me"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(delete("/api/v1/links/delete-me"))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        mockMvc.perform(get("/api/v1/links/delete-me"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: delete-me"));
+    }
+
+    @Test
+    void deleteLinkReturnsNotFoundForMissingSlug() throws Exception {
+        mockMvc.perform(delete("/api/v1/links/missing-link"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
     }
 
     private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt) {

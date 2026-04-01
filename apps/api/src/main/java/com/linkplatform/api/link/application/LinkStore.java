@@ -8,6 +8,10 @@ public interface LinkStore {
 
     boolean save(Link link);
 
+    boolean updateOriginalUrl(String slug, String originalUrl);
+
+    boolean deleteBySlug(String slug);
+
     Optional<Link> findBySlug(String slug);
 
     Optional<LinkDetails> findDetailsBySlug(String slug);

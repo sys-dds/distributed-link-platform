@@ -39,6 +39,29 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    public LinkDetails updateLink(String slug, String originalUrl) {
+        LinkSlug linkSlug = new LinkSlug(slug);
+        OriginalUrl validatedOriginalUrl = new OriginalUrl(originalUrl);
+        rejectSelfTargetUrl(validatedOriginalUrl);
+
+        if (!linkStore.updateOriginalUrl(linkSlug.value(), validatedOriginalUrl.value())) {
+            throw new LinkNotFoundException(linkSlug.value());
+        }
+
+        return linkStore.findDetailsBySlug(linkSlug.value())
+                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+    }
+
+    @Override
+    public void deleteLink(String slug) {
+        LinkSlug linkSlug = new LinkSlug(slug);
+
+        if (!linkStore.deleteBySlug(linkSlug.value())) {
+            throw new LinkNotFoundException(linkSlug.value());
+        }
+    }
+
+    @Override
     public Link resolveLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
 

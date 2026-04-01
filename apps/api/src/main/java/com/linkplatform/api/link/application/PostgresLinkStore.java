@@ -32,6 +32,19 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public boolean updateOriginalUrl(String slug, String originalUrl) {
+        return jdbcTemplate.update(
+                "UPDATE links SET original_url = ? WHERE slug = ?",
+                originalUrl,
+                slug) == 1;
+    }
+
+    @Override
+    public boolean deleteBySlug(String slug) {
+        return jdbcTemplate.update("DELETE FROM links WHERE slug = ?", slug) == 1;
+    }
+
+    @Override
     public Optional<Link> findBySlug(String slug) {
         return jdbcTemplate.query(
                         "SELECT slug, original_url FROM links WHERE slug = ?",

@@ -1,5 +1,6 @@
 package com.linkplatform.api.link.api;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -47,6 +48,25 @@ class LinkRedirectControllerTest {
     void redirectReturnsNotFoundForMissingSlug() throws Exception {
         mockMvc.perform(get("/missing-link"))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
+    }
+
+    @Test
+    void deletedLinkNoLongerRedirects() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "gone-link",
+                                  "originalUrl": "https://example.com/gone"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(delete("/api/v1/links/gone-link"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/gone-link"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: gone-link"));
     }
 
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(

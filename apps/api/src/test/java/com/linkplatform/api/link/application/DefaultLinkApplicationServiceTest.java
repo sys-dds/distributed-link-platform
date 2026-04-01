@@ -2,6 +2,7 @@ package com.linkplatform.api.link.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.linkplatform.api.link.domain.Link;
 import java.time.OffsetDateTime;
@@ -75,6 +76,25 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
+    void updatesExistingLinkOriginalUrl() {
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs"));
+
+        LinkDetails linkDetails = service.updateLink("docs", "https://example.com/updated");
+
+        assertEquals("docs", linkDetails.slug());
+        assertEquals("https://example.com/updated", linkDetails.originalUrl());
+    }
+
+    @Test
+    void deletesExistingLink() {
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs"));
+
+        service.deleteLink("docs");
+
+        assertTrue(linkStore.deletedSlugs().containsKey("docs"));
+    }
+
+    @Test
     void rejectsReservedSlugCaseInsensitivelyBeforePersistence() {
         assertThrows(ReservedLinkSlugException.class,
                 () -> service.createLink(new CreateLinkCommand("AcTuAtOr", "https://example.com/system")));
@@ -93,12 +113,30 @@ class DefaultLinkApplicationServiceTest {
     private static final class TestLinkStore implements LinkStore {
 
         private final Map<String, Link> linksBySlug = new ConcurrentHashMap<>();
+        private final Map<String, Boolean> deletedSlugs = new ConcurrentHashMap<>();
         private int saveAttempts;
 
         @Override
         public boolean save(Link link) {
             saveAttempts++;
             return linksBySlug.putIfAbsent(link.slug().value(), link) == null;
+        }
+
+        @Override
+        public boolean updateOriginalUrl(String slug, String originalUrl) {
+            return linksBySlug.computeIfPresent(
+                    slug,
+                    (ignored, link) -> new Link(link.slug(), new com.linkplatform.api.link.domain.OriginalUrl(originalUrl))) != null;
+        }
+
+        @Override
+        public boolean deleteBySlug(String slug) {
+            Link removed = linksBySlug.remove(slug);
+            if (removed != null) {
+                deletedSlugs.put(slug, true);
+                return true;
+            }
+            return false;
         }
 
         @Override
@@ -132,6 +170,10 @@ class DefaultLinkApplicationServiceTest {
 
         private int saveAttempts() {
             return saveAttempts;
+        }
+
+        private Map<String, Boolean> deletedSlugs() {
+            return deletedSlugs;
         }
     }
 }
