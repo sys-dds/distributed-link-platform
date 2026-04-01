@@ -58,6 +58,42 @@ class LinkControllerTest {
     }
 
     @Test
+    void createLinkWithFutureExpirationPersistsExpiration() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "future-link",
+                                  "originalUrl": "https://example.com/future",
+                                  "expiresAt": "2030-04-01T08:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/links/future-link"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slug").value("future-link"))
+                .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"));
+    }
+
+    @Test
+    void createLinkWithPastExpirationBecomesUnavailableImmediately() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "expired-on-create",
+                                  "originalUrl": "https://example.com/expired",
+                                  "expiresAt": "2020-04-01T08:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/links/expired-on-create"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: expired-on-create"));
+    }
+
+    @Test
     void createLinkRejectsDuplicateSlug() throws Exception {
         String request = """
                 {
@@ -147,7 +183,8 @@ class LinkControllerTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.slug").value("read-me"))
                 .andExpect(jsonPath("$.originalUrl").value("https://example.com/read-me"))
-                .andExpect(jsonPath("$.createdAt").exists());
+                .andExpect(jsonPath("$.createdAt").exists())
+                .andExpect(jsonPath("$.expiresAt").doesNotExist());
     }
 
     @Test
@@ -158,9 +195,9 @@ class LinkControllerTest {
 
     @Test
     void listLinksReturnsRecentLinksInDeterministicOrder() throws Exception {
-        insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
-        insertLink("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
-        insertLink("newest", "https://example.com/newest", OffsetDateTime.parse("2026-04-01T09:00:00Z"));
+        insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+        insertLink("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+        insertLink("newest", "https://example.com/newest", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
 
         mockMvc.perform(get("/api/v1/links"))
                 .andExpect(status().isOk())
@@ -168,18 +205,39 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$[0].slug").value("newest"))
                 .andExpect(jsonPath("$[1].slug").value("alpha"))
                 .andExpect(jsonPath("$[2].slug").value("beta"))
-                .andExpect(jsonPath("$[0].createdAt").exists());
+                .andExpect(jsonPath("$[0].createdAt").exists())
+                .andExpect(jsonPath("$[0].expiresAt").doesNotExist());
     }
 
     @Test
     void listLinksHonorsLimit() throws Exception {
-        insertLink("one", "https://example.com/one", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
-        insertLink("two", "https://example.com/two", OffsetDateTime.parse("2026-04-01T09:00:00Z"));
+        insertLink("one", "https://example.com/one", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+        insertLink("two", "https://example.com/two", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
 
         mockMvc.perform(get("/api/v1/links").param("limit", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].slug").value("two"));
+    }
+
+    @Test
+    void listLinksExcludesExpiredLinks() throws Exception {
+        insertLink(
+                "expired-link",
+                "https://example.com/expired",
+                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
+        insertLink(
+                "active-link",
+                "https://example.com/active",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                OffsetDateTime.parse("2030-04-01T08:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/links"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("active-link"))
+                .andExpect(jsonPath("$[0].expiresAt").value("2030-04-01T08:00:00Z"));
     }
 
     @Test
@@ -210,7 +268,32 @@ class LinkControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value("editable"))
                 .andExpect(jsonPath("$.originalUrl").value("https://example.com/updated"))
-                .andExpect(jsonPath("$.createdAt").exists());
+                .andExpect(jsonPath("$.createdAt").exists())
+                .andExpect(jsonPath("$.expiresAt").doesNotExist());
+    }
+
+    @Test
+    void updateLinkUpdatesExpiration() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "expiring",
+                                  "originalUrl": "https://example.com/original"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/api/v1/links/expiring")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/original",
+                                  "expiresAt": "2030-04-01T08:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"));
     }
 
     @Test
@@ -297,12 +380,30 @@ class LinkControllerTest {
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
     }
 
-    private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt) {
+    @Test
+    void expiredLinkReadReturnsNotFound() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "expired-read",
+                                  "originalUrl": "https://example.com/expired-read",
+                                  "expiresAt": "2020-04-01T08:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/links/expired-read"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: expired-read"));
+    }
+
+    private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt, OffsetDateTime expiresAt) {
         jdbcTemplate.update(
-                "INSERT INTO links (slug, original_url, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO links (slug, original_url, created_at, expires_at) VALUES (?, ?, ?, ?)",
                 slug,
                 originalUrl,
-                createdAt);
+                createdAt,
+                expiresAt);
     }
 
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(
