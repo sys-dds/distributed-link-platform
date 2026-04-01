@@ -126,6 +126,7 @@ The regular API and domain tests use H2 in PostgreSQL compatibility mode so they
 - Health: `http://localhost:8080/actuator/health`
 - Liveness probe: `http://localhost:8080/actuator/health/liveness`
 - Readiness probe: `http://localhost:8080/actuator/health/readiness`
+- Metrics: `http://localhost:8080/actuator/metrics`
 - Ping: `http://localhost:8080/api/v1/system/ping`
 - Create link: `http://localhost:8080/api/v1/links`
 - Redirect by slug: `http://localhost:8080/launch-page`
@@ -136,6 +137,7 @@ The regular API and domain tests use H2 in PostgreSQL compatibility mode so they
 curl http://localhost:8080/actuator/health
 curl http://localhost:8080/actuator/health/liveness
 curl http://localhost:8080/actuator/health/readiness
+curl http://localhost:8080/actuator/metrics
 curl http://localhost:8080/api/v1/system/ping
 curl -X POST http://localhost:8080/api/v1/links `
   -H "Content-Type: application/json" `
@@ -148,6 +150,7 @@ Expected responses:
 - `GET /actuator/health` returns HTTP 200 with a JSON payload containing `"status":"UP"`
 - `GET /actuator/health/liveness` returns HTTP 200 with a JSON payload containing `"status":"UP"`
 - `GET /actuator/health/readiness` returns HTTP 200 with a JSON payload containing `"status":"UP"`
+- `GET /actuator/metrics` returns HTTP 200 with an Actuator metrics payload containing available meter names
 - `GET /api/v1/system/ping` returns HTTP 200 with a JSON payload containing `"status":"ok"` and `"service":"link-platform-api"`
 - `POST /api/v1/links` returns HTTP 201 with a JSON payload containing the created `slug` and `originalUrl`
 - `GET /{slug}` returns HTTP 307 with a `Location` header pointing to the stored original URL
@@ -179,7 +182,7 @@ The local environment includes:
 - `createLinkSlug`
 - `createLinkOriginalUrl`
 
-Then select the `Link Platform Local` environment and run the `Health`, `Liveness`, `Readiness`, `System Ping`, `Create Link`, and `Redirect Link` requests.
+Then select the `Link Platform Local` environment and run the `Health`, `Liveness`, `Readiness`, `Metrics`, `System Ping`, `Create Link`, and `Redirect Link` requests.
 
 After creating a link, run the `Redirect Link` request to verify the temporary redirect response.
 
@@ -215,6 +218,15 @@ Representative probe checks:
    Confirm the response is HTTP 200 with `"status":"UP"`
 3. `GET /actuator/health/readiness`
    Confirm the response is HTTP 200 with `"status":"UP"`
+4. `GET /actuator/metrics`
+   Confirm the response is HTTP 200 and lists available meter names
+
+Representative request-log checks:
+
+1. `POST /api/v1/links`
+   Confirm the app logs a structured line like `http_request method=POST path=/api/v1/links status=201 duration_ms=...`
+2. `GET /{slug}`
+   Confirm the app logs a structured line like `http_request method=GET path=/launch-page status=307 duration_ms=...`
 
 ## What is intentionally not tested yet
 

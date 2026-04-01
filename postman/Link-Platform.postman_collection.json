@@ -66,6 +66,25 @@
       "response": []
     },
     {
+      "name": "Metrics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/actuator/metrics",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "actuator",
+            "metrics"
+          ]
+        },
+        "description": "Base Actuator metrics surface listing the available meter names."
+      },
+      "response": []
+    },
+    {
       "name": "System Ping",
       "request": {
         "method": "GET",
