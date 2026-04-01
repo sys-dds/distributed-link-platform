@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.linkplatform.api.link.domain.Link;
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -53,6 +55,26 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
+    void returnsStoredLinkDetailsBySlug() {
+        service.createLink(new CreateLinkCommand("details", "https://example.com/details"));
+
+        LinkDetails linkDetails = service.getLink("details");
+
+        assertEquals("details", linkDetails.slug());
+        assertEquals("https://example.com/details", linkDetails.originalUrl());
+    }
+
+    @Test
+    void listsRecentLinksFromStore() {
+        service.createLink(new CreateLinkCommand("alpha", "https://example.com/alpha"));
+
+        List<LinkDetails> recentLinks = service.listRecentLinks(10);
+
+        assertEquals(1, recentLinks.size());
+        assertEquals("alpha", recentLinks.getFirst().slug());
+    }
+
+    @Test
     void rejectsReservedSlugCaseInsensitivelyBeforePersistence() {
         assertThrows(ReservedLinkSlugException.class,
                 () -> service.createLink(new CreateLinkCommand("AcTuAtOr", "https://example.com/system")));
@@ -82,6 +104,30 @@ class DefaultLinkApplicationServiceTest {
         @Override
         public Optional<Link> findBySlug(String slug) {
             return Optional.ofNullable(linksBySlug.get(slug));
+        }
+
+        @Override
+        public Optional<LinkDetails> findDetailsBySlug(String slug) {
+            Link link = linksBySlug.get(slug);
+            if (link == null) {
+                return Optional.empty();
+            }
+
+            return Optional.of(new LinkDetails(
+                    link.slug().value(),
+                    link.originalUrl().value(),
+                    OffsetDateTime.parse("2026-04-01T08:00:00Z")));
+        }
+
+        @Override
+        public List<LinkDetails> findRecent(int limit) {
+            return linksBySlug.values().stream()
+                    .limit(limit)
+                    .map(link -> new LinkDetails(
+                            link.slug().value(),
+                            link.originalUrl().value(),
+                            OffsetDateTime.parse("2026-04-01T08:00:00Z")))
+                    .toList();
         }
 
         private int saveAttempts() {

@@ -4,6 +4,7 @@ import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
 import java.net.URI;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +44,19 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
         return linkStore.findBySlug(linkSlug.value())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+    }
+
+    @Override
+    public LinkDetails getLink(String slug) {
+        LinkSlug linkSlug = new LinkSlug(slug);
+
+        return linkStore.findDetailsBySlug(linkSlug.value())
+                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+    }
+
+    @Override
+    public List<LinkDetails> listRecentLinks(int limit) {
+        return linkStore.findRecent(limit);
     }
 
     private void rejectReservedSlug(LinkSlug slug) {
