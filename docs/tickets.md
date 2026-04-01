@@ -1,55 +1,57 @@
-TICKET-012 - Add link read and list APIs for the control plane
-
+TICKET-013 - Add basic link lifecycle mutation APIs
 title[]
 
-Add link read and list APIs for the control plane
+Add basic link lifecycle mutation APIs
 
 technical_detail[]
 
-Expand the Link Platform from a pure create-and-redirect service into a minimal control-plane API by adding read endpoints for stored links. This ticket should expose a single-link read endpoint and a list endpoint backed by the existing PostgreSQL persistence model, while keeping the current create-link, redirect, validation, and observability behavior unchanged.
+Expand the control-plane API by adding the first mutation endpoints for existing links. This ticket should let clients update a link’s destination URL and delete an existing link, while keeping the current create-link, redirect, read/list, validation, Problem Details, persistence, and observability behavior intact.
 
 At minimum, the implementation should add:
 
-a read endpoint for one link by slug
-a list endpoint for recent links
+an endpoint to update the originalUrl of an existing link identified by slug
+an endpoint to delete an existing link identified by slug
 
-The single-link read endpoint should return the current persisted link details for an existing slug and return the existing RFC 7807 not-found shape for a missing slug.
+The slug should remain immutable. This ticket must not introduce slug renaming.
 
-The list endpoint should return a stable, deterministic list of persisted links using the existing schema only. Keep the list response intentionally small and practical for the current stage. It should support a simple limit query parameter with a sensible default and maximum so the endpoint does not become unbounded. Do not add full search, filtering, or advanced pagination yet.
+The update behavior must reuse the current validation rules that already apply to target URLs, including invalid URL rejection and self-target rejection. The update flow should return a clean success response for the updated link and should return the existing RFC 7807 not-found response shape when the slug does not exist.
 
-The response shape should be clean and focused on the current data model. Use the fields that already exist and are useful now, such as slug, original URL, and created timestamp. Keep the implementation minimal and avoid overbuilding repository layers, query abstractions, or admin frameworks.
+The delete behavior should remove the link from the current runtime source of truth so that:
 
-Do not broaden this ticket into update/delete behavior, search, ownership, tenant logic, auth, quotas, analytics, caching, or UI work. Keep it focused on control-plane read access only.
+future control-plane reads for that slug return not found
+future redirects for that slug return not found
+
+Keep the implementation intentionally small. Prefer extending the current application service and JDBC persistence style rather than adding new abstraction layers. Do not broaden this ticket into search, auth, ownership, quotas, analytics, caching, soft-delete lifecycle, audit history, or optimistic locking yet.
 
 feature_delivered_by_end[]
 
-The platform supports reading one link and listing recent links through stable control-plane endpoints, making the system easier to inspect and setting up future ownership, search, and admin features.
+The platform supports basic lifecycle management for links through update and delete APIs, making the control plane meaningfully useful beyond create/read/list.
 
 how_this_unlocks_next_feature[]
 
-This creates the missing read surface that later identity, ownership, search, feed, and admin features can build on without forcing those later tickets to invent basic link retrieval from scratch.
+This completes the first practical link-management surface that later ownership, search, feeds, quotas, and concurrency-control work can build on.
 
 acceptance_criteria[]
-A client can fetch one existing link by slug through an API endpoint
-A missing slug on the single-link read endpoint returns the current RFC 7807 not-found response style
-A client can list recent links through an API endpoint
-The list endpoint returns deterministic ordering
-The list endpoint supports a simple limit query parameter with a sensible default and maximum
-Invalid limit values return a clear client error
+A client can update the destination URL of an existing link by slug
+Updating a missing slug returns the current RFC 7807 not-found response style
+Updating a link reuses the current URL validation rules, including self-target rejection
+A client can delete an existing link by slug
+Deleting a missing slug returns the current RFC 7807 not-found response style
+After deletion, single-link reads for that slug return not found
+After deletion, redirects for that slug return not found
 Existing create-link behavior remains unchanged
-Existing redirect behavior remains unchanged
-Existing validation rules remain unchanged
+Existing read/list behavior remains unchanged
 Existing tests still pass or are updated appropriately
-New focused tests cover the new read and list endpoints
-No unnecessary schema or infrastructure changes are introduced
+New focused tests cover update and delete behavior
+No unnecessary schema or infrastructure changes are introduced unless a very small persistence change is directly justified
 code_target[]
 apps/api
 proof[]
-fetching an existing link by slug works
-fetching a missing slug returns the current Problem Details 404 shape
-listing recent links works with deterministic ordering
-limit handling works
+updating an existing link works
+updating a missing link returns the current Problem Details 404
+deleting an existing link works
+deleted links no longer resolve through control-plane read or redirect
 passing automated tests
 delivery_note[]
 
-Deliberately postponed: update/delete endpoints, search, filtering, pagination beyond a simple limit, ownership, quotas, analytics, caching, and UI/admin work.
+Deliberately postponed: slug renaming, soft delete, audit history, ownership, auth, quotas, search, analytics, caching, and optimistic locking.
