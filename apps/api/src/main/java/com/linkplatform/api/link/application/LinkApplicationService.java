@@ -15,5 +15,5 @@ public interface LinkApplicationService {
 
     LinkDetails getLink(String slug);
 
-    List<LinkDetails> listRecentLinks(int limit);
+    List<LinkDetails> listRecentLinks(int limit, String query, LinkLifecycleState state);
 }

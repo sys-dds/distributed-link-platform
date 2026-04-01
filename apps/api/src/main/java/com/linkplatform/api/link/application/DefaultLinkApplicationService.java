@@ -82,8 +82,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
-    public List<LinkDetails> listRecentLinks(int limit) {
-        return linkStore.findRecent(limit, now());
+    public List<LinkDetails> listRecentLinks(int limit, String query, LinkLifecycleState state) {
+        return linkStore.findRecent(limit, now(), query, state);
     }
 
     private void rejectReservedSlug(LinkSlug slug) {

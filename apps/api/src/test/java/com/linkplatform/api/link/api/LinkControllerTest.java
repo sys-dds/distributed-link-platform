@@ -210,6 +210,21 @@ class LinkControllerTest {
     }
 
     @Test
+    void listLinksDefaultsToActiveOnly() throws Exception {
+        insertLink(
+                "expired-link",
+                "https://example.com/expired",
+                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
+        insertLink("active-link", "https://example.com/active", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+
+        mockMvc.perform(get("/api/v1/links"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("active-link"));
+    }
+
+    @Test
     void listLinksHonorsLimit() throws Exception {
         insertLink("one", "https://example.com/one", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
         insertLink("two", "https://example.com/two", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
@@ -241,9 +256,85 @@ class LinkControllerTest {
     }
 
     @Test
+    void listLinksFiltersExpiredOnly() throws Exception {
+        insertLink("active-link", "https://example.com/active", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+        insertLink(
+                "expired-link",
+                "https://example.com/expired",
+                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/links").param("state", "expired"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("expired-link"));
+    }
+
+    @Test
+    void listLinksFiltersAllStates() throws Exception {
+        insertLink("active-link", "https://example.com/active", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+        insertLink(
+                "expired-link",
+                "https://example.com/expired",
+                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/links").param("state", "all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].slug").value("active-link"))
+                .andExpect(jsonPath("$[1].slug").value("expired-link"));
+    }
+
+    @Test
+    void listLinksSearchesBySlug() throws Exception {
+        insertLink("launch-page", "https://example.com/docs", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+        insertLink("docs-page", "https://example.com/guide", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+
+        mockMvc.perform(get("/api/v1/links").param("q", "launch"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("launch-page"));
+    }
+
+    @Test
+    void listLinksSearchesByOriginalUrl() throws Exception {
+        insertLink("alpha", "https://example.com/launch-docs", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+        insertLink("beta", "https://example.com/other", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+
+        mockMvc.perform(get("/api/v1/links").param("q", "launch-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha"));
+    }
+
+    @Test
+    void listLinksCombinesSearchWithLifecycleFiltering() throws Exception {
+        insertLink(
+                "launch-expired",
+                "https://example.com/launch",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
+        insertLink("launch-active", "https://example.com/launch", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+
+        mockMvc.perform(get("/api/v1/links")
+                        .param("q", "launch")
+                        .param("state", "expired"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("launch-expired"));
+    }
+
+    @Test
     void listLinksRejectsInvalidLimit() throws Exception {
         mockMvc.perform(get("/api/v1/links").param("limit", "0"))
                 .andExpect(problemDetail(400, "Bad Request", "Limit must be between 1 and 100"));
+    }
+
+    @Test
+    void listLinksRejectsInvalidState() throws Exception {
+        mockMvc.perform(get("/api/v1/links").param("state", "unknown"))
+                .andExpect(problemDetail(400, "Bad Request", "State must be one of: active, expired, all"));
     }
 
     @Test
