@@ -1,57 +1,55 @@
-TICKET-011 - Add metrics and structured request logging baseline
-
-Status: Ready
+TICKET-012 - Add link read and list APIs for the control plane
 
 title[]
 
-Add metrics and structured request logging baseline
+Add link read and list APIs for the control plane
 
 technical_detail[]
 
-Improve service observability by exposing a basic Actuator metrics surface and introducing structured request logging for the main HTTP flows. The application already exposes general health, liveness, and readiness probes. This ticket should extend operability by making runtime measurements and request-level diagnostics easier to inspect during local development and future deployment.
+Expand the Link Platform from a pure create-and-redirect service into a minimal control-plane API by adding read endpoints for stored links. This ticket should expose a single-link read endpoint and a list endpoint backed by the existing PostgreSQL persistence model, while keeping the current create-link, redirect, validation, and observability behavior unchanged.
 
-The implementation should use the smallest clean Spring Boot / Actuator-native approach possible. Prefer framework-native metrics exposure and simple structured logging configuration over custom observability frameworks. The metrics work in this ticket should expose the existing baseline metrics surface only; it must not introduce custom business metrics yet.
+At minimum, the implementation should add:
 
-For logging, add a minimal structured request logging baseline that makes incoming HTTP requests easier to trace in logs without overbuilding. The logging should remain lightweight and practical for the current monolith. Keep the implementation simple and local to the current runtime.
+a read endpoint for one link by slug
+a list endpoint for recent links
 
-At minimum, the repo should provide:
+The single-link read endpoint should return the current persisted link details for an existing slug and return the existing RFC 7807 not-found shape for a missing slug.
 
-a basic Actuator metrics endpoint
-a lightweight structured request logging baseline for HTTP requests
-focused tests only where practical and maintainable
-README/manual verification guidance updated only where required
+The list endpoint should return a stable, deterministic list of persisted links using the existing schema only. Keep the list response intentionally small and practical for the current stage. It should support a simple limit query parameter with a sensible default and maximum so the endpoint does not become unbounded. Do not add full search, filtering, or advanced pagination yet.
 
-Do not broaden this ticket into tracing, Prometheus integration, dashboards, custom business metrics, distributed correlation systems, auth, caching, analytics, persistence redesign, or a wider observability overhaul. Do not change create-link or redirect business behavior. Keep the scope focused on observability baseline only.
+The response shape should be clean and focused on the current data model. Use the fields that already exist and are useful now, such as slug, original URL, and created timestamp. Keep the implementation minimal and avoid overbuilding repository layers, query abstractions, or admin frameworks.
+
+Do not broaden this ticket into update/delete behavior, search, ownership, tenant logic, auth, quotas, analytics, caching, or UI work. Keep it focused on control-plane read access only.
 
 feature_delivered_by_end[]
 
-The service exposes a basic metrics surface and emits more structured HTTP request logs, making local debugging and future operations easier without changing business behavior.
+The platform supports reading one link and listing recent links through stable control-plane endpoints, making the system easier to inspect and setting up future ownership, search, and admin features.
 
 how_this_unlocks_next_feature[]
 
-This strengthens the observability baseline so later performance, resilience, and deployment work can build on real runtime signals instead of ad hoc debugging.
+This creates the missing read surface that later identity, ownership, search, feed, and admin features can build on without forcing those later tickets to invent basic link retrieval from scratch.
 
 acceptance_criteria[]
-A basic Actuator metrics endpoint is exposed
-Existing health, liveness, and readiness endpoints continue to work
-A lightweight structured request logging baseline is added for HTTP requests
-Existing create-link and redirect behavior remain unchanged
+A client can fetch one existing link by slug through an API endpoint
+A missing slug on the single-link read endpoint returns the current RFC 7807 not-found response style
+A client can list recent links through an API endpoint
+The list endpoint returns deterministic ordering
+The list endpoint supports a simple limit query parameter with a sensible default and maximum
+Invalid limit values return a clear client error
+Existing create-link behavior remains unchanged
+Existing redirect behavior remains unchanged
+Existing validation rules remain unchanged
 Existing tests still pass or are updated appropriately
-Focused tests are added where practical and maintainable
-README/manual verification guidance is updated only where needed
-Postman is updated only if it materially improves manual verification
-No unnecessary business-logic, schema, or infrastructure changes are introduced
-No custom business metrics, tracing, or dashboard work is introduced
+New focused tests cover the new read and list endpoints
+No unnecessary schema or infrastructure changes are introduced
 code_target[]
 apps/api
-README.md only if required for manual verification or logging/metrics clarification
-postman only if adding metrics verification requests clearly improves manual testing
 proof[]
-the Actuator metrics endpoint works
-health, liveness, and readiness endpoints still work
-request logs are more structured and useful during local verification
-create-link and redirect behavior remain unaffected
+fetching an existing link by slug works
+fetching a missing slug returns the current Problem Details 404 shape
+listing recent links works with deterministic ordering
+limit handling works
 passing automated tests
 delivery_note[]
 
-Deliberately postponed: custom business metrics, tracing, Prometheus integration, dashboards, advanced correlation systems, deployment manifests, and broader observability/platform work.
+Deliberately postponed: update/delete endpoints, search, filtering, pagination beyond a simple limit, ownership, quotas, analytics, caching, and UI/admin work.
