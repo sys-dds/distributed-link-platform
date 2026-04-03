@@ -3,10 +3,10 @@ package com.linkplatform.api.link.application;
 import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
+import java.net.URI;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -37,8 +37,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         Link link = new Link(new LinkSlug(command.slug()), new OriginalUrl(command.originalUrl()));
         rejectReservedSlug(link.slug());
         rejectSelfTargetUrl(link.originalUrl());
+        String normalizedTitle = normalizeTitle(command.title());
+        List<String> normalizedTags = normalizeTags(command.tags());
+        String hostname = extractHostname(link.originalUrl().value());
 
-        if (!linkStore.save(link, command.expiresAt())) {
+        if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname)) {
             throw new DuplicateLinkSlugException(link.slug().value());
         }
 
@@ -46,12 +49,26 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
-    public LinkDetails updateLink(String slug, String originalUrl, OffsetDateTime expiresAt) {
+    public LinkDetails updateLink(
+            String slug,
+            String originalUrl,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OriginalUrl validatedOriginalUrl = new OriginalUrl(originalUrl);
         rejectSelfTargetUrl(validatedOriginalUrl);
+        String normalizedTitle = normalizeTitle(title);
+        List<String> normalizedTags = normalizeTags(tags);
+        String hostname = extractHostname(validatedOriginalUrl.value());
 
-        if (!linkStore.update(linkSlug.value(), validatedOriginalUrl.value(), expiresAt)) {
+        if (!linkStore.update(
+                linkSlug.value(),
+                validatedOriginalUrl.value(),
+                expiresAt,
+                normalizedTitle,
+                normalizedTags,
+                hostname)) {
             throw new LinkNotFoundException(linkSlug.value());
         }
 
@@ -92,6 +109,14 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     public List<LinkDetails> listRecentLinks(int limit, String query, LinkLifecycleState state) {
         return linkStore.findRecent(limit, now(), query, state);
+    }
+
+    @Override
+    public List<LinkSuggestion> suggestLinks(String query, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        return linkStore.findSuggestions(limit, now(), query);
     }
 
     @Override
@@ -156,6 +181,33 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     private OffsetDateTime now() {
         return OffsetDateTime.now(clock);
+    }
+
+    private String normalizeTitle(String title) {
+        if (title == null) {
+            return null;
+        }
+
+        String normalizedTitle = title.trim();
+        return normalizedTitle.isEmpty() ? null : normalizedTitle;
+    }
+
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null) {
+            return List.of();
+        }
+
+        return tags.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(tag -> !tag.isEmpty())
+                .distinct()
+                .toList();
+    }
+
+    private String extractHostname(String originalUrl) {
+        String host = URI.create(originalUrl).getHost();
+        return host == null ? null : host.toLowerCase(Locale.ROOT);
     }
 
     private List<DailyClickBucket> fillDailyBuckets(LocalDate startDate, List<DailyClickBucket> buckets) {

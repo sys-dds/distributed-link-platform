@@ -7,9 +7,9 @@ import java.util.Optional;
 
 public interface LinkStore {
 
-    boolean save(Link link, OffsetDateTime expiresAt);
+    boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname);
 
-    boolean update(String slug, String originalUrl, OffsetDateTime expiresAt);
+    boolean update(String slug, String originalUrl, OffsetDateTime expiresAt, String title, List<String> tags, String hostname);
 
     boolean deleteBySlug(String slug);
 
@@ -20,6 +20,8 @@ public interface LinkStore {
     Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);
 
     List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state);
+
+    List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query);
 
     Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
             String slug,

@@ -58,6 +58,28 @@ class LinkControllerTest {
     }
 
     @Test
+    void createLinkWithMetadataPersistsMetadata() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "metadata-link",
+                                  "originalUrl": "https://docs.example.com/guide/start",
+                                  "title": "Launch Guide",
+                                  "tags": ["product", "docs"]
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/links/metadata-link"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Launch Guide"))
+                .andExpect(jsonPath("$.tags[0]").value("product"))
+                .andExpect(jsonPath("$.tags[1]").value("docs"))
+                .andExpect(jsonPath("$.hostname").value("docs.example.com"));
+    }
+
+    @Test
     void createLinkWithFutureExpirationPersistsExpiration() throws Exception {
         mockMvc.perform(post("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -186,6 +208,10 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.originalUrl").value("https://example.com/read-me"))
                 .andExpect(jsonPath("$.createdAt").exists())
                 .andExpect(jsonPath("$.expiresAt").doesNotExist())
+                .andExpect(jsonPath("$.title").doesNotExist())
+                .andExpect(jsonPath("$.tags").isArray())
+                .andExpect(jsonPath("$.tags.length()").value(0))
+                .andExpect(jsonPath("$.hostname").value("example.com"))
                 .andExpect(jsonPath("$.clickTotal").value(0));
     }
 
@@ -307,6 +333,56 @@ class LinkControllerTest {
     }
 
     @Test
+    void listLinksSearchesByTitle() throws Exception {
+        insertLink(
+                "alpha",
+                "https://example.com/alpha",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                null,
+                "Launch Playbook",
+                "[\"docs\"]",
+                "example.com");
+        insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+
+        mockMvc.perform(get("/api/v1/links").param("q", "playbook"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha"))
+                .andExpect(jsonPath("$[0].title").value("Launch Playbook"));
+    }
+
+    @Test
+    void listLinksSearchesByTags() throws Exception {
+        insertLink(
+                "alpha",
+                "https://example.com/alpha",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                null,
+                null,
+                "[\"product\",\"launch\"]",
+                "example.com");
+        insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+
+        mockMvc.perform(get("/api/v1/links").param("q", "launch"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha"))
+                .andExpect(jsonPath("$[0].tags[1]").value("launch"));
+    }
+
+    @Test
+    void listLinksSearchesByHostname() throws Exception {
+        insertLink("alpha", "https://docs.example.com/alpha", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+        insertLink("beta", "https://app.example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+
+        mockMvc.perform(get("/api/v1/links").param("q", "docs.example.com"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha"))
+                .andExpect(jsonPath("$[0].hostname").value("docs.example.com"));
+    }
+
+    @Test
     void listLinksSearchesByOriginalUrl() throws Exception {
         insertLink("alpha", "https://example.com/launch-docs", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
         insertLink("beta", "https://example.com/other", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
@@ -316,6 +392,49 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].slug").value("alpha"))
                 .andExpect(jsonPath("$[0].clickTotal").value(0));
+    }
+
+    @Test
+    void suggestLinksReturnsCompactDeterministicMatches() throws Exception {
+        insertLink(
+                "alpha",
+                "https://docs.example.com/alpha",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                null,
+                "Alpha Docs",
+                "[\"docs\"]",
+                "docs.example.com");
+        insertLink(
+                "beta",
+                "https://docs.example.com/beta",
+                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                null,
+                "Beta Docs",
+                "[\"docs\"]",
+                "docs.example.com");
+
+        mockMvc.perform(get("/api/v1/links/suggestions").param("q", "docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].slug").value("alpha"))
+                .andExpect(jsonPath("$[0].title").value("Alpha Docs"))
+                .andExpect(jsonPath("$[0].hostname").value("docs.example.com"))
+                .andExpect(jsonPath("$[1].slug").value("beta"));
+    }
+
+    @Test
+    void suggestLinksReturnsEmptyListForBlankQuery() throws Exception {
+        insertLink("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+
+        mockMvc.perform(get("/api/v1/links/suggestions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void suggestLinksRejectsInvalidLimit() throws Exception {
+        mockMvc.perform(get("/api/v1/links/suggestions").param("q", "docs").param("limit", "21"))
+                .andExpect(problemDetail(400, "Bad Request", "Suggestion limit must be between 1 and 20"));
     }
 
     @Test
@@ -398,7 +517,39 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.slug").value("editable"))
                 .andExpect(jsonPath("$.originalUrl").value("https://example.com/updated"))
                 .andExpect(jsonPath("$.createdAt").exists())
-                .andExpect(jsonPath("$.expiresAt").doesNotExist());
+                .andExpect(jsonPath("$.expiresAt").doesNotExist())
+                .andExpect(jsonPath("$.title").doesNotExist())
+                .andExpect(jsonPath("$.tags").isArray())
+                .andExpect(jsonPath("$.tags.length()").value(0))
+                .andExpect(jsonPath("$.hostname").value("example.com"));
+    }
+
+    @Test
+    void updateLinkUpdatesMetadata() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "editable-meta",
+                                  "originalUrl": "https://example.com/original"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/api/v1/links/editable-meta")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://docs.example.com/updated",
+                                  "title": "Updated Title",
+                                  "tags": ["docs", "product"]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Updated Title"))
+                .andExpect(jsonPath("$.tags[0]").value("docs"))
+                .andExpect(jsonPath("$.tags[1]").value("product"))
+                .andExpect(jsonPath("$.hostname").value("docs.example.com"));
     }
 
     @Test
@@ -527,12 +678,29 @@ class LinkControllerTest {
     }
 
     private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt, OffsetDateTime expiresAt) {
+        insertLink(slug, originalUrl, createdAt, expiresAt, null, null, hostnameFrom(originalUrl));
+    }
+
+    private void insertLink(
+            String slug,
+            String originalUrl,
+            OffsetDateTime createdAt,
+            OffsetDateTime expiresAt,
+            String title,
+            String tagsJson,
+            String hostname) {
         jdbcTemplate.update(
-                "INSERT INTO links (slug, original_url, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                """
+                INSERT INTO links (slug, original_url, created_at, expires_at, title, tags_json, hostname)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
                 slug,
                 originalUrl,
                 createdAt,
-                expiresAt);
+                expiresAt,
+                title,
+                tagsJson,
+                hostname);
     }
 
     private void insertClick(String slug, OffsetDateTime clickedAt) {
@@ -578,5 +746,9 @@ class LinkControllerTest {
             jsonPath("$.originalUrl").doesNotExist().match(result);
             jsonPath("$.message").doesNotExist().match(result);
         };
+    }
+
+    private String hostnameFrom(String originalUrl) {
+        return java.net.URI.create(originalUrl).getHost().toLowerCase();
     }
 }
