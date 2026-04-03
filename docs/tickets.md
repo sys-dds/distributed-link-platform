@@ -1,75 +1,82 @@
-TICKET-018 - Add link metadata and richer discovery search
+TICKET-019 - Add platform activity feed and trending link views
 title[]
 
-Add link metadata and richer discovery search
+Add platform activity feed and trending link views
 
 technical_detail[]
 
-Expand the Link Platform control plane so links can carry simple metadata and can be discovered through richer search behavior.
+Expand the control plane beyond CRUD/search/reporting by adding two higher-level discovery surfaces:
 
-This ticket should introduce optional link metadata fields and extend the existing list/search surface so clients can find links more practically than only searching slug and original URL. The implementation should stay focused on discovery and metadata only.
+a recent platform activity feed
+a trending-links view
 
-At minimum, the system should support:
+This ticket should introduce a lightweight activity-event model for link lifecycle mutations and expose a feed endpoint that lets clients see recent create, update, and delete activity in deterministic order. The feed should be backed by persisted events, not reconstructed loosely from current link state, so delete events and historical updates can still appear even after the underlying link changes.
 
-optional title on a link
-optional tags on a link
-hostname-aware discovery based on the original URL
-richer search across:
+This ticket should also expose a trending-links endpoint that ranks links by recent traffic growth rather than only raw top-click totals. The implementation should reuse the existing click capture and daily rollup baseline where practical. A good first trending view compares one recent window against the immediately preceding window of the same size and ranks links by positive growth. Keep the supported windows intentionally small and explicit, such as 24h and 7d.
+
+At minimum, the implementation should provide:
+
+persisted activity events for:
+link created
+link updated
+link deleted
+an activity feed endpoint for recent events
+a trending-links endpoint based on recent traffic growth
+compact, useful response shapes for both endpoints
+
+The activity feed should store enough snapshot data to remain useful even if the underlying link later changes or is deleted. A practical snapshot includes:
+
 slug
-original URL
+event type
+occurred-at timestamp
+title if available
+hostname if available
+
+The trending endpoint should return compact link discovery information together with recent-window traffic numbers. A practical response includes:
+
+slug
 title
-tags
 hostname
-lightweight autocomplete suggestions for the control plane
+clicks in current window
+clicks in previous comparable window
+absolute growth
 
-The metadata should be supported on both create and update flows. Existing behavior should remain unchanged for clients that do not provide metadata.
+Keep the implementation intentionally small and JDBC/PostgreSQL-friendly. Do not broaden this ticket into auth/team scoping, notifications, realtime push, caching, Kafka, outbox, anomaly detection, recommendation logic, or dashboard UI work. This is the synchronous discovery/feed phase only.
 
-The existing list/search endpoint should continue to support:
-
-current lifecycle filtering
-current limit behavior
-deterministic ordering
-
-Autocomplete should stay intentionally small. A good result is a dedicated suggestions endpoint or a minimal extension of the existing control-plane search surface that returns compact suggestion items based on current link data. It does not need ranking sophistication, typo tolerance, or full-text search.
-
-Keep the implementation intentionally practical and PostgreSQL/JDBC-friendly. Do not add a separate search engine, fuzzy search system, full-text infrastructure, advanced ranking, synonyms, stemming, or recommendation logic. Do not broaden into ownership, auth, quotas, feeds, analytics redesign, or UI work.
+The existing create/read/list/update/delete/search/suggestions/expiration/redirect/analytics-reporting behavior should remain unchanged outside the addition of these new endpoints and supporting persistence.
 
 feature_delivered_by_end[]
 
-Links can store lightweight metadata and the control plane can search and autocomplete across more useful discovery fields, making the platform meaningfully easier to browse and manage.
+The control plane exposes a recent platform activity feed and a trending-links view, making the platform feel more like a real operational product instead of just a set of CRUD/reporting endpoints.
 
 how_this_unlocks_next_feature[]
 
-This creates the richer discovery surface that later admin workflows, feeds, trending views, ownership, and UX layers can build on without inventing metadata and search basics later.
+This creates natural consumers for later async events, realtime updates, notification jobs, feeds, and richer home/dashboard experiences without forcing those later tickets to invent basic event and trending surfaces from scratch.
 
 acceptance_criteria[]
-A link can be created with optional metadata fields
-A link can be updated to change optional metadata fields
-Existing create/update behavior still works when metadata is absent
-The list/search surface supports searching by:
-slug
-original URL
-title
-tags
-hostname
-Existing lifecycle filtering continues to work
-Existing limit handling continues to work
-Ordering remains deterministic
-A lightweight autocomplete/suggestions API is exposed
-Suggestions return compact useful results and remain deterministic
-Existing create/read/list/update/delete/redirect/expiration/analytics behavior remains unchanged outside the new metadata/search capability
+The system persists activity events for link create, update, and delete operations
+A client can request a recent activity feed
+Activity feed ordering is deterministic
+Delete events remain visible in the feed even after the link itself is gone
+A client can request trending links for a supported recent window
+Trending ranking is based on recent growth versus the previous comparable window, not only raw total clicks
+Supported windows are explicit and limited, such as 24h and 7d
+Invalid window values return a clear client error
+Existing create/read/list/update/delete/search/suggestions/redirect behavior remains unchanged
+Existing analytics reporting behavior remains unchanged
 Existing Problem Details handling style remains unchanged
 Existing tests still pass or are updated appropriately
-New focused tests cover metadata persistence, richer search, and autocomplete behavior
-Only the minimum schema and persistence changes needed for metadata/discovery are introduced
+New focused tests cover activity-event capture, feed behavior, trending behavior, deterministic ordering, and invalid-window handling
+Only the minimum schema and persistence changes needed for feed/trending are introduced
 code_target[]
 apps/api
 proof[]
-links can be created and updated with metadata
-richer search works across metadata and hostname
-autocomplete suggestions work
-lifecycle filtering still works
+create/update/delete operations persist activity events
+activity feed returns recent events in deterministic order
+delete events remain visible after link deletion
+trending endpoint returns links ranked by recent growth
+invalid window values return a clear client error
 passing automated tests
 delivery_note[]
 
-Deliberately postponed: full-text search, fuzzy matching, advanced ranking, separate search infrastructure, ownership/auth, quotas, feeds, caching, and UI/admin work.
+Deliberately postponed: auth/team scoping, notifications, realtime streaming, Kafka/outbox, caching, anomaly detection, recommendation logic, dashboards, and UI/admin work.
