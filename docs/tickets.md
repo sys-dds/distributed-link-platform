@@ -1,81 +1,75 @@
+TICKET-018 - Add link metadata and richer discovery search
+title[]
 
-## 🚀 TICKET-017
+Add link metadata and richer discovery search
 
-This should be the next bigger ticket:
+technical_detail[]
 
-## TICKET-017 — Add analytics rollups and link traffic reporting endpoints
+Expand the Link Platform control plane so links can carry simple metadata and can be discovered through richer search behavior.
 
-#### title[]
+This ticket should introduce optional link metadata fields and extend the existing list/search surface so clients can find links more practically than only searching slug and original URL. The implementation should stay focused on discovery and metadata only.
 
-Add analytics rollups and link traffic reporting endpoints
+At minimum, the system should support:
 
-#### technical_detail[]
+optional title on a link
+optional tags on a link
+hostname-aware discovery based on the original URL
+richer search across:
+slug
+original URL
+title
+tags
+hostname
+lightweight autocomplete suggestions for the control plane
 
-Build the first reporting layer on top of the click analytics baseline. This ticket should aggregate raw click events into small reporting views that the control plane can query efficiently, without changing the redirect contract or introducing async/event-driven processing yet.
+The metadata should be supported on both create and update flows. Existing behavior should remain unchanged for clients that do not provide metadata.
 
-At minimum, the implementation should:
+The existing list/search endpoint should continue to support:
 
-* add a simple daily rollup for clicks per link
-* expose a traffic-summary endpoint for one link
-* expose a top-links endpoint based on recent click volume
+current lifecycle filtering
+current limit behavior
+deterministic ordering
 
-The link traffic summary should provide a practical control-plane view for a single slug using data already captured by the system. A good first summary includes:
+Autocomplete should stay intentionally small. A good result is a dedicated suggestions endpoint or a minimal extension of the existing control-plane search surface that returns compact suggestion items based on current link data. It does not need ranking sophistication, typo tolerance, or full-text search.
 
-* total clicks
-* clicks for the last 24 hours
-* clicks for the last 7 days
-* daily buckets for a recent window such as the last 7 days
+Keep the implementation intentionally practical and PostgreSQL/JDBC-friendly. Do not add a separate search engine, fuzzy search system, full-text infrastructure, advanced ranking, synonyms, stemming, or recommendation logic. Do not broaden into ownership, auth, quotas, feeds, analytics redesign, or UI work.
 
-The top-links endpoint should return a deterministic ranked list of the most-clicked links over a recent window such as the last 24 hours or last 7 days. Keep it intentionally small and explicit. A simple `window` query parameter is enough.
+feature_delivered_by_end[]
 
-Prefer a small rollup/reporting design over repeated heavy scans of raw click events. A good result is some combination of:
+Links can store lightweight metadata and the control plane can search and autocomplete across more useful discovery fields, making the platform meaningfully easier to browse and manage.
 
-* a daily rollup table
-* simple aggregation queries
-* small reporting DTOs
-* a dedicated analytics read controller or a small extension of the current control-plane API
+how_this_unlocks_next_feature[]
 
-Keep the implementation intentionally practical. Do not add Kafka, async consumers, dashboards, realtime streaming, materialized-view orchestration, anomaly detection, bot filtering, tenant analytics, or advanced ranking logic yet. This is still the synchronous analytics phase, just with a real reporting surface now.
+This creates the richer discovery surface that later admin workflows, feeds, trending views, ownership, and UX layers can build on without inventing metadata and search basics later.
 
-The existing create/update/delete/read/list/search/filter/expiration/redirect behavior should remain unchanged outside the new reporting endpoints and any supporting rollup persistence.
+acceptance_criteria[]
+A link can be created with optional metadata fields
+A link can be updated to change optional metadata fields
+Existing create/update behavior still works when metadata is absent
+The list/search surface supports searching by:
+slug
+original URL
+title
+tags
+hostname
+Existing lifecycle filtering continues to work
+Existing limit handling continues to work
+Ordering remains deterministic
+A lightweight autocomplete/suggestions API is exposed
+Suggestions return compact useful results and remain deterministic
+Existing create/read/list/update/delete/redirect/expiration/analytics behavior remains unchanged outside the new metadata/search capability
+Existing Problem Details handling style remains unchanged
+Existing tests still pass or are updated appropriately
+New focused tests cover metadata persistence, richer search, and autocomplete behavior
+Only the minimum schema and persistence changes needed for metadata/discovery are introduced
+code_target[]
+apps/api
+proof[]
+links can be created and updated with metadata
+richer search works across metadata and hostname
+autocomplete suggestions work
+lifecycle filtering still works
+passing automated tests
+delivery_note[]
 
-#### feature_delivered_by_end[]
-
-The platform can report basic traffic summaries for a link and show top-clicked links over a recent window, using small analytics rollups instead of only raw click capture.
-
-#### how_this_unlocks_next_feature[]
-
-This creates the first useful analytics read surface that later trending views, feeds, async event pipelines, dashboards, and realtime features can build on.
-
-#### acceptance_criteria[]
-
-* The system maintains a basic daily click rollup per link
-* A client can request a traffic summary for one existing link
-* A missing slug on the traffic-summary endpoint returns the current RFC 7807 not-found style
-* The traffic summary includes total clicks and recent-window information
-* A client can request top links by click volume over a supported recent window
-* Ranking is deterministic
-* Invalid window values return a clear client error
-* Existing redirect behavior remains unchanged
-* Existing click capture behavior remains unchanged
-* Existing create/update/delete/read/list/search/filter/expiration behavior remains unchanged
-* Existing Problem Details behavior remains unchanged
-* Existing tests still pass or are updated appropriately
-* New focused tests cover rollup/reporting behavior
-* Only the minimum schema and persistence changes needed for rollups/reporting are introduced
-
-#### code_target[]
-
-* `apps/api`
-
-#### proof[]
-
-* link traffic summary works
-* top-links reporting works
-* rollup data is maintained correctly for covered scenarios
-* invalid reporting inputs return clear client errors
-* passing automated tests
-
-#### delivery_note[]
-
-Deliberately postponed: Kafka, async analytics workers, dashboards, realtime updates, tenant analytics, bot filtering, anomaly detection, advanced ranking, and broader reporting infrastructure.
+Deliberately postponed: full-text search, fuzzy matching, advanced ranking, separate search infrastructure, ownership/auth, quotas, feeds, caching, and UI/admin work.
