@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.linkplatform.api.link.domain.Link;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -238,6 +240,42 @@ class DefaultLinkApplicationServiceTest {
                             OffsetDateTime.parse("2026-04-01T08:00:00Z"),
                             expiresAtBySlug.get(link.slug().value()),
                             clickTotalsBySlug.getOrDefault(link.slug().value(), 0L)))
+                    .toList();
+        }
+
+        @Override
+        public Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
+                String slug,
+                OffsetDateTime last24HoursSince,
+                LocalDate last7DaysStartDate) {
+            Link link = linksBySlug.get(slug);
+            if (link == null) {
+                return Optional.empty();
+            }
+
+            long clickTotal = clickTotalsBySlug.getOrDefault(slug, 0L);
+            return Optional.of(new LinkTrafficSummaryTotals(
+                    slug,
+                    link.originalUrl().value(),
+                    clickTotal,
+                    clickTotal,
+                    clickTotal));
+        }
+
+        @Override
+        public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate) {
+            return List.of(new DailyClickBucket(startDate, clickTotalsBySlug.getOrDefault(slug, 0L)));
+        }
+
+        @Override
+        public List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now) {
+            return linksBySlug.values().stream()
+                    .map(link -> new TopLinkTraffic(
+                            link.slug().value(),
+                            link.originalUrl().value(),
+                            clickTotalsBySlug.getOrDefault(link.slug().value(), 0L)))
+                    .sorted(Comparator.comparingLong(TopLinkTraffic::clickTotal).reversed()
+                            .thenComparing(TopLinkTraffic::slug))
                     .toList();
         }
 

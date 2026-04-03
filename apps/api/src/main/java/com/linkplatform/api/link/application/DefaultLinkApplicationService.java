@@ -4,10 +4,13 @@ import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -91,6 +94,32 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         return linkStore.findRecent(limit, now(), query, state);
     }
 
+    @Override
+    public LinkTrafficSummary getTrafficSummary(String slug) {
+        LinkSlug linkSlug = new LinkSlug(slug);
+        OffsetDateTime now = now();
+        LocalDate startDate = now.toLocalDate().minusDays(6);
+
+        LinkTrafficSummaryTotals totals = linkStore.findTrafficSummaryTotals(
+                        linkSlug.value(),
+                        now.minusHours(24),
+                        startDate)
+                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+
+        return new LinkTrafficSummary(
+                totals.slug(),
+                totals.originalUrl(),
+                totals.totalClicks(),
+                totals.clicksLast24Hours(),
+                totals.clicksLast7Days(),
+                fillDailyBuckets(startDate, linkStore.findRecentDailyClickBuckets(linkSlug.value(), startDate)));
+    }
+
+    @Override
+    public List<TopLinkTraffic> getTopLinks(LinkTrafficWindow window) {
+        return linkStore.findTopLinks(window, now());
+    }
+
     private void rejectReservedSlug(LinkSlug slug) {
         String normalizedSlug = slug.value().toLowerCase(Locale.ROOT);
 
@@ -127,5 +156,17 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     private OffsetDateTime now() {
         return OffsetDateTime.now(clock);
+    }
+
+    private List<DailyClickBucket> fillDailyBuckets(LocalDate startDate, List<DailyClickBucket> buckets) {
+        Map<LocalDate, Long> clickTotalsByDay = new HashMap<>();
+        for (DailyClickBucket bucket : buckets) {
+            clickTotalsByDay.put(bucket.day(), bucket.clickTotal());
+        }
+
+        return java.util.stream.IntStream.range(0, 7)
+                .mapToObj(startDate::plusDays)
+                .map(day -> new DailyClickBucket(day, clickTotalsByDay.getOrDefault(day, 0L)))
+                .toList();
     }
 }
