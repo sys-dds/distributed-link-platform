@@ -29,6 +29,17 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
+    void recordsCreateActivityEvent() {
+        service.createLink(new CreateLinkCommand("launch-page", "https://example.com/launch", null, "Launch", List.of("product")));
+
+        List<LinkActivityEvent> activity = service.getRecentActivity(10);
+
+        assertEquals(1, activity.size());
+        assertEquals(LinkActivityType.CREATED, activity.getFirst().type());
+        assertEquals("launch-page", activity.getFirst().slug());
+    }
+
+    @Test
     void failsWhenCommandContainsInvalidDomainData() {
         assertThrows(IllegalArgumentException.class,
                 () -> service.createLink(new CreateLinkCommand("no spaces allowed", "https://example.com", null, null, null)));
@@ -170,6 +181,18 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
+    void recordsUpdateActivityEvent() {
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null));
+
+        service.updateLink("docs", "https://app.example.com/docs", null, "Docs Portal", List.of("portal"));
+
+        List<LinkActivityEvent> activity = service.getRecentActivity(10);
+
+        assertEquals(LinkActivityType.UPDATED, activity.getFirst().type());
+        assertEquals("Docs Portal", activity.getFirst().title());
+    }
+
+    @Test
     void suggestsMatchingActiveLinks() {
         service.createLink(new CreateLinkCommand("alpha", "https://docs.example.com/alpha", null, "Alpha Docs", List.of("docs")));
         service.createLink(new CreateLinkCommand("beta", "https://app.example.com/beta", null, "Beta App", List.of("app")));
@@ -178,6 +201,19 @@ class DefaultLinkApplicationServiceTest {
 
         assertEquals(1, suggestions.size());
         assertEquals("alpha", suggestions.getFirst().slug());
+    }
+
+    @Test
+    void recordsDeleteActivityEvent() {
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, "Docs", List.of("portal")));
+
+        service.deleteLink("docs");
+
+        List<LinkActivityEvent> activity = service.getRecentActivity(10);
+
+        assertEquals(LinkActivityType.DELETED, activity.getFirst().type());
+        assertEquals("docs", activity.getFirst().slug());
+        assertEquals("Docs", activity.getFirst().title());
     }
 
     @Test
@@ -202,6 +238,7 @@ class DefaultLinkApplicationServiceTest {
         private final Map<String, OffsetDateTime> expiresAtBySlug = new ConcurrentHashMap<>();
         private final Map<String, Long> clickTotalsBySlug = new ConcurrentHashMap<>();
         private final Map<String, Boolean> deletedSlugs = new ConcurrentHashMap<>();
+        private final List<LinkActivityEvent> activityEvents = new java.util.concurrent.CopyOnWriteArrayList<>();
         private int saveAttempts;
 
         @Override
@@ -259,6 +296,11 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public void recordActivity(LinkActivityEvent linkActivityEvent) {
+            activityEvents.add(0, linkActivityEvent);
+        }
+
+        @Override
         public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
             if (isExpired(slug, now)) {
                 return Optional.empty();
@@ -271,6 +313,24 @@ class DefaultLinkApplicationServiceTest {
             if (isExpired(slug, now)) {
                 return Optional.empty();
             }
+            Link link = linksBySlug.get(slug);
+            if (link == null) {
+                return Optional.empty();
+            }
+
+            return Optional.of(new LinkDetails(
+                    link.slug().value(),
+                    link.originalUrl().value(),
+                    OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                    expiresAtBySlug.get(slug),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).title(),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).tags(),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).hostname(),
+                    clickTotalsBySlug.getOrDefault(slug, 0L)));
+        }
+
+        @Override
+        public Optional<LinkDetails> findStoredDetailsBySlug(String slug) {
             Link link = linksBySlug.get(slug);
             if (link == null) {
                 return Optional.empty();
@@ -320,6 +380,11 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public List<LinkActivityEvent> findRecentActivity(int limit) {
+            return activityEvents.stream().limit(limit).toList();
+        }
+
+        @Override
         public Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
                 String slug,
                 OffsetDateTime last24HoursSince,
@@ -352,6 +417,22 @@ class DefaultLinkApplicationServiceTest {
                             clickTotalsBySlug.getOrDefault(link.slug().value(), 0L)))
                     .sorted(Comparator.comparingLong(TopLinkTraffic::clickTotal).reversed()
                             .thenComparing(TopLinkTraffic::slug))
+                    .toList();
+        }
+
+        @Override
+        public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit) {
+            return linksBySlug.values().stream()
+                    .map(link -> new TrendingLink(
+                            link.slug().value(),
+                            link.originalUrl().value(),
+                            clickTotalsBySlug.getOrDefault(link.slug().value(), 0L),
+                            clickTotalsBySlug.getOrDefault(link.slug().value(), 0L),
+                            0L))
+                    .sorted(Comparator.comparingLong(TrendingLink::clickGrowth).reversed()
+                            .thenComparingLong(TrendingLink::currentWindowClicks).reversed()
+                            .thenComparing(TrendingLink::slug))
+                    .limit(limit)
                     .toList();
         }
 

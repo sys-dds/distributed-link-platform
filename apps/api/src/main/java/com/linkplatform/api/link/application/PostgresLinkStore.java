@@ -93,6 +93,24 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public void recordActivity(LinkActivityEvent linkActivityEvent) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_activity_events (
+                    event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                linkActivityEvent.type().name(),
+                linkActivityEvent.slug(),
+                linkActivityEvent.originalUrl(),
+                linkActivityEvent.title(),
+                serializeTags(linkActivityEvent.tags()),
+                linkActivityEvent.hostname(),
+                linkActivityEvent.expiresAt(),
+                linkActivityEvent.occurredAt());
+    }
+
+    @Override
     public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
                         """
@@ -135,6 +153,35 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getLong("click_total")),
                         slug,
                         now)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<LinkDetails> findStoredDetailsBySlug(String slug) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT l.slug,
+                               l.original_url,
+                               l.created_at,
+                               l.expires_at,
+                               l.title,
+                               l.tags_json,
+                               l.hostname,
+                               COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
+                        FROM links l
+                        WHERE l.slug = ?
+                        """,
+                        (resultSet, rowNum) -> toLinkDetails(
+                                resultSet.getString("slug"),
+                                resultSet.getString("original_url"),
+                                resultSet.getObject("created_at", OffsetDateTime.class),
+                                resultSet.getObject("expires_at", OffsetDateTime.class),
+                                resultSet.getString("title"),
+                                resultSet.getString("tags_json"),
+                                resultSet.getString("hostname"),
+                                resultSet.getLong("click_total")),
+                        slug)
                 .stream()
                 .findFirst();
     }
@@ -212,6 +259,27 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public List<LinkActivityEvent> findRecentActivity(int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                FROM link_activity_events
+                ORDER BY occurred_at DESC, id DESC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> new LinkActivityEvent(
+                        LinkActivityType.valueOf(resultSet.getString("event_type")),
+                        resultSet.getString("slug"),
+                        resultSet.getString("original_url"),
+                        resultSet.getString("title"),
+                        deserializeTags(resultSet.getString("tags_json")),
+                        resultSet.getString("hostname"),
+                        resultSet.getObject("expires_at", OffsetDateTime.class),
+                        resultSet.getObject("occurred_at", OffsetDateTime.class)),
+                limit);
+    }
+
+    @Override
     public Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
             String slug,
             OffsetDateTime last24HoursSince,
@@ -269,6 +337,14 @@ public class PostgresLinkStore implements LinkStore {
         return switch (window) {
             case LAST_24_HOURS -> findTopLinksLast24Hours(now.minusHours(24));
             case LAST_7_DAYS -> findTopLinksLast7Days(now.toLocalDate().minusDays(6));
+        };
+    }
+
+    @Override
+    public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit) {
+        return switch (window) {
+            case LAST_24_HOURS -> findTrendingLinksLast24Hours(now, limit);
+            case LAST_7_DAYS -> findTrendingLinksLast7Days(now.toLocalDate(), limit);
         };
     }
 
@@ -372,6 +448,47 @@ public class PostgresLinkStore implements LinkStore {
                 since);
     }
 
+    private List<TrendingLink> findTrendingLinksLast24Hours(OffsetDateTime now, int limit) {
+        OffsetDateTime currentStart = now.minusHours(24);
+        OffsetDateTime previousStart = now.minusHours(48);
+
+        return jdbcTemplate.query(
+                """
+                SELECT l.slug,
+                       l.original_url,
+                       COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) AS click_growth,
+                       COALESCE(current_window.click_total, 0) AS current_window_clicks,
+                       COALESCE(previous_window.click_total, 0) AS previous_window_clicks
+                FROM links l
+                LEFT JOIN (
+                    SELECT slug, COUNT(*) AS click_total
+                    FROM link_clicks
+                    WHERE clicked_at >= ? AND clicked_at < ?
+                    GROUP BY slug
+                ) current_window ON current_window.slug = l.slug
+                LEFT JOIN (
+                    SELECT slug, COUNT(*) AS click_total
+                    FROM link_clicks
+                    WHERE clicked_at >= ? AND clicked_at < ?
+                    GROUP BY slug
+                ) previous_window ON previous_window.slug = l.slug
+                WHERE COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) > 0
+                ORDER BY click_growth DESC, current_window_clicks DESC, l.slug ASC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> new TrendingLink(
+                        resultSet.getString("slug"),
+                        resultSet.getString("original_url"),
+                        resultSet.getLong("click_growth"),
+                        resultSet.getLong("current_window_clicks"),
+                        resultSet.getLong("previous_window_clicks")),
+                currentStart,
+                now,
+                previousStart,
+                currentStart,
+                limit);
+    }
+
     private List<TopLinkTraffic> findTopLinksLast7Days(LocalDate startDate) {
         return jdbcTemplate.query(
                 """
@@ -387,6 +504,46 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("original_url"),
                         resultSet.getLong("click_total")),
                 startDate);
+    }
+
+    private List<TrendingLink> findTrendingLinksLast7Days(LocalDate today, int limit) {
+        LocalDate currentStart = today.minusDays(6);
+        LocalDate previousStart = currentStart.minusDays(7);
+
+        return jdbcTemplate.query(
+                """
+                SELECT l.slug,
+                       l.original_url,
+                       COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) AS click_growth,
+                       COALESCE(current_window.click_total, 0) AS current_window_clicks,
+                       COALESCE(previous_window.click_total, 0) AS previous_window_clicks
+                FROM links l
+                LEFT JOIN (
+                    SELECT slug, SUM(click_count) AS click_total
+                    FROM link_click_daily_rollups
+                    WHERE rollup_date >= ?
+                    GROUP BY slug
+                ) current_window ON current_window.slug = l.slug
+                LEFT JOIN (
+                    SELECT slug, SUM(click_count) AS click_total
+                    FROM link_click_daily_rollups
+                    WHERE rollup_date >= ? AND rollup_date < ?
+                    GROUP BY slug
+                ) previous_window ON previous_window.slug = l.slug
+                WHERE COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) > 0
+                ORDER BY click_growth DESC, current_window_clicks DESC, l.slug ASC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> new TrendingLink(
+                        resultSet.getString("slug"),
+                        resultSet.getString("original_url"),
+                        resultSet.getLong("click_growth"),
+                        resultSet.getLong("current_window_clicks"),
+                        resultSet.getLong("previous_window_clicks")),
+                currentStart,
+                previousStart,
+                currentStart,
+                limit);
     }
 
     private Link toLink(String slug, String originalUrl) {

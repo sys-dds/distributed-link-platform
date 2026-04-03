@@ -26,7 +26,11 @@ public interface LinkApplicationService {
 
     List<LinkSuggestion> suggestLinks(String query, int limit);
 
+    List<LinkActivityEvent> getRecentActivity(int limit);
+
     LinkTrafficSummary getTrafficSummary(String slug);
 
     List<TopLinkTraffic> getTopLinks(LinkTrafficWindow window);
+
+    List<TrendingLink> getTrendingLinks(LinkTrafficWindow window, int limit);
 }
