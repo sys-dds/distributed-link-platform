@@ -499,6 +499,11 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public long countUnpublished() {
+            return events.size();
+        }
+
+        @Override
         public void markPublished(long id, OffsetDateTime publishedAt) {
         }
 

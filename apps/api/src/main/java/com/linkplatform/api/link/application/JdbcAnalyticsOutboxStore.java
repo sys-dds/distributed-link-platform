@@ -2,6 +2,8 @@ package com.linkplatform.api.link.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,9 +17,12 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
-    public JdbcAnalyticsOutboxStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public JdbcAnalyticsOutboxStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, MeterRegistry meterRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        Gauge.builder("link.analytics.outbox.unpublished", this, JdbcAnalyticsOutboxStore::countUnpublished)
+                .description("Number of unpublished analytics outbox records")
+                .register(meterRegistry);
     }
 
     @Override
@@ -52,6 +57,14 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                         resultSet.getObject("created_at", OffsetDateTime.class),
                         resultSet.getObject("published_at", OffsetDateTime.class)),
                 limit);
+    }
+
+    @Override
+    public long countUnpublished() {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM analytics_outbox WHERE published_at IS NULL",
+                Long.class);
+        return count == null ? 0L : count;
     }
 
     @Override

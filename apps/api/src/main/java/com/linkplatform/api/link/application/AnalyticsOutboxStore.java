@@ -7,6 +7,8 @@ public interface AnalyticsOutboxStore {
 
     void saveRedirectClickEvent(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent);
 
+    long countUnpublished();
+
     List<AnalyticsOutboxRecord> findUnpublished(int limit);
 
     void markPublished(long id, OffsetDateTime publishedAt);
