@@ -49,6 +49,20 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public void recordClick(LinkClick linkClick) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_clicks (slug, clicked_at, user_agent, referrer, remote_address)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                linkClick.slug(),
+                linkClick.clickedAt(),
+                linkClick.userAgent(),
+                linkClick.referrer(),
+                linkClick.remoteAddress());
+    }
+
+    @Override
     public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
                         """
@@ -68,16 +82,21 @@ public class PostgresLinkStore implements LinkStore {
     public Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
                         """
-                        SELECT slug, original_url, created_at, expires_at
-                        FROM links
-                        WHERE slug = ?
+                        SELECT l.slug,
+                               l.original_url,
+                               l.created_at,
+                               l.expires_at,
+                               (SELECT COUNT(*) FROM link_clicks c WHERE c.slug = l.slug) AS click_total
+                        FROM links l
+                        WHERE l.slug = ?
                           AND (expires_at IS NULL OR expires_at > ?)
                         """,
                         (resultSet, rowNum) -> toLinkDetails(
                                 resultSet.getString("slug"),
                                 resultSet.getString("original_url"),
                                 resultSet.getObject("created_at", OffsetDateTime.class),
-                                resultSet.getObject("expires_at", OffsetDateTime.class)),
+                                resultSet.getObject("expires_at", OffsetDateTime.class),
+                                resultSet.getLong("click_total")),
                         slug,
                         now)
                 .stream()
@@ -87,8 +106,12 @@ public class PostgresLinkStore implements LinkStore {
     @Override
     public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state) {
         StringBuilder sql = new StringBuilder("""
-                SELECT slug, original_url, created_at, expires_at
-                FROM links
+                SELECT l.slug,
+                       l.original_url,
+                       l.created_at,
+                       l.expires_at,
+                       (SELECT COUNT(*) FROM link_clicks c WHERE c.slug = l.slug) AS click_total
+                FROM links l
                 WHERE 1 = 1
                 """);
         List<Object> parameters = new ArrayList<>();
@@ -109,7 +132,8 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
                         resultSet.getObject("created_at", OffsetDateTime.class),
-                        resultSet.getObject("expires_at", OffsetDateTime.class)),
+                        resultSet.getObject("expires_at", OffsetDateTime.class),
+                        resultSet.getLong("click_total")),
                 parameters.toArray());
     }
 
@@ -148,8 +172,8 @@ public class PostgresLinkStore implements LinkStore {
         sql.append("""
                 
                   AND (
-                    LOWER(slug) LIKE ?
-                    OR LOWER(original_url) LIKE ?
+                    LOWER(l.slug) LIKE ?
+                    OR LOWER(l.original_url) LIKE ?
                   )
                 """);
         String pattern = "%" + query.toLowerCase(Locale.ROOT).trim() + "%";
@@ -165,7 +189,8 @@ public class PostgresLinkStore implements LinkStore {
             String slug,
             String originalUrl,
             OffsetDateTime createdAt,
-            OffsetDateTime expiresAt) {
-        return new LinkDetails(slug, originalUrl, createdAt, expiresAt);
+            OffsetDateTime expiresAt,
+            long clickTotal) {
+        return new LinkDetails(slug, originalUrl, createdAt, expiresAt, clickTotal);
     }
 }

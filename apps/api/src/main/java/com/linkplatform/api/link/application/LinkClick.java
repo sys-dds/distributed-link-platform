@@ -1,0 +1,11 @@
+package com.linkplatform.api.link.application;
+
+import java.time.OffsetDateTime;
+
+public record LinkClick(
+        String slug,
+        OffsetDateTime clickedAt,
+        String userAgent,
+        String referrer,
+        String remoteAddress) {
+}
