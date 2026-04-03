@@ -42,22 +42,22 @@ public class LinkController {
 
     @PutMapping("/{slug}")
     public LinkResponse updateLink(@PathVariable String slug, @RequestBody UpdateLinkRequest request) {
-        return toResponse(linkApplicationService.updateLink(slug, request.originalUrl(), request.expiresAt()));
+        return toUpdateResponse(linkApplicationService.updateLink(slug, request.originalUrl(), request.expiresAt()));
     }
 
     @GetMapping("/{slug}")
-    public LinkResponse getLink(@PathVariable String slug) {
-        return toResponse(linkApplicationService.getLink(slug));
+    public LinkReadResponse getLink(@PathVariable String slug) {
+        return toReadResponse(linkApplicationService.getLink(slug));
     }
 
     @GetMapping
-    public List<LinkResponse> listLinks(
+    public List<LinkReadResponse> listLinks(
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "active") String state) {
         validateLimit(limit);
         return linkApplicationService.listRecentLinks(limit, q, parseState(state)).stream()
-                .map(this::toResponse)
+                .map(this::toReadResponse)
                 .toList();
     }
 
@@ -81,11 +81,20 @@ public class LinkController {
         }
     }
 
-    private LinkResponse toResponse(LinkDetails linkDetails) {
+    private LinkResponse toUpdateResponse(LinkDetails linkDetails) {
         return new LinkResponse(
                 linkDetails.slug(),
                 linkDetails.originalUrl(),
                 linkDetails.createdAt(),
                 linkDetails.expiresAt());
+    }
+
+    private LinkReadResponse toReadResponse(LinkDetails linkDetails) {
+        return new LinkReadResponse(
+                linkDetails.slug(),
+                linkDetails.originalUrl(),
+                linkDetails.createdAt(),
+                linkDetails.expiresAt(),
+                linkDetails.clickTotal());
     }
 }

@@ -13,6 +13,8 @@ public interface LinkStore {
 
     boolean deleteBySlug(String slug);
 
+    void recordClick(LinkClick linkClick);
+
     Optional<Link> findBySlug(String slug, OffsetDateTime now);
 
     Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);

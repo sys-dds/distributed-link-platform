@@ -13,6 +13,8 @@ public interface LinkApplicationService {
 
     Link resolveLink(String slug);
 
+    void recordRedirectClick(String slug, String userAgent, String referrer, String remoteAddress);
+
     LinkDetails getLink(String slug);
 
     List<LinkDetails> listRecentLinks(int limit, String query, LinkLifecycleState state);

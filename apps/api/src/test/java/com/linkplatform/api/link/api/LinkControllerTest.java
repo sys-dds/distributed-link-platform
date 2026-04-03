@@ -73,7 +73,8 @@ class LinkControllerTest {
         mockMvc.perform(get("/api/v1/links/future-link"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value("future-link"))
-                .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"));
+                .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"))
+                .andExpect(jsonPath("$.clickTotal").value(0));
     }
 
     @Test
@@ -184,7 +185,8 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.slug").value("read-me"))
                 .andExpect(jsonPath("$.originalUrl").value("https://example.com/read-me"))
                 .andExpect(jsonPath("$.createdAt").exists())
-                .andExpect(jsonPath("$.expiresAt").doesNotExist());
+                .andExpect(jsonPath("$.expiresAt").doesNotExist())
+                .andExpect(jsonPath("$.clickTotal").value(0));
     }
 
     @Test
@@ -206,7 +208,8 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$[1].slug").value("alpha"))
                 .andExpect(jsonPath("$[2].slug").value("beta"))
                 .andExpect(jsonPath("$[0].createdAt").exists())
-                .andExpect(jsonPath("$[0].expiresAt").doesNotExist());
+                .andExpect(jsonPath("$[0].expiresAt").doesNotExist())
+                .andExpect(jsonPath("$[0].clickTotal").value(0));
     }
 
     @Test
@@ -221,7 +224,8 @@ class LinkControllerTest {
         mockMvc.perform(get("/api/v1/links"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("active-link"));
+                .andExpect(jsonPath("$[0].slug").value("active-link"))
+                .andExpect(jsonPath("$[0].clickTotal").value(0));
     }
 
     @Test
@@ -252,7 +256,8 @@ class LinkControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].slug").value("active-link"))
-                .andExpect(jsonPath("$[0].expiresAt").value("2030-04-01T08:00:00Z"));
+                .andExpect(jsonPath("$[0].expiresAt").value("2030-04-01T08:00:00Z"))
+                .andExpect(jsonPath("$[0].clickTotal").value(0));
     }
 
     @Test
@@ -267,7 +272,8 @@ class LinkControllerTest {
         mockMvc.perform(get("/api/v1/links").param("state", "expired"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("expired-link"));
+                .andExpect(jsonPath("$[0].slug").value("expired-link"))
+                .andExpect(jsonPath("$[0].clickTotal").value(0));
     }
 
     @Test
@@ -283,7 +289,9 @@ class LinkControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].slug").value("active-link"))
-                .andExpect(jsonPath("$[1].slug").value("expired-link"));
+                .andExpect(jsonPath("$[1].slug").value("expired-link"))
+                .andExpect(jsonPath("$[0].clickTotal").value(0))
+                .andExpect(jsonPath("$[1].clickTotal").value(0));
     }
 
     @Test
@@ -294,7 +302,8 @@ class LinkControllerTest {
         mockMvc.perform(get("/api/v1/links").param("q", "launch"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("launch-page"));
+                .andExpect(jsonPath("$[0].slug").value("launch-page"))
+                .andExpect(jsonPath("$[0].clickTotal").value(0));
     }
 
     @Test
@@ -305,7 +314,8 @@ class LinkControllerTest {
         mockMvc.perform(get("/api/v1/links").param("q", "launch-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("alpha"));
+                .andExpect(jsonPath("$[0].slug").value("alpha"))
+                .andExpect(jsonPath("$[0].clickTotal").value(0));
     }
 
     @Test
@@ -322,7 +332,35 @@ class LinkControllerTest {
                         .param("state", "expired"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("launch-expired"));
+                .andExpect(jsonPath("$[0].slug").value("launch-expired"))
+                .andExpect(jsonPath("$[0].clickTotal").value(0));
+    }
+
+    @Test
+    void getLinkIncludesClickTotal() throws Exception {
+        insertLink("clicked", "https://example.com/clicked", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+        insertClick("clicked", OffsetDateTime.parse("2026-04-01T10:00:00Z"));
+        insertClick("clicked", OffsetDateTime.parse("2026-04-01T11:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/links/clicked"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slug").value("clicked"))
+                .andExpect(jsonPath("$.clickTotal").value(2));
+    }
+
+    @Test
+    void listLinksIncludesClickTotals() throws Exception {
+        insertLink("clicked", "https://example.com/clicked", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+        insertLink("unclicked", "https://example.com/unclicked", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+        insertClick("clicked", OffsetDateTime.parse("2026-04-01T10:00:00Z"));
+        insertClick("clicked", OffsetDateTime.parse("2026-04-01T11:00:00Z"));
+
+        mockMvc.perform(get("/api/v1/links"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("clicked"))
+                .andExpect(jsonPath("$[0].clickTotal").value(2))
+                .andExpect(jsonPath("$[1].slug").value("unclicked"))
+                .andExpect(jsonPath("$[1].clickTotal").value(0));
     }
 
     @Test
@@ -495,6 +533,19 @@ class LinkControllerTest {
                 originalUrl,
                 createdAt,
                 expiresAt);
+    }
+
+    private void insertClick(String slug, OffsetDateTime clickedAt) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_clicks (slug, clicked_at, user_agent, referrer, remote_address)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                slug,
+                clickedAt,
+                "test-agent",
+                "https://referrer.example",
+                "127.0.0.1");
     }
 
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(

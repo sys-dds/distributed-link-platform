@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,6 +27,9 @@ class LinkRedirectControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void redirectReturnsTemporaryRedirectForKnownSlug() throws Exception {
         mockMvc.perform(post("/api/v1/links")
@@ -38,16 +42,22 @@ class LinkRedirectControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(get("/launch-page"))
+        mockMvc.perform(get("/launch-page")
+                        .header("User-Agent", "test-agent")
+                        .header("Referer", "https://referrer.example"))
                 .andExpect(status().isTemporaryRedirect())
                 .andExpect(header().string("Location", "https://example.com/launch"))
                 .andExpect(content().string(""));
+
+        assertClickCount("launch-page", 1);
     }
 
     @Test
     void redirectReturnsNotFoundForMissingSlug() throws Exception {
         mockMvc.perform(get("/missing-link"))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
+
+        assertTotalClickRows(0);
     }
 
     @Test
@@ -84,6 +94,21 @@ class LinkRedirectControllerTest {
 
         mockMvc.perform(get("/expired-link"))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: expired-link"));
+
+        assertClickCount("expired-link", 0);
+    }
+
+    private void assertClickCount(String slug, int expectedCount) {
+        Integer actualCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM link_clicks WHERE slug = ?",
+                Integer.class,
+                slug);
+        org.junit.jupiter.api.Assertions.assertEquals(expectedCount, actualCount);
+    }
+
+    private void assertTotalClickRows(int expectedCount) {
+        Integer actualCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM link_clicks", Integer.class);
+        org.junit.jupiter.api.Assertions.assertEquals(expectedCount, actualCount);
     }
 
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(

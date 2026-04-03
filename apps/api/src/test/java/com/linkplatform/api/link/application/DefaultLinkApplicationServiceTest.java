@@ -104,6 +104,15 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
+    void recordsRedirectClick() {
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null));
+
+        service.recordRedirectClick("docs", "test-agent", "https://referrer.example", "127.0.0.1");
+
+        assertEquals(1, service.getLink("docs").clickTotal());
+    }
+
+    @Test
     void allowsPastExpirationAndTreatsLinkAsExpiredImmediately() {
         service.createLink(new CreateLinkCommand(
                 "expired-now",
@@ -144,6 +153,7 @@ class DefaultLinkApplicationServiceTest {
 
         private final Map<String, Link> linksBySlug = new ConcurrentHashMap<>();
         private final Map<String, OffsetDateTime> expiresAtBySlug = new ConcurrentHashMap<>();
+        private final Map<String, Long> clickTotalsBySlug = new ConcurrentHashMap<>();
         private final Map<String, Boolean> deletedSlugs = new ConcurrentHashMap<>();
         private int saveAttempts;
 
@@ -178,10 +188,16 @@ class DefaultLinkApplicationServiceTest {
             Link removed = linksBySlug.remove(slug);
             if (removed != null) {
                 expiresAtBySlug.remove(slug);
+                clickTotalsBySlug.remove(slug);
                 deletedSlugs.put(slug, true);
                 return true;
             }
             return false;
+        }
+
+        @Override
+        public void recordClick(LinkClick linkClick) {
+            clickTotalsBySlug.merge(linkClick.slug(), 1L, Long::sum);
         }
 
         @Override
@@ -206,7 +222,8 @@ class DefaultLinkApplicationServiceTest {
                     link.slug().value(),
                     link.originalUrl().value(),
                     OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                    expiresAtBySlug.get(slug)));
+                    expiresAtBySlug.get(slug),
+                    clickTotalsBySlug.getOrDefault(slug, 0L)));
         }
 
         @Override
@@ -219,7 +236,8 @@ class DefaultLinkApplicationServiceTest {
                             link.slug().value(),
                             link.originalUrl().value(),
                             OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                            expiresAtBySlug.get(link.slug().value())))
+                            expiresAtBySlug.get(link.slug().value()),
+                            clickTotalsBySlug.getOrDefault(link.slug().value(), 0L)))
                     .toList();
         }
 

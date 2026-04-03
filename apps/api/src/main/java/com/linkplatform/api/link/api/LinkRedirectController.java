@@ -2,6 +2,7 @@ package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.LinkApplicationService;
 import com.linkplatform.api.link.domain.Link;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,8 +20,13 @@ public class LinkRedirectController {
     }
 
     @GetMapping("/{slug}")
-    public ResponseEntity<Void> redirect(@PathVariable String slug) {
+    public ResponseEntity<Void> redirect(@PathVariable String slug, HttpServletRequest request) {
         Link link = linkApplicationService.resolveLink(slug);
+        linkApplicationService.recordRedirectClick(
+                slug,
+                request.getHeader(HttpHeaders.USER_AGENT),
+                request.getHeader(HttpHeaders.REFERER),
+                request.getRemoteAddr());
 
         return ResponseEntity.status(HttpStatus.TEMPORARY_REDIRECT)
                 .header(HttpHeaders.LOCATION, link.originalUrl().value())

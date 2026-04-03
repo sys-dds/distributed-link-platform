@@ -74,6 +74,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    public void recordRedirectClick(String slug, String userAgent, String referrer, String remoteAddress) {
+        linkStore.recordClick(new LinkClick(slug, now(), userAgent, referrer, remoteAddress));
+    }
+
+    @Override
     public LinkDetails getLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
 

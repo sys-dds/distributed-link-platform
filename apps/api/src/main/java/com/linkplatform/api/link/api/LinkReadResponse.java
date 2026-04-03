@@ -1,8 +1,8 @@
-package com.linkplatform.api.link.application;
+package com.linkplatform.api.link.api;
 
 import java.time.OffsetDateTime;
 
-public record LinkDetails(
+public record LinkReadResponse(
         String slug,
         String originalUrl,
         OffsetDateTime createdAt,
