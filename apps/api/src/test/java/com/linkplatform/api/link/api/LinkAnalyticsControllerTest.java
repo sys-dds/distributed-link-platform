@@ -66,6 +66,46 @@ class LinkAnalyticsControllerTest {
     }
 
     @Test
+    void recentActivityIncludesCreateUpdateAndDeleteEvents() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now();
+        insertActivity("CREATED", "alpha", "https://example.com/alpha", "Alpha", "[\"docs\"]", "example.com", null, now.minusMinutes(3));
+        insertActivity("UPDATED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, now.minusMinutes(2));
+        insertActivity("DELETED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, now.minusMinutes(1));
+
+        mockMvc.perform(get("/api/v1/links/activity"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].type").value("deleted"))
+                .andExpect(jsonPath("$[0].slug").value("alpha"))
+                .andExpect(jsonPath("$[1].type").value("updated"))
+                .andExpect(jsonPath("$[2].type").value("created"));
+    }
+
+    @Test
+    void deleteEventRemainsVisibleAfterLinkDeletion() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now();
+        insertActivity("DELETED", "gone-link", "https://example.com/gone", "Gone", "[\"archived\"]", "example.com", null, now);
+
+        mockMvc.perform(get("/api/v1/links/activity"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("deleted"))
+                .andExpect(jsonPath("$[0].slug").value("gone-link"))
+                .andExpect(jsonPath("$[0].originalUrl").value("https://example.com/gone"));
+    }
+
+    @Test
+    void recentActivityUsesDeterministicOrderingForTies() throws Exception {
+        OffsetDateTime sameTime = OffsetDateTime.now();
+        insertActivity("CREATED", "alpha", "https://example.com/alpha", null, null, "example.com", null, sameTime);
+        insertActivity("CREATED", "beta", "https://example.com/beta", null, null, "example.com", null, sameTime);
+
+        mockMvc.perform(get("/api/v1/links/activity"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("beta"))
+                .andExpect(jsonPath("$[1].slug").value("alpha"));
+    }
+
+    @Test
     void topLinksRanksLinksForLast24Hours() throws Exception {
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -112,12 +152,90 @@ class LinkAnalyticsControllerTest {
                 .andExpect(problemDetail(400, "Bad Request", "Window must be one of: 24h, 7d"));
     }
 
+    @Test
+    void trendingLinksRanksByRecentGrowth() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now();
+
+        insertLink("alpha", "https://example.com/alpha", now.minusDays(10));
+        insertLink("beta", "https://example.com/beta", now.minusDays(10));
+
+        insertClick("alpha", now.minusHours(1));
+        insertClick("alpha", now.minusHours(2));
+        insertClick("alpha", now.minusHours(3));
+        insertClick("alpha", now.minusHours(30));
+
+        insertClick("beta", now.minusHours(1));
+        insertClick("beta", now.minusHours(26));
+        insertClick("beta", now.minusHours(27));
+
+        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "24h"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].slug").value("alpha"))
+                .andExpect(jsonPath("$[0].clickGrowth").value(2))
+                .andExpect(jsonPath("$[0].currentWindowClicks").value(3))
+                .andExpect(jsonPath("$[0].previousWindowClicks").value(1))
+                .andExpect(jsonPath("$[1].slug").value("beta"))
+                .andExpect(jsonPath("$[1].clickGrowth").value(1));
+    }
+
+    @Test
+    void trendingLinksUsesDeterministicTieBreaking() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now();
+
+        insertLink("alpha", "https://example.com/alpha", now.minusDays(10));
+        insertLink("beta", "https://example.com/beta", now.minusDays(10));
+
+        insertClick("beta", now.minusDays(1));
+        insertClick("alpha", now.minusDays(1));
+
+        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "7d"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].slug").value("alpha"))
+                .andExpect(jsonPath("$[1].slug").value("beta"))
+                .andExpect(jsonPath("$[0].clickGrowth").value(1))
+                .andExpect(jsonPath("$[1].clickGrowth").value(1));
+    }
+
+    @Test
+    void trendingLinksRejectInvalidWindow() throws Exception {
+        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "30d"))
+                .andExpect(problemDetail(400, "Bad Request", "Window must be one of: 24h, 7d"));
+    }
+
     private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt) {
         jdbcTemplate.update(
-                "INSERT INTO links (slug, original_url, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO links (slug, original_url, created_at, hostname) VALUES (?, ?, ?, ?)",
                 slug,
                 originalUrl,
-                createdAt);
+                createdAt,
+                java.net.URI.create(originalUrl).getHost().toLowerCase());
+    }
+
+    private void insertActivity(
+            String eventType,
+            String slug,
+            String originalUrl,
+            String title,
+            String tagsJson,
+            String hostname,
+            OffsetDateTime expiresAt,
+            OffsetDateTime occurredAt) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_activity_events
+                    (event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                eventType,
+                slug,
+                originalUrl,
+                title,
+                tagsJson,
+                hostname,
+                expiresAt,
+                occurredAt);
     }
 
     private void insertClick(String slug, OffsetDateTime clickedAt) {

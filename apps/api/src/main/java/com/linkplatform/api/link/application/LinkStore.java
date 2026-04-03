@@ -15,13 +15,19 @@ public interface LinkStore {
 
     void recordClick(LinkClick linkClick);
 
+    void recordActivity(LinkActivityEvent linkActivityEvent);
+
     Optional<Link> findBySlug(String slug, OffsetDateTime now);
 
     Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);
 
+    Optional<LinkDetails> findStoredDetailsBySlug(String slug);
+
     List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state);
 
     List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query);
+
+    List<LinkActivityEvent> findRecentActivity(int limit);
 
     Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
             String slug,
@@ -31,4 +37,6 @@ public interface LinkStore {
     List<DailyClickBucket> findRecentDailyClickBuckets(String slug, java.time.LocalDate startDate);
 
     List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now);
+
+    List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit);
 }

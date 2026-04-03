@@ -34,6 +34,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     @Override
     public Link createLink(CreateLinkCommand command) {
+        OffsetDateTime now = now();
         Link link = new Link(new LinkSlug(command.slug()), new OriginalUrl(command.originalUrl()));
         rejectReservedSlug(link.slug());
         rejectSelfTargetUrl(link.originalUrl());
@@ -44,6 +45,15 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname)) {
             throw new DuplicateLinkSlugException(link.slug().value());
         }
+        linkStore.recordActivity(new LinkActivityEvent(
+                LinkActivityType.CREATED,
+                link.slug().value(),
+                link.originalUrl().value(),
+                normalizedTitle,
+                normalizedTags,
+                hostname,
+                command.expiresAt(),
+                now));
 
         return link;
     }
@@ -55,6 +65,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             OffsetDateTime expiresAt,
             String title,
             List<String> tags) {
+        OffsetDateTime now = now();
         LinkSlug linkSlug = new LinkSlug(slug);
         OriginalUrl validatedOriginalUrl = new OriginalUrl(originalUrl);
         rejectSelfTargetUrl(validatedOriginalUrl);
@@ -72,17 +83,25 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             throw new LinkNotFoundException(linkSlug.value());
         }
 
-        return linkStore.findDetailsBySlug(linkSlug.value(), now())
+        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value())
+                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+        linkStore.recordActivity(toActivityEvent(LinkActivityType.UPDATED, storedDetails, now));
+
+        return linkStore.findDetailsBySlug(linkSlug.value(), now)
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
     }
 
     @Override
     public void deleteLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
+        OffsetDateTime now = now();
+        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value())
+                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
 
         if (!linkStore.deleteBySlug(linkSlug.value())) {
             throw new LinkNotFoundException(linkSlug.value());
         }
+        linkStore.recordActivity(toActivityEvent(LinkActivityType.DELETED, storedDetails, now));
     }
 
     @Override
@@ -120,6 +139,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    public List<LinkActivityEvent> getRecentActivity(int limit) {
+        return linkStore.findRecentActivity(limit);
+    }
+
+    @Override
     public LinkTrafficSummary getTrafficSummary(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
@@ -143,6 +167,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     public List<TopLinkTraffic> getTopLinks(LinkTrafficWindow window) {
         return linkStore.findTopLinks(window, now());
+    }
+
+    @Override
+    public List<TrendingLink> getTrendingLinks(LinkTrafficWindow window, int limit) {
+        return linkStore.findTrendingLinks(window, now(), limit);
     }
 
     private void rejectReservedSlug(LinkSlug slug) {
@@ -208,6 +237,21 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private String extractHostname(String originalUrl) {
         String host = URI.create(originalUrl).getHost();
         return host == null ? null : host.toLowerCase(Locale.ROOT);
+    }
+
+    private LinkActivityEvent toActivityEvent(
+            LinkActivityType type,
+            LinkDetails linkDetails,
+            OffsetDateTime occurredAt) {
+        return new LinkActivityEvent(
+                type,
+                linkDetails.slug(),
+                linkDetails.originalUrl(),
+                linkDetails.title(),
+                linkDetails.tags(),
+                linkDetails.hostname(),
+                linkDetails.expiresAt(),
+                occurredAt);
     }
 
     private List<DailyClickBucket> fillDailyBuckets(LocalDate startDate, List<DailyClickBucket> buckets) {
