@@ -9,4 +9,8 @@ public record RedirectClickAnalyticsEvent(
         String userAgent,
         String referrer,
         String remoteAddress) {
+
+    public String eventKey() {
+        return slug;
+    }
 }
