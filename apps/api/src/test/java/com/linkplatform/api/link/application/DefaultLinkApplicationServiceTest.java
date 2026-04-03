@@ -494,13 +494,13 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
-        public List<AnalyticsOutboxRecord> findUnpublished(int limit) {
-            return List.of();
+        public long countUnpublished() {
+            return events.size();
         }
 
         @Override
-        public long countUnpublished() {
-            return events.size();
+        public List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) {
+            return List.of();
         }
 
         @Override

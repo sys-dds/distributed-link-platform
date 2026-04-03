@@ -9,5 +9,7 @@ public record AnalyticsOutboxRecord(
         String eventKey,
         String payloadJson,
         OffsetDateTime createdAt,
-        OffsetDateTime publishedAt) {
+        OffsetDateTime publishedAt,
+        String claimedBy,
+        OffsetDateTime claimedUntil) {
 }

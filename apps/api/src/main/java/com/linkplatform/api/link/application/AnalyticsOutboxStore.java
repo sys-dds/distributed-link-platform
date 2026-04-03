@@ -9,7 +9,7 @@ public interface AnalyticsOutboxStore {
 
     long countUnpublished();
 
-    List<AnalyticsOutboxRecord> findUnpublished(int limit);
+    List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit);
 
     void markPublished(long id, OffsetDateTime publishedAt);
 }

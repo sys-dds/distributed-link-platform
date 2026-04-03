@@ -3,8 +3,11 @@ package com.linkplatform.api.link.application;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,20 +21,46 @@ public class AnalyticsOutboxRelay {
     private final Clock clock;
     private final String clickTopic;
     private final int batchSize;
+    private final Duration leaseDuration;
+    private final String workerId;
     private final Counter publishSuccessCounter;
     private final Counter publishFailureCounter;
 
+    @Autowired
     public AnalyticsOutboxRelay(
             AnalyticsOutboxStore analyticsOutboxStore,
             KafkaTemplate<String, String> kafkaTemplate,
             MeterRegistry meterRegistry,
             @Value("${link-platform.analytics.click-topic}") String clickTopic,
-            @Value("${link-platform.analytics.outbox-relay-batch-size}") int batchSize) {
+            @Value("${link-platform.analytics.outbox-relay-batch-size}") int batchSize,
+            @Value("${link-platform.analytics.outbox-relay-lease-duration}") Duration leaseDuration) {
+        this(
+                analyticsOutboxStore,
+                kafkaTemplate,
+                meterRegistry,
+                clickTopic,
+                batchSize,
+                leaseDuration,
+                Clock.systemUTC(),
+                UUID.randomUUID().toString());
+    }
+
+    AnalyticsOutboxRelay(
+            AnalyticsOutboxStore analyticsOutboxStore,
+            KafkaTemplate<String, String> kafkaTemplate,
+            MeterRegistry meterRegistry,
+            String clickTopic,
+            int batchSize,
+            Duration leaseDuration,
+            Clock clock,
+            String workerId) {
         this.analyticsOutboxStore = analyticsOutboxStore;
         this.kafkaTemplate = kafkaTemplate;
         this.clickTopic = clickTopic;
         this.batchSize = batchSize;
-        this.clock = Clock.systemUTC();
+        this.leaseDuration = leaseDuration;
+        this.clock = clock;
+        this.workerId = workerId;
         this.publishSuccessCounter = Counter.builder("link.analytics.outbox.publish.success")
                 .description("Number of analytics outbox records published successfully")
                 .register(meterRegistry);
@@ -42,7 +71,9 @@ public class AnalyticsOutboxRelay {
 
     @Scheduled(fixedDelayString = "${link-platform.analytics.outbox-relay-delay}")
     public void relayPendingEvents() {
-        List<AnalyticsOutboxRecord> unpublishedRecords = analyticsOutboxStore.findUnpublished(batchSize);
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        OffsetDateTime claimUntil = now.plus(leaseDuration);
+        List<AnalyticsOutboxRecord> unpublishedRecords = analyticsOutboxStore.claimBatch(workerId, now, claimUntil, batchSize);
 
         for (AnalyticsOutboxRecord unpublishedRecord : unpublishedRecords) {
             try {
