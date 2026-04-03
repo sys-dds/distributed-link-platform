@@ -2,12 +2,14 @@ package com.linkplatform.api.link.application;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import org.mockito.InOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,5 +55,38 @@ class AnalyticsOutboxRelayTest {
 
         verify(kafkaTemplate).send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-1\"}");
         verify(analyticsOutboxStore).markPublished(eq(1L), any(OffsetDateTime.class));
+    }
+
+    @Test
+    void relayUsesStablePerLinkKeyingAndPreservesOutboxOrder() {
+        AnalyticsOutboxRecord firstRecord = new AnalyticsOutboxRecord(
+                1L,
+                "event-1",
+                "redirect-click",
+                "launch-page",
+                "{\"eventId\":\"event-1\"}",
+                OffsetDateTime.parse("2026-04-03T09:00:00Z"),
+                null);
+        AnalyticsOutboxRecord secondRecord = new AnalyticsOutboxRecord(
+                2L,
+                "event-2",
+                "redirect-click",
+                "launch-page",
+                "{\"eventId\":\"event-2\"}",
+                OffsetDateTime.parse("2026-04-03T09:00:01Z"),
+                null);
+        when(analyticsOutboxStore.findUnpublished(50)).thenReturn(List.of(firstRecord, secondRecord));
+        when(kafkaTemplate.send(eq("link-platform.analytics.redirect-clicks"), eq("launch-page"), eq("{\"eventId\":\"event-1\"}")))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(kafkaTemplate.send(eq("link-platform.analytics.redirect-clicks"), eq("launch-page"), eq("{\"eventId\":\"event-2\"}")))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        analyticsOutboxRelay.relayPendingEvents();
+
+        InOrder inOrder = inOrder(kafkaTemplate, analyticsOutboxStore);
+        inOrder.verify(kafkaTemplate).send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-1\"}");
+        inOrder.verify(analyticsOutboxStore).markPublished(eq(1L), any(OffsetDateTime.class));
+        inOrder.verify(kafkaTemplate).send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-2\"}");
+        inOrder.verify(analyticsOutboxStore).markPublished(eq(2L), any(OffsetDateTime.class));
     }
 }

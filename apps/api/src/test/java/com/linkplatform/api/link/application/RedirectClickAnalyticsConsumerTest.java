@@ -71,6 +71,28 @@ class RedirectClickAnalyticsConsumerTest {
                 .andExpect(jsonPath("$.clicksLast7Days").value(1));
     }
 
+    @Test
+    void consumerIsIdempotentForRedeliveredEvents() throws Exception {
+        OffsetDateTime clickedAt = OffsetDateTime.parse("2026-04-03T09:15:00Z");
+        RedirectClickAnalyticsEvent event = new RedirectClickAnalyticsEvent(
+                "event-3",
+                "idempotent-link",
+                clickedAt,
+                "test-agent",
+                "https://referrer.example",
+                "127.0.0.1");
+        insertLink("idempotent-link", "https://example.com/idempotent", clickedAt.minusDays(1));
+
+        String payloadJson = objectMapper.writeValueAsString(event);
+        redirectClickAnalyticsConsumer.consume(payloadJson);
+        redirectClickAnalyticsConsumer.consume(payloadJson);
+
+        assertCount("SELECT COUNT(*) FROM link_clicks WHERE slug = 'idempotent-link'", 1);
+        assertCount(
+                "SELECT click_count FROM link_click_daily_rollups WHERE slug = 'idempotent-link' AND rollup_date = DATE '2026-04-03'",
+                1);
+    }
+
     private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt) {
         jdbcTemplate.update(
                 """
