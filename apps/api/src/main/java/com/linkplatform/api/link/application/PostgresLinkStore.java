@@ -77,19 +77,25 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public void recordClick(LinkClick linkClick) {
-        jdbcTemplate.update(
+    public boolean recordClickIfAbsent(LinkClick linkClick) {
+        try {
+            jdbcTemplate.update(
                 """
-                INSERT INTO link_clicks (slug, clicked_at, user_agent, referrer, remote_address)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO link_clicks (event_id, slug, clicked_at, user_agent, referrer, remote_address)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
+                linkClick.eventId(),
                 linkClick.slug(),
                 linkClick.clickedAt(),
                 linkClick.userAgent(),
                 linkClick.referrer(),
                 linkClick.remoteAddress());
+        } catch (DuplicateKeyException exception) {
+            return false;
+        }
 
         incrementDailyRollup(linkClick.slug(), linkClick.clickedAt().toLocalDate());
+        return true;
     }
 
     @Override

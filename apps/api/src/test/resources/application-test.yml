@@ -7,6 +7,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: localhost:9092
+    listener:
+      auto-startup: false
 
 link-platform:
   public-base-url: http://localhost:8080

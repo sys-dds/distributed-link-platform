@@ -13,7 +13,7 @@ public interface LinkStore {
 
     boolean deleteBySlug(String slug);
 
-    void recordClick(LinkClick linkClick);
+    boolean recordClickIfAbsent(LinkClick linkClick);
 
     void recordActivity(LinkActivityEvent linkActivityEvent);
 
