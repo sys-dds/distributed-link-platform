@@ -9,11 +9,13 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnExpression("'${link-platform.runtime.mode:all}' == 'all' or '${link-platform.runtime.mode:all}' == 'worker'")
 public class AnalyticsOutboxRelay {
 
     private final AnalyticsOutboxStore analyticsOutboxStore;
@@ -33,14 +35,14 @@ public class AnalyticsOutboxRelay {
             MeterRegistry meterRegistry,
             @Value("${link-platform.analytics.click-topic}") String clickTopic,
             @Value("${link-platform.analytics.outbox-relay-batch-size}") int batchSize,
-            @Value("${link-platform.analytics.outbox-relay-lease-duration}") Duration leaseDuration) {
+            @Value("${link-platform.analytics.outbox-relay-lease-duration}") String leaseDuration) {
         this(
                 analyticsOutboxStore,
                 kafkaTemplate,
                 meterRegistry,
                 clickTopic,
                 batchSize,
-                leaseDuration,
+                Duration.parse(leaseDuration),
                 Clock.systemUTC(),
                 UUID.randomUUID().toString());
     }
