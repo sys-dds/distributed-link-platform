@@ -2,7 +2,7 @@ package com.linkplatform.api.link.application;
 
 import java.time.OffsetDateTime;
 
-public record LinkClick(
+public record RedirectClickAnalyticsEvent(
         String eventId,
         String slug,
         OffsetDateTime clickedAt,

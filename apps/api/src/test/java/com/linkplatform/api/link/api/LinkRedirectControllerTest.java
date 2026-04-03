@@ -49,7 +49,8 @@ class LinkRedirectControllerTest {
                 .andExpect(header().string("Location", "https://example.com/launch"))
                 .andExpect(content().string(""));
 
-        assertClickCount("launch-page", 1);
+        assertOutboxCount("launch-page", 1);
+        assertClickCount("launch-page", 0);
     }
 
     @Test
@@ -57,7 +58,7 @@ class LinkRedirectControllerTest {
         mockMvc.perform(get("/missing-link"))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
 
-        assertTotalClickRows(0);
+        assertTotalOutboxRows(0);
     }
 
     @Test
@@ -95,6 +96,7 @@ class LinkRedirectControllerTest {
         mockMvc.perform(get("/expired-link"))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: expired-link"));
 
+        assertOutboxCount("expired-link", 0);
         assertClickCount("expired-link", 0);
     }
 
@@ -106,8 +108,16 @@ class LinkRedirectControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(expectedCount, actualCount);
     }
 
-    private void assertTotalClickRows(int expectedCount) {
-        Integer actualCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM link_clicks", Integer.class);
+    private void assertOutboxCount(String slug, int expectedCount) {
+        Integer actualCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM analytics_outbox WHERE event_key = ?",
+                Integer.class,
+                slug);
+        org.junit.jupiter.api.Assertions.assertEquals(expectedCount, actualCount);
+    }
+
+    private void assertTotalOutboxRows(int expectedCount) {
+        Integer actualCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM analytics_outbox", Integer.class);
         org.junit.jupiter.api.Assertions.assertEquals(expectedCount, actualCount);
     }
 

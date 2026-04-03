@@ -165,8 +165,8 @@ class LinkAnalyticsControllerTest {
         insertClick("alpha", now.minusHours(30));
 
         insertClick("beta", now.minusHours(1));
+        insertClick("beta", now.minusHours(2));
         insertClick("beta", now.minusHours(26));
-        insertClick("beta", now.minusHours(27));
 
         mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "24h"))
                 .andExpect(status().isOk())
@@ -176,7 +176,9 @@ class LinkAnalyticsControllerTest {
                 .andExpect(jsonPath("$[0].currentWindowClicks").value(3))
                 .andExpect(jsonPath("$[0].previousWindowClicks").value(1))
                 .andExpect(jsonPath("$[1].slug").value("beta"))
-                .andExpect(jsonPath("$[1].clickGrowth").value(1));
+                .andExpect(jsonPath("$[1].clickGrowth").value(1))
+                .andExpect(jsonPath("$[1].currentWindowClicks").value(2))
+                .andExpect(jsonPath("$[1].previousWindowClicks").value(1));
     }
 
     @Test

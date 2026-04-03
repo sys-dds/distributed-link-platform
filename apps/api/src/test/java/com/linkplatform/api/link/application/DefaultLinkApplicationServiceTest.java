@@ -17,8 +17,9 @@ import org.junit.jupiter.api.Test;
 class DefaultLinkApplicationServiceTest {
 
     private final TestLinkStore linkStore = new TestLinkStore();
+    private final TestAnalyticsOutboxStore analyticsOutboxStore = new TestAnalyticsOutboxStore();
     private final DefaultLinkApplicationService service =
-            new DefaultLinkApplicationService(linkStore, "http://LOCALHOST:80");
+            new DefaultLinkApplicationService(linkStore, analyticsOutboxStore, "http://LOCALHOST:80");
 
     @Test
     void createsAndStoresValidatedLinkFromCommand() {
@@ -138,7 +139,8 @@ class DefaultLinkApplicationServiceTest {
 
         service.recordRedirectClick("docs", "test-agent", "https://referrer.example", "127.0.0.1");
 
-        assertEquals(1, service.getLink("docs").clickTotal());
+        assertEquals(1, analyticsOutboxStore.events().size());
+        assertEquals("docs", analyticsOutboxStore.events().getFirst().slug());
     }
 
     @Test
@@ -291,8 +293,9 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
-        public void recordClick(LinkClick linkClick) {
+        public boolean recordClickIfAbsent(LinkClick linkClick) {
             clickTotalsBySlug.merge(linkClick.slug(), 1L, Long::sum);
+            return true;
         }
 
         @Override
@@ -478,6 +481,29 @@ class DefaultLinkApplicationServiceTest {
 
         private static LinkMetadata empty() {
             return new LinkMetadata(null, List.of(), null);
+        }
+    }
+
+    private static final class TestAnalyticsOutboxStore implements AnalyticsOutboxStore {
+
+        private final List<RedirectClickAnalyticsEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public void saveRedirectClickEvent(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent) {
+            events.add(redirectClickAnalyticsEvent);
+        }
+
+        @Override
+        public List<AnalyticsOutboxRecord> findUnpublished(int limit) {
+            return List.of();
+        }
+
+        @Override
+        public void markPublished(long id, OffsetDateTime publishedAt) {
+        }
+
+        private List<RedirectClickAnalyticsEvent> events() {
+            return events;
         }
     }
 }

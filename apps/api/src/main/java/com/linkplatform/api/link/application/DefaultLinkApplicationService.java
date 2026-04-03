@@ -12,8 +12,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DefaultLinkApplicationService implements LinkApplicationService {
@@ -21,13 +23,16 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private static final Set<String> RESERVED_TOP_LEVEL_SLUGS = Set.of("api", "actuator", "error");
 
     private final LinkStore linkStore;
+    private final AnalyticsOutboxStore analyticsOutboxStore;
     private final URI publicBaseUri;
     private final Clock clock;
 
     public DefaultLinkApplicationService(
             LinkStore linkStore,
+            AnalyticsOutboxStore analyticsOutboxStore,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
         this.linkStore = linkStore;
+        this.analyticsOutboxStore = analyticsOutboxStore;
         this.publicBaseUri = URI.create(publicBaseUrl);
         this.clock = Clock.systemUTC();
     }
@@ -113,8 +118,15 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional
     public void recordRedirectClick(String slug, String userAgent, String referrer, String remoteAddress) {
-        linkStore.recordClick(new LinkClick(slug, now(), userAgent, referrer, remoteAddress));
+        analyticsOutboxStore.saveRedirectClickEvent(new RedirectClickAnalyticsEvent(
+                UUID.randomUUID().toString(),
+                slug,
+                now(),
+                userAgent,
+                referrer,
+                remoteAddress));
     }
 
     @Override
