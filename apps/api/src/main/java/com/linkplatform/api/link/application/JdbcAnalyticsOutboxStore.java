@@ -29,7 +29,7 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 """,
                 redirectClickAnalyticsEvent.eventId(),
                 REDIRECT_CLICK_EVENT_TYPE,
-                redirectClickAnalyticsEvent.slug(),
+                redirectClickAnalyticsEvent.eventKey(),
                 serialize(redirectClickAnalyticsEvent));
     }
 
