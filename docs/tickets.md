@@ -1,3 +1,16 @@
+---
+
+## 🚀 TICKET-021
+
+The best next ticket is to **finish the async analytics cutover properly** and, while doing that, add the event-ordering/partitioning rules you were going to need next anyway.
+
+That is one clean theme:
+
+### **reliable ordered async analytics**
+
+This is the right compacting move.
+
+---
 
 ## TICKET-021 - Complete async analytics cutover with ordered Kafka event processing
 
@@ -49,11 +62,11 @@ This completes the first real event-driven backbone properly, so later notificat
 * Existing tests still pass or are updated appropriately
 * New focused tests cover:
 
-    * no synchronous click persistence on redirect
-    * outbox-only redirect behavior
-    * stable Kafka event key usage
-    * idempotent consumer behavior
-    * preserved reporting correctness after async processing
+  * no synchronous click persistence on redirect
+  * outbox-only redirect behavior
+  * stable Kafka event key usage
+  * idempotent consumer behavior
+  * preserved reporting correctness after async processing
 * No unnecessary new infrastructure or broad refactors are introduced
 
 #### code_target[]
