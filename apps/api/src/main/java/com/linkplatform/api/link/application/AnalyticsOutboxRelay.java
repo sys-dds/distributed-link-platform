@@ -1,5 +1,7 @@
 package com.linkplatform.api.link.application;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -16,10 +18,13 @@ public class AnalyticsOutboxRelay {
     private final Clock clock;
     private final String clickTopic;
     private final int batchSize;
+    private final Counter publishSuccessCounter;
+    private final Counter publishFailureCounter;
 
     public AnalyticsOutboxRelay(
             AnalyticsOutboxStore analyticsOutboxStore,
             KafkaTemplate<String, String> kafkaTemplate,
+            MeterRegistry meterRegistry,
             @Value("${link-platform.analytics.click-topic}") String clickTopic,
             @Value("${link-platform.analytics.outbox-relay-batch-size}") int batchSize) {
         this.analyticsOutboxStore = analyticsOutboxStore;
@@ -27,6 +32,12 @@ public class AnalyticsOutboxRelay {
         this.clickTopic = clickTopic;
         this.batchSize = batchSize;
         this.clock = Clock.systemUTC();
+        this.publishSuccessCounter = Counter.builder("link.analytics.outbox.publish.success")
+                .description("Number of analytics outbox records published successfully")
+                .register(meterRegistry);
+        this.publishFailureCounter = Counter.builder("link.analytics.outbox.publish.failure")
+                .description("Number of analytics outbox publish failures")
+                .register(meterRegistry);
     }
 
     @Scheduled(fixedDelayString = "${link-platform.analytics.outbox-relay-delay}")
@@ -34,8 +45,14 @@ public class AnalyticsOutboxRelay {
         List<AnalyticsOutboxRecord> unpublishedRecords = analyticsOutboxStore.findUnpublished(batchSize);
 
         for (AnalyticsOutboxRecord unpublishedRecord : unpublishedRecords) {
-            kafkaTemplate.send(clickTopic, unpublishedRecord.eventKey(), unpublishedRecord.payloadJson()).join();
-            analyticsOutboxStore.markPublished(unpublishedRecord.id(), OffsetDateTime.now(clock));
+            try {
+                kafkaTemplate.send(clickTopic, unpublishedRecord.eventKey(), unpublishedRecord.payloadJson()).join();
+                analyticsOutboxStore.markPublished(unpublishedRecord.id(), OffsetDateTime.now(clock));
+                publishSuccessCounter.increment();
+            } catch (RuntimeException exception) {
+                publishFailureCounter.increment();
+                throw exception;
+            }
         }
     }
 }

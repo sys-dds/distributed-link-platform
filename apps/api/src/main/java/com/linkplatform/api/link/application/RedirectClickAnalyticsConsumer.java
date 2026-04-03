@@ -2,6 +2,8 @@ package com.linkplatform.api.link.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -10,22 +12,35 @@ public class RedirectClickAnalyticsConsumer {
 
     private final ObjectMapper objectMapper;
     private final LinkStore linkStore;
+    private final Counter processedCounter;
+    private final Counter duplicateCounter;
 
-    public RedirectClickAnalyticsConsumer(ObjectMapper objectMapper, LinkStore linkStore) {
+    public RedirectClickAnalyticsConsumer(ObjectMapper objectMapper, LinkStore linkStore, MeterRegistry meterRegistry) {
         this.objectMapper = objectMapper;
         this.linkStore = linkStore;
+        this.processedCounter = Counter.builder("link.analytics.consumer.processed")
+                .description("Number of redirect analytics events processed")
+                .register(meterRegistry);
+        this.duplicateCounter = Counter.builder("link.analytics.consumer.duplicate")
+                .description("Number of duplicate redirect analytics events ignored")
+                .register(meterRegistry);
     }
 
     @KafkaListener(topics = "${link-platform.analytics.click-topic}")
     public void consume(String payloadJson) {
         RedirectClickAnalyticsEvent redirectClickAnalyticsEvent = deserialize(payloadJson);
-        linkStore.recordClickIfAbsent(new LinkClick(
+        boolean persisted = linkStore.recordClickIfAbsent(new LinkClick(
                 redirectClickAnalyticsEvent.eventId(),
                 redirectClickAnalyticsEvent.slug(),
                 redirectClickAnalyticsEvent.clickedAt(),
                 redirectClickAnalyticsEvent.userAgent(),
                 redirectClickAnalyticsEvent.referrer(),
                 redirectClickAnalyticsEvent.remoteAddress()));
+        if (persisted) {
+            processedCounter.increment();
+            return;
+        }
+        duplicateCounter.increment();
     }
 
     private RedirectClickAnalyticsEvent deserialize(String payloadJson) {

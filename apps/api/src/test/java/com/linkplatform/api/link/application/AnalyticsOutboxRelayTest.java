@@ -5,7 +5,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -26,13 +29,16 @@ class AnalyticsOutboxRelayTest {
     @Mock
     private KafkaTemplate<String, String> kafkaTemplate;
 
+    private SimpleMeterRegistry meterRegistry;
     private AnalyticsOutboxRelay analyticsOutboxRelay;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         analyticsOutboxRelay = new AnalyticsOutboxRelay(
                 analyticsOutboxStore,
                 kafkaTemplate,
+                meterRegistry,
                 "link-platform.analytics.redirect-clicks",
                 50);
     }
@@ -55,6 +61,8 @@ class AnalyticsOutboxRelayTest {
 
         verify(kafkaTemplate).send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-1\"}");
         verify(analyticsOutboxStore).markPublished(eq(1L), any(OffsetDateTime.class));
+        assertEquals(1.0, meterRegistry.get("link.analytics.outbox.publish.success").counter().count());
+        assertEquals(0.0, meterRegistry.get("link.analytics.outbox.publish.failure").counter().count());
     }
 
     @Test
@@ -88,5 +96,27 @@ class AnalyticsOutboxRelayTest {
         inOrder.verify(analyticsOutboxStore).markPublished(eq(1L), any(OffsetDateTime.class));
         inOrder.verify(kafkaTemplate).send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-2\"}");
         inOrder.verify(analyticsOutboxStore).markPublished(eq(2L), any(OffsetDateTime.class));
+        assertEquals(2.0, meterRegistry.get("link.analytics.outbox.publish.success").counter().count());
+    }
+
+    @Test
+    void relayCountsPublishFailuresAndLeavesRecordUnpublished() {
+        AnalyticsOutboxRecord outboxRecord = new AnalyticsOutboxRecord(
+                1L,
+                "event-1",
+                "redirect-click",
+                "launch-page",
+                "{\"eventId\":\"event-1\"}",
+                OffsetDateTime.parse("2026-04-03T09:00:00Z"),
+                null);
+        when(analyticsOutboxStore.findUnpublished(50)).thenReturn(List.of(outboxRecord));
+        when(kafkaTemplate.send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-1\"}"))
+                .thenThrow(new RuntimeException("Kafka unavailable"));
+
+        assertThrows(RuntimeException.class, () -> analyticsOutboxRelay.relayPendingEvents());
+
+        verify(kafkaTemplate).send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-1\"}");
+        assertEquals(0.0, meterRegistry.get("link.analytics.outbox.publish.success").counter().count());
+        assertEquals(1.0, meterRegistry.get("link.analytics.outbox.publish.failure").counter().count());
     }
 }

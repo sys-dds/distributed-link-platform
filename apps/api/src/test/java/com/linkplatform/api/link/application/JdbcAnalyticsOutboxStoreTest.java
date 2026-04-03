@@ -3,6 +3,7 @@ package com.linkplatform.api.link.application;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +22,9 @@ class JdbcAnalyticsOutboxStoreTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Test
     void saveRedirectClickEventPersistsStablePerLinkEventKey() {
@@ -51,5 +55,26 @@ class JdbcAnalyticsOutboxStoreTest {
         assertEquals("redirect-click", outboxRecord.eventType());
         assertEquals("launch-page", outboxRecord.eventKey());
         assertNull(outboxRecord.publishedAt());
+    }
+
+    @Test
+    void unpublishedOutboxGaugeReflectsStoredBacklog() {
+        jdbcAnalyticsOutboxStore.saveRedirectClickEvent(new RedirectClickAnalyticsEvent(
+                "event-2",
+                "launch-page",
+                OffsetDateTime.parse("2026-04-03T09:05:00Z"),
+                "test-agent",
+                "https://referrer.example",
+                "127.0.0.1"));
+        jdbcAnalyticsOutboxStore.saveRedirectClickEvent(new RedirectClickAnalyticsEvent(
+                "event-3",
+                "docs-page",
+                OffsetDateTime.parse("2026-04-03T09:06:00Z"),
+                "test-agent",
+                "https://referrer.example",
+                "127.0.0.1"));
+
+        assertEquals(2L, jdbcAnalyticsOutboxStore.countUnpublished());
+        assertEquals(2.0, meterRegistry.get("link.analytics.outbox.unpublished").gauge().value());
     }
 }
