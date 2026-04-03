@@ -4,6 +4,7 @@ import com.linkplatform.api.link.application.CreateLinkCommand;
 import com.linkplatform.api.link.application.LinkDetails;
 import com.linkplatform.api.link.application.LinkApplicationService;
 import com.linkplatform.api.link.application.LinkLifecycleState;
+import com.linkplatform.api.link.application.LinkSuggestion;
 import com.linkplatform.api.link.domain.Link;
 import java.util.List;
 import java.util.Locale;
@@ -25,6 +26,8 @@ public class LinkController {
 
     private static final int DEFAULT_LIMIT = 20;
     private static final int MAX_LIMIT = 100;
+    private static final int DEFAULT_SUGGESTION_LIMIT = 10;
+    private static final int MAX_SUGGESTION_LIMIT = 20;
 
     private final LinkApplicationService linkApplicationService;
 
@@ -36,13 +39,23 @@ public class LinkController {
     @ResponseStatus(HttpStatus.CREATED)
     public CreateLinkResponse createLink(@RequestBody CreateLinkRequest request) {
         Link link = linkApplicationService.createLink(
-                new CreateLinkCommand(request.slug(), request.originalUrl(), request.expiresAt()));
+                new CreateLinkCommand(
+                        request.slug(),
+                        request.originalUrl(),
+                        request.expiresAt(),
+                        request.title(),
+                        request.tags()));
         return new CreateLinkResponse(link.slug().value(), link.originalUrl().value());
     }
 
     @PutMapping("/{slug}")
     public LinkResponse updateLink(@PathVariable String slug, @RequestBody UpdateLinkRequest request) {
-        return toUpdateResponse(linkApplicationService.updateLink(slug, request.originalUrl(), request.expiresAt()));
+        return toUpdateResponse(linkApplicationService.updateLink(
+                slug,
+                request.originalUrl(),
+                request.expiresAt(),
+                request.title(),
+                request.tags()));
     }
 
     @GetMapping("/{slug}")
@@ -61,6 +74,16 @@ public class LinkController {
                 .toList();
     }
 
+    @GetMapping("/suggestions")
+    public List<LinkSuggestionResponse> suggestLinks(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "" + DEFAULT_SUGGESTION_LIMIT) int limit) {
+        validateSuggestionLimit(limit);
+        return linkApplicationService.suggestLinks(q, limit).stream()
+                .map(this::toSuggestionResponse)
+                .toList();
+    }
+
     @DeleteMapping("/{slug}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteLink(@PathVariable String slug) {
@@ -70,6 +93,12 @@ public class LinkController {
     private void validateLimit(int limit) {
         if (limit < 1 || limit > MAX_LIMIT) {
             throw new IllegalArgumentException("Limit must be between 1 and " + MAX_LIMIT);
+        }
+    }
+
+    private void validateSuggestionLimit(int limit) {
+        if (limit < 1 || limit > MAX_SUGGESTION_LIMIT) {
+            throw new IllegalArgumentException("Suggestion limit must be between 1 and " + MAX_SUGGESTION_LIMIT);
         }
     }
 
@@ -86,7 +115,10 @@ public class LinkController {
                 linkDetails.slug(),
                 linkDetails.originalUrl(),
                 linkDetails.createdAt(),
-                linkDetails.expiresAt());
+                linkDetails.expiresAt(),
+                linkDetails.title(),
+                linkDetails.tags(),
+                linkDetails.hostname());
     }
 
     private LinkReadResponse toReadResponse(LinkDetails linkDetails) {
@@ -95,6 +127,13 @@ public class LinkController {
                 linkDetails.originalUrl(),
                 linkDetails.createdAt(),
                 linkDetails.expiresAt(),
+                linkDetails.title(),
+                linkDetails.tags(),
+                linkDetails.hostname(),
                 linkDetails.clickTotal());
+    }
+
+    private LinkSuggestionResponse toSuggestionResponse(LinkSuggestion linkSuggestion) {
+        return new LinkSuggestionResponse(linkSuggestion.slug(), linkSuggestion.title(), linkSuggestion.hostname());
     }
 }

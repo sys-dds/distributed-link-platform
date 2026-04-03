@@ -50,7 +50,7 @@ class PostgresLinkPersistenceIntegrationTest {
     @Test
     void createAndResolveUsePostgresStorage() {
         Link createdLink = linkApplicationService.createLink(
-                new CreateLinkCommand("persistent-link", "https://example.com/persistent", null));
+                new CreateLinkCommand("persistent-link", "https://example.com/persistent", null, null, null));
 
         Link resolvedLink = linkApplicationService.resolveLink("persistent-link");
         Integer rowCount = jdbcTemplate.queryForObject(
@@ -65,12 +65,12 @@ class PostgresLinkPersistenceIntegrationTest {
 
     @Test
     void duplicateSlugIsRejectedAgainstPostgres() {
-        linkApplicationService.createLink(new CreateLinkCommand("repeatable", "https://example.com/one", null));
+        linkApplicationService.createLink(new CreateLinkCommand("repeatable", "https://example.com/one", null, null, null));
 
         assertThrows(
                 DuplicateLinkSlugException.class,
                 () -> linkApplicationService.createLink(new CreateLinkCommand(
-                        "repeatable", "https://example.com/two", null)));
+                        "repeatable", "https://example.com/two", null, null, null)));
 
         Integer rowCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM links WHERE slug = ?",

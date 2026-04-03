@@ -1,0 +1,8 @@
+ALTER TABLE links
+ADD COLUMN title VARCHAR(255);
+
+ALTER TABLE links
+ADD COLUMN tags_json TEXT;
+
+ALTER TABLE links
+ADD COLUMN hostname VARCHAR(255);

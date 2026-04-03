@@ -22,7 +22,7 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void createsAndStoresValidatedLinkFromCommand() {
-        Link link = service.createLink(new CreateLinkCommand("launch-page", "https://example.com/launch", null));
+        Link link = service.createLink(new CreateLinkCommand("launch-page", "https://example.com/launch", null, null, null));
 
         assertEquals("launch-page", link.slug().value());
         assertEquals("https://example.com/launch", link.originalUrl().value());
@@ -31,20 +31,20 @@ class DefaultLinkApplicationServiceTest {
     @Test
     void failsWhenCommandContainsInvalidDomainData() {
         assertThrows(IllegalArgumentException.class,
-                () -> service.createLink(new CreateLinkCommand("no spaces allowed", "https://example.com", null)));
+                () -> service.createLink(new CreateLinkCommand("no spaces allowed", "https://example.com", null, null, null)));
     }
 
     @Test
     void rejectsDuplicateSlug() {
-        service.createLink(new CreateLinkCommand("repeatable", "https://example.com/one", null));
+        service.createLink(new CreateLinkCommand("repeatable", "https://example.com/one", null, null, null));
 
         assertThrows(DuplicateLinkSlugException.class,
-                () -> service.createLink(new CreateLinkCommand("repeatable", "https://example.com/two", null)));
+                () -> service.createLink(new CreateLinkCommand("repeatable", "https://example.com/two", null, null, null)));
     }
 
     @Test
     void resolvesStoredLinkBySlug() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null));
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null));
 
         Link link = service.resolveLink("docs");
 
@@ -59,7 +59,7 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void returnsStoredLinkDetailsBySlug() {
-        service.createLink(new CreateLinkCommand("details", "https://example.com/details", null));
+        service.createLink(new CreateLinkCommand("details", "https://example.com/details", null, null, null));
 
         LinkDetails linkDetails = service.getLink("details");
 
@@ -69,7 +69,7 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void listsRecentLinksFromStore() {
-        service.createLink(new CreateLinkCommand("alpha", "https://example.com/alpha", null));
+        service.createLink(new CreateLinkCommand("alpha", "https://example.com/alpha", null, null, null));
 
         List<LinkDetails> recentLinks = service.listRecentLinks(10, null, LinkLifecycleState.ACTIVE);
 
@@ -79,9 +79,9 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void updatesExistingLinkOriginalUrl() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null));
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null));
 
-        LinkDetails linkDetails = service.updateLink("docs", "https://example.com/updated", null);
+        LinkDetails linkDetails = service.updateLink("docs", "https://example.com/updated", null, null, null);
 
         assertEquals("docs", linkDetails.slug());
         assertEquals("https://example.com/updated", linkDetails.originalUrl());
@@ -89,7 +89,7 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void deletesExistingLink() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null));
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null));
 
         service.deleteLink("docs");
 
@@ -100,14 +100,30 @@ class DefaultLinkApplicationServiceTest {
     void storesFutureExpirationOnCreate() {
         OffsetDateTime expiresAt = OffsetDateTime.parse("2030-04-01T08:00:00Z");
 
-        service.createLink(new CreateLinkCommand("expiring", "https://example.com/expiring", expiresAt));
+        service.createLink(new CreateLinkCommand("expiring", "https://example.com/expiring", expiresAt, null, null));
 
         assertEquals(expiresAt, service.getLink("expiring").expiresAt());
     }
 
     @Test
+    void storesNormalizedMetadataOnCreate() {
+        service.createLink(new CreateLinkCommand(
+                "tagged",
+                "https://Docs.Example.com/guide",
+                null,
+                "  Launch Guide  ",
+                List.of(" docs ", "product", "docs", "")));
+
+        LinkDetails linkDetails = service.getLink("tagged");
+
+        assertEquals("Launch Guide", linkDetails.title());
+        assertEquals(List.of("docs", "product"), linkDetails.tags());
+        assertEquals("docs.example.com", linkDetails.hostname());
+    }
+
+    @Test
     void recordsRedirectClick() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null));
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null));
 
         service.recordRedirectClick("docs", "test-agent", "https://referrer.example", "127.0.0.1");
 
@@ -119,7 +135,9 @@ class DefaultLinkApplicationServiceTest {
         service.createLink(new CreateLinkCommand(
                 "expired-now",
                 "https://example.com/expired",
-                OffsetDateTime.parse("2020-04-01T08:00:00Z")));
+                OffsetDateTime.parse("2020-04-01T08:00:00Z"),
+                null,
+                null));
 
         assertThrows(LinkNotFoundException.class, () -> service.getLink("expired-now"));
         assertThrows(LinkNotFoundException.class, () -> service.resolveLink("expired-now"));
@@ -127,18 +145,45 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void updatesExpiration() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null));
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null));
         OffsetDateTime expiresAt = OffsetDateTime.parse("2030-04-01T08:00:00Z");
 
-        LinkDetails linkDetails = service.updateLink("docs", "https://example.com/docs", expiresAt);
+        LinkDetails linkDetails = service.updateLink("docs", "https://example.com/docs", expiresAt, null, null);
 
         assertEquals(expiresAt, linkDetails.expiresAt());
     }
 
     @Test
+    void updatesMetadata() {
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null));
+
+        LinkDetails linkDetails = service.updateLink(
+                "docs",
+                "https://app.example.com/docs",
+                null,
+                "Docs Portal",
+                List.of("portal", "docs"));
+
+        assertEquals("Docs Portal", linkDetails.title());
+        assertEquals(List.of("portal", "docs"), linkDetails.tags());
+        assertEquals("app.example.com", linkDetails.hostname());
+    }
+
+    @Test
+    void suggestsMatchingActiveLinks() {
+        service.createLink(new CreateLinkCommand("alpha", "https://docs.example.com/alpha", null, "Alpha Docs", List.of("docs")));
+        service.createLink(new CreateLinkCommand("beta", "https://app.example.com/beta", null, "Beta App", List.of("app")));
+
+        List<LinkSuggestion> suggestions = service.suggestLinks("docs", 10);
+
+        assertEquals(1, suggestions.size());
+        assertEquals("alpha", suggestions.getFirst().slug());
+    }
+
+    @Test
     void rejectsReservedSlugCaseInsensitivelyBeforePersistence() {
         assertThrows(ReservedLinkSlugException.class,
-                () -> service.createLink(new CreateLinkCommand("AcTuAtOr", "https://example.com/system", null)));
+                () -> service.createLink(new CreateLinkCommand("AcTuAtOr", "https://example.com/system", null, null, null)));
 
         assertEquals(0, linkStore.saveAttempts());
     }
@@ -146,7 +191,7 @@ class DefaultLinkApplicationServiceTest {
     @Test
     void rejectsSelfTargetUrlBeforePersistenceIncludingDefaultPortEquivalence() {
         assertThrows(SelfTargetLinkException.class,
-                () -> service.createLink(new CreateLinkCommand("self-loop", "http://localhost/about", null)));
+                () -> service.createLink(new CreateLinkCommand("self-loop", "http://localhost/about", null, null, null)));
 
         assertEquals(0, linkStore.saveAttempts());
     }
@@ -160,17 +205,26 @@ class DefaultLinkApplicationServiceTest {
         private int saveAttempts;
 
         @Override
-        public boolean save(Link link, OffsetDateTime expiresAt) {
+        public boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname) {
             saveAttempts++;
             boolean inserted = linksBySlug.putIfAbsent(link.slug().value(), link) == null;
             if (inserted && expiresAt != null) {
                 expiresAtBySlug.put(link.slug().value(), expiresAt);
             }
+            if (inserted) {
+                metadataBySlug.put(link.slug().value(), new LinkMetadata(title, tags == null ? List.of() : List.copyOf(tags), hostname));
+            }
             return inserted;
         }
 
         @Override
-        public boolean update(String slug, String originalUrl, OffsetDateTime expiresAt) {
+        public boolean update(
+                String slug,
+                String originalUrl,
+                OffsetDateTime expiresAt,
+                String title,
+                List<String> tags,
+                String hostname) {
             Link updated = linksBySlug.computeIfPresent(
                     slug,
                     (ignored, link) -> new Link(link.slug(), new com.linkplatform.api.link.domain.OriginalUrl(originalUrl)));
@@ -182,6 +236,7 @@ class DefaultLinkApplicationServiceTest {
             } else {
                 expiresAtBySlug.put(slug, expiresAt);
             }
+            metadataBySlug.put(slug, new LinkMetadata(title, tags == null ? List.of() : List.copyOf(tags), hostname));
             return true;
         }
 
@@ -191,6 +246,7 @@ class DefaultLinkApplicationServiceTest {
             if (removed != null) {
                 expiresAtBySlug.remove(slug);
                 clickTotalsBySlug.remove(slug);
+                metadataBySlug.remove(slug);
                 deletedSlugs.put(slug, true);
                 return true;
             }
@@ -225,6 +281,9 @@ class DefaultLinkApplicationServiceTest {
                     link.originalUrl().value(),
                     OffsetDateTime.parse("2026-04-01T08:00:00Z"),
                     expiresAtBySlug.get(slug),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).title(),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).tags(),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).hostname(),
                     clickTotalsBySlug.getOrDefault(slug, 0L)));
         }
 
@@ -239,7 +298,24 @@ class DefaultLinkApplicationServiceTest {
                             link.originalUrl().value(),
                             OffsetDateTime.parse("2026-04-01T08:00:00Z"),
                             expiresAtBySlug.get(link.slug().value()),
+                            metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty()).title(),
+                            metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty()).tags(),
+                            metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty()).hostname(),
                             clickTotalsBySlug.getOrDefault(link.slug().value(), 0L)))
+                    .toList();
+        }
+
+        @Override
+        public List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query) {
+            return linksBySlug.values().stream()
+                    .filter(link -> !isExpired(link.slug().value(), now))
+                    .filter(link -> matchesQuery(link, query))
+                    .sorted(Comparator.comparing(link -> link.slug().value()))
+                    .limit(limit)
+                    .map(link -> new LinkSuggestion(
+                            link.slug().value(),
+                            metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty()).title(),
+                            metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty()).hostname()))
                     .toList();
         }
 
@@ -293,8 +369,12 @@ class DefaultLinkApplicationServiceTest {
             }
 
             String normalizedQuery = query.toLowerCase();
+            LinkMetadata metadata = metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty());
             return link.slug().value().toLowerCase().contains(normalizedQuery)
-                    || link.originalUrl().value().toLowerCase().contains(normalizedQuery);
+                    || link.originalUrl().value().toLowerCase().contains(normalizedQuery)
+                    || (metadata.title() != null && metadata.title().toLowerCase().contains(normalizedQuery))
+                    || metadata.tags().stream().anyMatch(tag -> tag.toLowerCase().contains(normalizedQuery))
+                    || (metadata.hostname() != null && metadata.hostname().toLowerCase().contains(normalizedQuery));
         }
 
         private boolean isExpired(String slug, OffsetDateTime now) {
@@ -308,6 +388,15 @@ class DefaultLinkApplicationServiceTest {
 
         private Map<String, Boolean> deletedSlugs() {
             return deletedSlugs;
+        }
+
+        private final Map<String, LinkMetadata> metadataBySlug = new ConcurrentHashMap<>();
+    }
+
+    private record LinkMetadata(String title, List<String> tags, String hostname) {
+
+        private static LinkMetadata empty() {
+            return new LinkMetadata(null, List.of(), null);
         }
     }
 }

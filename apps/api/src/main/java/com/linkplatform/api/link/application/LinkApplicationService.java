@@ -7,7 +7,12 @@ public interface LinkApplicationService {
 
     Link createLink(CreateLinkCommand command);
 
-    LinkDetails updateLink(String slug, String originalUrl, java.time.OffsetDateTime expiresAt);
+    LinkDetails updateLink(
+            String slug,
+            String originalUrl,
+            java.time.OffsetDateTime expiresAt,
+            String title,
+            List<String> tags);
 
     void deleteLink(String slug);
 
@@ -18,6 +23,8 @@ public interface LinkApplicationService {
     LinkDetails getLink(String slug);
 
     List<LinkDetails> listRecentLinks(int limit, String query, LinkLifecycleState state);
+
+    List<LinkSuggestion> suggestLinks(String query, int limit);
 
     LinkTrafficSummary getTrafficSummary(String slug);
 

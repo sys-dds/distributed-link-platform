@@ -1,5 +1,8 @@
 package com.linkplatform.api.link.application;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
@@ -16,31 +19,55 @@ import org.springframework.stereotype.Component;
 @Component
 public class PostgresLinkStore implements LinkStore {
 
-    private final JdbcTemplate jdbcTemplate;
+    private static final TypeReference<List<String>> TAG_LIST_TYPE = new TypeReference<>() {
+    };
 
-    public PostgresLinkStore(JdbcTemplate jdbcTemplate) {
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+
+    public PostgresLinkStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     @Override
-    public boolean save(Link link, OffsetDateTime expiresAt) {
+    public boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname) {
         try {
             return jdbcTemplate.update(
-                    "INSERT INTO links (slug, original_url, expires_at) VALUES (?, ?, ?)",
+                    """
+                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
                     link.slug().value(),
                     link.originalUrl().value(),
-                    expiresAt) == 1;
+                    expiresAt,
+                    title,
+                    serializeTags(tags),
+                    hostname) == 1;
         } catch (DuplicateKeyException exception) {
             return false;
         }
     }
 
     @Override
-    public boolean update(String slug, String originalUrl, OffsetDateTime expiresAt) {
+    public boolean update(
+            String slug,
+            String originalUrl,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags,
+            String hostname) {
         return jdbcTemplate.update(
-                "UPDATE links SET original_url = ?, expires_at = ? WHERE slug = ?",
+                """
+                UPDATE links
+                SET original_url = ?, expires_at = ?, title = ?, tags_json = ?, hostname = ?
+                WHERE slug = ?
+                """,
                 originalUrl,
                 expiresAt,
+                title,
+                serializeTags(tags),
+                hostname,
                 slug) == 1;
     }
 
@@ -89,6 +116,9 @@ public class PostgresLinkStore implements LinkStore {
                                l.original_url,
                                l.created_at,
                                l.expires_at,
+                               l.title,
+                               l.tags_json,
+                               l.hostname,
                                COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                         FROM links l
                         WHERE l.slug = ?
@@ -99,6 +129,9 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getString("original_url"),
                                 resultSet.getObject("created_at", OffsetDateTime.class),
                                 resultSet.getObject("expires_at", OffsetDateTime.class),
+                                resultSet.getString("title"),
+                                resultSet.getString("tags_json"),
+                                resultSet.getString("hostname"),
                                 resultSet.getLong("click_total")),
                         slug,
                         now)
@@ -113,6 +146,9 @@ public class PostgresLinkStore implements LinkStore {
                        l.original_url,
                        l.created_at,
                        l.expires_at,
+                       l.title,
+                       l.tags_json,
+                       l.hostname,
                        COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                 FROM links l
                 WHERE 1 = 1
@@ -136,8 +172,43 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("original_url"),
                         resultSet.getObject("created_at", OffsetDateTime.class),
                         resultSet.getObject("expires_at", OffsetDateTime.class),
+                        resultSet.getString("title"),
+                        resultSet.getString("tags_json"),
+                        resultSet.getString("hostname"),
                         resultSet.getLong("click_total")),
                 parameters.toArray());
+    }
+
+    @Override
+    public List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query) {
+        String pattern = "%" + query.toLowerCase(Locale.ROOT).trim() + "%";
+
+        return jdbcTemplate.query(
+                """
+                SELECT l.slug, l.title, l.hostname
+                FROM links l
+                WHERE (l.expires_at IS NULL OR l.expires_at > ?)
+                  AND (
+                    LOWER(l.slug) LIKE ?
+                    OR LOWER(l.original_url) LIKE ?
+                    OR LOWER(COALESCE(l.title, '')) LIKE ?
+                    OR LOWER(COALESCE(l.tags_json, '')) LIKE ?
+                    OR LOWER(COALESCE(l.hostname, '')) LIKE ?
+                  )
+                ORDER BY l.slug ASC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> new LinkSuggestion(
+                        resultSet.getString("slug"),
+                        resultSet.getString("title"),
+                        resultSet.getString("hostname")),
+                now,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                limit);
     }
 
     @Override
@@ -238,9 +309,15 @@ public class PostgresLinkStore implements LinkStore {
                   AND (
                     LOWER(l.slug) LIKE ?
                     OR LOWER(l.original_url) LIKE ?
+                    OR LOWER(COALESCE(l.title, '')) LIKE ?
+                    OR LOWER(COALESCE(l.tags_json, '')) LIKE ?
+                    OR LOWER(COALESCE(l.hostname, '')) LIKE ?
                   )
                 """);
         String pattern = "%" + query.toLowerCase(Locale.ROOT).trim() + "%";
+        parameters.add(pattern);
+        parameters.add(pattern);
+        parameters.add(pattern);
         parameters.add(pattern);
         parameters.add(pattern);
     }
@@ -321,7 +398,34 @@ public class PostgresLinkStore implements LinkStore {
             String originalUrl,
             OffsetDateTime createdAt,
             OffsetDateTime expiresAt,
+            String title,
+            String tagsJson,
+            String hostname,
             long clickTotal) {
-        return new LinkDetails(slug, originalUrl, createdAt, expiresAt, clickTotal);
+        return new LinkDetails(slug, originalUrl, createdAt, expiresAt, title, deserializeTags(tagsJson), hostname, clickTotal);
+    }
+
+    private String serializeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return null;
+        }
+
+        try {
+            return objectMapper.writeValueAsString(tags);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("Tags could not be serialized", exception);
+        }
+    }
+
+    private List<String> deserializeTags(String tagsJson) {
+        if (tagsJson == null || tagsJson.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            return objectMapper.readValue(tagsJson, TAG_LIST_TYPE);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("Tags could not be deserialized", exception);
+        }
     }
 }
