@@ -4,10 +4,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnExpression("'${link-platform.runtime.mode:all}' == 'all' or '${link-platform.runtime.mode:all}' == 'worker'")
 public class RedirectClickAnalyticsConsumer {
 
     private final ObjectMapper objectMapper;

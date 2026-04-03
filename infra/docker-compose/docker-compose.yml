@@ -43,5 +43,45 @@ services:
       timeout: 10s
       retries: 10
 
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    container_name: link-platform-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/link_platform
+      DB_USERNAME: link_platform
+      DB_PASSWORD: link_platform
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8080
+      LINK_PLATFORM_RUNTIME_MODE: api
+    ports:
+      - "8080:8080"
+
+  analytics-worker:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    container_name: link-platform-analytics-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/link_platform
+      DB_USERNAME: link_platform
+      DB_PASSWORD: link_platform
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8080
+      LINK_PLATFORM_RUNTIME_MODE: worker
+
 volumes:
   postgres-data:
