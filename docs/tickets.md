@@ -1,72 +1,81 @@
-TICKET-016 — Add synchronous click analytics baseline and expose link traffic totals
-title[]
 
-Add synchronous click analytics baseline and expose link traffic totals
+## 🚀 TICKET-017
 
-technical_detail[]
+This should be the next bigger ticket:
 
-Expand the Link Platform from a CRUD-style control plane into a system that records real redirect usage. This ticket should capture a basic synchronous click analytics baseline on the redirect path and expose simple traffic totals through the existing control-plane read surfaces.
+## TICKET-017 — Add analytics rollups and link traffic reporting endpoints
+
+#### title[]
+
+Add analytics rollups and link traffic reporting endpoints
+
+#### technical_detail[]
+
+Build the first reporting layer on top of the click analytics baseline. This ticket should aggregate raw click events into small reporting views that the control plane can query efficiently, without changing the redirect contract or introducing async/event-driven processing yet.
 
 At minimum, the implementation should:
 
-record one click event for each successful redirect
-persist basic click metadata for each event
-maintain or derive a simple per-link total click count
-expose click totals on:
-single-link read responses
-recent/search/filter list responses
+* add a simple daily rollup for clicks per link
+* expose a traffic-summary endpoint for one link
+* expose a top-links endpoint based on recent click volume
 
-The click capture should happen only for successful redirects of active links. Missing links and expired links must not create click records.
+The link traffic summary should provide a practical control-plane view for a single slug using data already captured by the system. A good first summary includes:
 
-Keep this intentionally small and practical. A good baseline event shape includes:
+* total clicks
+* clicks for the last 24 hours
+* clicks for the last 7 days
+* daily buckets for a recent window such as the last 7 days
 
-slug
-clicked_at timestamp
-request metadata that is directly available and useful now, such as:
-user-agent
-referrer
-remote address or a lightweight IP representation
+The top-links endpoint should return a deterministic ranked list of the most-clicked links over a recent window such as the last 24 hours or last 7 days. Keep it intentionally small and explicit. A simple `window` query parameter is enough.
 
-Do not overbuild the analytics model in this ticket. Do not add rollups, dashboards, Kafka, async workers, materialized views, deduplication, bot detection, or tenant analytics yet. This is the first baseline only.
+Prefer a small rollup/reporting design over repeated heavy scans of raw click events. A good result is some combination of:
 
-The implementation may use either:
+* a daily rollup table
+* simple aggregation queries
+* small reporting DTOs
+* a dedicated analytics read controller or a small extension of the current control-plane API
 
-a separate link_clicks table plus a derived count query, or
-a separate link_clicks table plus a simple stored counter update
+Keep the implementation intentionally practical. Do not add Kafka, async consumers, dashboards, realtime streaming, materialized-view orchestration, anomaly detection, bot filtering, tenant analytics, or advanced ranking logic yet. This is still the synchronous analytics phase, just with a real reporting surface now.
 
-Choose the smaller clean option that fits the current JDBC style and keeps the redirect path implementation understandable.
+The existing create/update/delete/read/list/search/filter/expiration/redirect behavior should remain unchanged outside the new reporting endpoints and any supporting rollup persistence.
 
-The existing create/update/delete/read/list/search/filter/expiration/Problem Details behavior should remain unchanged except for the addition of click totals in read/list responses and the fact that successful redirects now record clicks.
+#### feature_delivered_by_end[]
 
-feature_delivered_by_end[]
+The platform can report basic traffic summaries for a link and show top-clicked links over a recent window, using small analytics rollups instead of only raw click capture.
 
-Successful redirects create a basic persisted click trail, and the control plane can show simple traffic totals for links.
+#### how_this_unlocks_next_feature[]
 
-how_this_unlocks_next_feature[]
+This creates the first useful analytics read surface that later trending views, feeds, async event pipelines, dashboards, and realtime features can build on.
 
-This creates the real analytics baseline that later rollups, reporting, trending views, async event pipelines, and realtime features can build on.
+#### acceptance_criteria[]
 
-acceptance_criteria[]
-A successful redirect records one click event
-Missing-link redirects do not record clicks
-Expired-link redirects do not record clicks
-The system persists basic click data for recorded redirects
-Single-link read responses include a total click count
-Recent/search/filter list responses include a total click count
-Existing redirect behavior remains unchanged apart from recording the click
-Existing create/update/delete/read/list/search/filter/expiration behavior remains unchanged
-Existing Problem Details behavior remains unchanged
-Existing tests still pass or are updated appropriately
-New focused tests cover click recording and click-count exposure
-Only the minimum schema and persistence changes needed for this analytics baseline are introduced
-code_target[]
-apps/api
-proof[]
-successful redirects create persisted click records
-click totals appear in single-link read responses
-click totals appear in list responses
-missing and expired redirects do not create clicks
-passing automated tests
-delivery_note[]
+* The system maintains a basic daily click rollup per link
+* A client can request a traffic summary for one existing link
+* A missing slug on the traffic-summary endpoint returns the current RFC 7807 not-found style
+* The traffic summary includes total clicks and recent-window information
+* A client can request top links by click volume over a supported recent window
+* Ranking is deterministic
+* Invalid window values return a clear client error
+* Existing redirect behavior remains unchanged
+* Existing click capture behavior remains unchanged
+* Existing create/update/delete/read/list/search/filter/expiration behavior remains unchanged
+* Existing Problem Details behavior remains unchanged
+* Existing tests still pass or are updated appropriately
+* New focused tests cover rollup/reporting behavior
+* Only the minimum schema and persistence changes needed for rollups/reporting are introduced
 
-Deliberately postponed: rollups, reporting views, trending logic, dashboards, Kafka, async consumers, bot filtering, deduplication, tenant analytics, and realtime updates.
+#### code_target[]
+
+* `apps/api`
+
+#### proof[]
+
+* link traffic summary works
+* top-links reporting works
+* rollup data is maintained correctly for covered scenarios
+* invalid reporting inputs return clear client errors
+* passing automated tests
+
+#### delivery_note[]
+
+Deliberately postponed: Kafka, async analytics workers, dashboards, realtime updates, tenant analytics, bot filtering, anomaly detection, advanced ranking, and broader reporting infrastructure.

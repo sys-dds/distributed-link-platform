@@ -546,6 +546,23 @@ class LinkControllerTest {
                 "test-agent",
                 "https://referrer.example",
                 "127.0.0.1");
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE link_click_daily_rollups
+                SET click_count = click_count + 1
+                WHERE slug = ? AND rollup_date = ?
+                """,
+                slug,
+                clickedAt.toLocalDate());
+        if (updated == 0) {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO link_click_daily_rollups (slug, rollup_date, click_count)
+                    VALUES (?, ?, 1)
+                    """,
+                    slug,
+                    clickedAt.toLocalDate());
+        }
     }
 
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(

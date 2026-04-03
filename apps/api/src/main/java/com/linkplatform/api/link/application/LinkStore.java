@@ -20,4 +20,13 @@ public interface LinkStore {
     Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);
 
     List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state);
+
+    Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
+            String slug,
+            OffsetDateTime last24HoursSince,
+            java.time.LocalDate last7DaysStartDate);
+
+    List<DailyClickBucket> findRecentDailyClickBuckets(String slug, java.time.LocalDate startDate);
+
+    List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now);
 }
