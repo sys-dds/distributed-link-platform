@@ -1,90 +1,97 @@
 
-### 🎯 TICKET-029
-
 #### title[]
 
-Build idempotent link mutations, optimistic concurrency, and version-aware projection safety
+Build ownership, hashed API keys, plans, and create-mutation quota enforcement
 
 #### technical_detail[]
 
-The platform now has real async lifecycle-driven read models, which makes **write safety** the next best move.
-
-This ticket should harden the mutation side of the system so retries, duplicate submissions, concurrent edits, and stale async events cannot corrupt link state or projections.
+The next best move is to add the first real **commercial/control boundary** to the platform.
 
 Bundle these capabilities into one coherent slice:
 
-* add a **monotonic `version`** to the link write model
-* include that version in **lifecycle events**
-* add a **version** column to `link_catalog_projection`
-* make catalog projection application **ignore stale or duplicate lifecycle events**
-* add **idempotency key** support for create/update/delete style link mutations
-* add **optimistic concurrency** for update/delete style mutations
-* expose link version in control-plane responses where it matters
+* introduce a small internal **owner/account model**
+* require **API key authentication** for control-plane mutation endpoints
+* store API keys in **hashed form only**
+* associate each link with an **owner**
+* add a small **plan model** with explicit limits
+* enforce **quota checks** for link creation and active-link ownership limits
+* surface plan/quota failures as clean RFC 7807 responses
+* scope idempotency records to the authenticated owner so future tenant collisions are impossible
+* keep redirect public and unauthenticated
+* keep read/query endpoints simple unless they need ownership filtering for correctness
 
-Implementation should stay practical and link-specific. Do **not** build a generic command bus, generic middleware, or abstract framework.
+Use a practical in-repo model, not a full auth platform:
 
-Use a small, explicit design:
+* local owner records
+* seeded dev owner + API key support
+* explicit JDBC repositories
+* request authentication from `X-API-Key` header for protected control-plane mutations
 
-* `Idempotency-Key` request header for mutation endpoints
-* plain integer `If-Match` header for mutation preconditions on update/delete-style operations
-* a small JDBC-backed idempotency store scoped to link mutations
-* SQL update patterns that enforce version matching atomically
+Do **not** build user signup, OAuth, JWT infrastructure, or a generic IAM framework.
 
 #### feature_delivered_by_end[]
 
-The platform can safely handle:
+The platform has a real ownership boundary:
 
-* client retries without duplicate mutation effects
-* concurrent edits without silent overwrite
-* duplicate or out-of-order lifecycle event delivery without stale projection state winning
+* links belong to owners
+* control-plane writes are authenticated by API key
+* API keys are stored safely
+* plans and quotas are enforced on create flows
+* idempotency is owner-scoped instead of global
 
 #### how_this_unlocks_next_feature[]
 
-This unlocks the next commercial/control layer cleanly:
+This unlocks the next protection/performance slices cleanly:
 
-* ownership
-* API keys
-* plans
-* quotas
-* abuse controls
-
-It also makes later worker hardening and service-boundary work much safer because mutation correctness is no longer the weak link.
+* rate limiting and abuse controls
+* owner-aware search/reporting
+* cached quota reads
+* safer operator/admin controls
+* future service/runtime separation without anonymous write access
 
 #### acceptance_criteria[]
 
-* creating a link with the same `Idempotency-Key` and same payload does **not** create duplicates
-* reusing the same `Idempotency-Key` with a different payload returns a **409 Problem Details** response
-* update/delete-style mutations require a valid current version via `If-Match`
-* stale `If-Match` values return a **409 Problem Details** response
-* link version increments on every successful mutation
-* lifecycle events include the new version
-* `link_catalog_projection` stores version and only applies newer events
-* replay/rebuild still reconstructs correct final projection state
-* control-plane reads expose version where needed for future safe clients
+* mutation endpoints require a valid `X-API-Key`
+* invalid or missing API key returns RFC 7807 problem details with `401` or `403` semantics chosen consistently
+* create/update/delete flows record and use the authenticated owner
+* new links persist `owner_id`
+* API keys are never stored in plaintext; only hash + metadata are stored
+* at least two plans exist, such as `FREE` and `PRO`, with explicit limits
+* create-link quota is enforced from plan rules
+* active owned-link limit is enforced from plan rules
+* quota violations return clean `409` or `403` style problem details consistently
+* idempotency storage is owner-scoped
+* existing redirect behavior remains public and unchanged
+* existing async lifecycle/analytics behavior still works
 * no repo ticket-tracking/doc churn
 
 #### code_target[]
 
-* link API mutation endpoints and request handling
-* link application service mutation flows
-* `LinkStore` and `PostgresLinkStore`
-* lifecycle event model / serialization / outbox write path
-* `link_catalog_projection` schema and projection write logic
-* new small idempotency persistence component under the existing JDBC style
-* API and projection tests
-* **do not touch** `docs/tickets.md`, README, or Postman files
+* link mutation controller/auth entry points
+* link application service mutation paths
+* owner/account repository + model
+* API key repository + hashing logic
+* plan/quota model + enforcement logic
+* `links` schema for `owner_id`
+* idempotency schema/store updated to include owner scope
+* Flyway migrations
+* mutation integration tests
+* do **not** touch `docs/tickets.md`, README, or Postman files
 
 #### proof[]
 
-* integration test proving duplicate create retry returns one logical result
-* integration test proving same key + different payload returns 409
-* integration test proving concurrent/stale update is rejected
-* projection test proving stale lifecycle event does not overwrite newer projection state
-* rebuild/replay test proving final projection state is still correct after versioned events
-* targeted test output showing green results
+* integration test: create link with valid API key succeeds and stores owner
+* integration test: missing API key fails cleanly
+* integration test: invalid API key fails cleanly
+* integration test: free-plan owner hits active link quota and gets problem-details failure
+* integration test: pro-plan owner can exceed free-plan limit
+* integration test: idempotency key reuse is isolated per owner
+* integration test: redirect endpoint remains public
+* test evidence that raw API keys are not persisted
 
 #### delivery_note[]
 
-Keep this as one coherent correctness slice.
-Do not split idempotency, versioning, and projection safety into separate mini-tickets.
-Do not add ownership, API keys, quotas, or rate limiting yet.
+Keep this as one commercial/control slice.
+Do not split ownership, API keys, and quotas into separate mini-tickets.
+Do not add rate limiting yet.
+Do not build a generic auth framework.
