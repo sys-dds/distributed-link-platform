@@ -227,9 +227,10 @@ class LinkAnalyticsControllerTest {
         jdbcTemplate.update(
                 """
                 INSERT INTO link_activity_events
-                    (event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (event_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
+                slug + "-" + eventType + "-" + occurredAt.toInstant().toEpochMilli(),
                 eventType,
                 slug,
                 originalUrl,

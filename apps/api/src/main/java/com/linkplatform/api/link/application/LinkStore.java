@@ -15,7 +15,7 @@ public interface LinkStore {
 
     boolean recordClickIfAbsent(LinkClick linkClick);
 
-    void recordActivity(LinkActivityEvent linkActivityEvent);
+    boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent);
 
     Optional<Link> findBySlug(String slug, OffsetDateTime now);
 

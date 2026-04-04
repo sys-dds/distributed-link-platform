@@ -24,20 +24,24 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     private final LinkStore linkStore;
     private final AnalyticsOutboxStore analyticsOutboxStore;
+    private final LinkLifecycleOutboxStore linkLifecycleOutboxStore;
     private final URI publicBaseUri;
     private final Clock clock;
 
     public DefaultLinkApplicationService(
             LinkStore linkStore,
             AnalyticsOutboxStore analyticsOutboxStore,
+            LinkLifecycleOutboxStore linkLifecycleOutboxStore,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
         this.linkStore = linkStore;
         this.analyticsOutboxStore = analyticsOutboxStore;
+        this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
         this.publicBaseUri = URI.create(publicBaseUrl);
         this.clock = Clock.systemUTC();
     }
 
     @Override
+    @Transactional
     public Link createLink(CreateLinkCommand command) {
         OffsetDateTime now = now();
         Link link = new Link(new LinkSlug(command.slug()), new OriginalUrl(command.originalUrl()));
@@ -50,8 +54,9 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname)) {
             throw new DuplicateLinkSlugException(link.slug().value());
         }
-        linkStore.recordActivity(new LinkActivityEvent(
-                LinkActivityType.CREATED,
+        linkLifecycleOutboxStore.saveLinkLifecycleEvent(new LinkLifecycleEvent(
+                UUID.randomUUID().toString(),
+                LinkLifecycleEventType.CREATED,
                 link.slug().value(),
                 link.originalUrl().value(),
                 normalizedTitle,
@@ -64,6 +69,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional
     public LinkDetails updateLink(
             String slug,
             String originalUrl,
@@ -74,6 +80,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         LinkSlug linkSlug = new LinkSlug(slug);
         OriginalUrl validatedOriginalUrl = new OriginalUrl(originalUrl);
         rejectSelfTargetUrl(validatedOriginalUrl);
+        LinkDetails beforeUpdate = linkStore.findStoredDetailsBySlug(linkSlug.value())
+                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         String normalizedTitle = normalizeTitle(title);
         List<String> normalizedTags = normalizeTags(tags);
         String hostname = extractHostname(validatedOriginalUrl.value());
@@ -90,13 +98,17 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
-        linkStore.recordActivity(toActivityEvent(LinkActivityType.UPDATED, storedDetails, now));
+        linkLifecycleOutboxStore.saveLinkLifecycleEvent(toLifecycleEvent(
+                determineUpdateEventType(beforeUpdate, storedDetails),
+                storedDetails,
+                now));
 
         return linkStore.findDetailsBySlug(linkSlug.value(), now)
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
     }
 
     @Override
+    @Transactional
     public void deleteLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
@@ -106,7 +118,10 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         if (!linkStore.deleteBySlug(linkSlug.value())) {
             throw new LinkNotFoundException(linkSlug.value());
         }
-        linkStore.recordActivity(toActivityEvent(LinkActivityType.DELETED, storedDetails, now));
+        linkLifecycleOutboxStore.saveLinkLifecycleEvent(toLifecycleEvent(
+                LinkLifecycleEventType.DELETED,
+                storedDetails,
+                now));
     }
 
     @Override
@@ -251,11 +266,12 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         return host == null ? null : host.toLowerCase(Locale.ROOT);
     }
 
-    private LinkActivityEvent toActivityEvent(
-            LinkActivityType type,
+    private LinkLifecycleEvent toLifecycleEvent(
+            LinkLifecycleEventType type,
             LinkDetails linkDetails,
             OffsetDateTime occurredAt) {
-        return new LinkActivityEvent(
+        return new LinkLifecycleEvent(
+                UUID.randomUUID().toString(),
                 type,
                 linkDetails.slug(),
                 linkDetails.originalUrl(),
@@ -264,6 +280,17 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 linkDetails.hostname(),
                 linkDetails.expiresAt(),
                 occurredAt);
+    }
+
+    private LinkLifecycleEventType determineUpdateEventType(LinkDetails beforeUpdate, LinkDetails afterUpdate) {
+        boolean expiresAtChanged = !java.util.Objects.equals(beforeUpdate.expiresAt(), afterUpdate.expiresAt());
+        boolean nonExpirationFieldsChanged = !java.util.Objects.equals(beforeUpdate.originalUrl(), afterUpdate.originalUrl())
+                || !java.util.Objects.equals(beforeUpdate.title(), afterUpdate.title())
+                || !java.util.Objects.equals(beforeUpdate.tags(), afterUpdate.tags())
+                || !java.util.Objects.equals(beforeUpdate.hostname(), afterUpdate.hostname());
+        return expiresAtChanged && !nonExpirationFieldsChanged
+                ? LinkLifecycleEventType.EXPIRATION_UPDATED
+                : LinkLifecycleEventType.UPDATED;
     }
 
     private List<DailyClickBucket> fillDailyBuckets(LocalDate startDate, List<DailyClickBucket> buckets) {

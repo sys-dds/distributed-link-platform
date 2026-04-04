@@ -99,21 +99,27 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public void recordActivity(LinkActivityEvent linkActivityEvent) {
-        jdbcTemplate.update(
-                """
-                INSERT INTO link_activity_events (
-                    event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                linkActivityEvent.type().name(),
-                linkActivityEvent.slug(),
-                linkActivityEvent.originalUrl(),
-                linkActivityEvent.title(),
-                serializeTags(linkActivityEvent.tags()),
-                linkActivityEvent.hostname(),
-                linkActivityEvent.expiresAt(),
-                linkActivityEvent.occurredAt());
+    public boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent) {
+        try {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO link_activity_events (
+                        event_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    eventId,
+                    linkActivityEvent.type().name(),
+                    linkActivityEvent.slug(),
+                    linkActivityEvent.originalUrl(),
+                    linkActivityEvent.title(),
+                    serializeTags(linkActivityEvent.tags()),
+                    linkActivityEvent.hostname(),
+                    linkActivityEvent.expiresAt(),
+                    linkActivityEvent.occurredAt());
+            return true;
+        } catch (DuplicateKeyException exception) {
+            return false;
+        }
     }
 
     @Override
