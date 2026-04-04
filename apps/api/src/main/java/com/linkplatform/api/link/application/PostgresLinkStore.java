@@ -31,19 +31,20 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname) {
+    public boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname, long version) {
         try {
             return jdbcTemplate.update(
                     """
-                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     link.slug().value(),
                     link.originalUrl().value(),
                     expiresAt,
                     title,
                     serializeTags(tags),
-                    hostname) == 1;
+                    hostname,
+                    version) == 1;
         } catch (DuplicateKeyException exception) {
             return false;
         }
@@ -56,24 +57,29 @@ public class PostgresLinkStore implements LinkStore {
             OffsetDateTime expiresAt,
             String title,
             List<String> tags,
-            String hostname) {
+            String hostname,
+            long expectedVersion,
+            long nextVersion) {
         return jdbcTemplate.update(
                 """
                 UPDATE links
-                SET original_url = ?, expires_at = ?, title = ?, tags_json = ?, hostname = ?
+                SET original_url = ?, expires_at = ?, title = ?, tags_json = ?, hostname = ?, version = ?
                 WHERE slug = ?
+                  AND version = ?
                 """,
                 originalUrl,
                 expiresAt,
                 title,
                 serializeTags(tags),
                 hostname,
-                slug) == 1;
+                nextVersion,
+                slug,
+                expectedVersion) == 1;
     }
 
     @Override
-    public boolean deleteBySlug(String slug) {
-        return jdbcTemplate.update("DELETE FROM links WHERE slug = ?", slug) == 1;
+    public boolean deleteBySlug(String slug, long expectedVersion) {
+        return jdbcTemplate.update("DELETE FROM links WHERE slug = ? AND version = ?", slug, expectedVersion) == 1;
     }
 
     @Override
@@ -223,6 +229,7 @@ public class PostgresLinkStore implements LinkStore {
                                l.title,
                                l.tags_json,
                                l.hostname,
+                               l.version,
                                COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                         FROM links l
                         WHERE l.slug = ?
@@ -236,6 +243,7 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getString("title"),
                                 resultSet.getString("tags_json"),
                                 resultSet.getString("hostname"),
+                                resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
                         slug,
                         now)
@@ -254,6 +262,7 @@ public class PostgresLinkStore implements LinkStore {
                                l.title,
                                l.tags_json,
                                l.hostname,
+                               l.version,
                                COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                         FROM links l
                         WHERE l.slug = ?
@@ -266,6 +275,7 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getString("title"),
                                 resultSet.getString("tags_json"),
                                 resultSet.getString("hostname"),
+                                resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
                         slug)
                 .stream()
@@ -282,6 +292,7 @@ public class PostgresLinkStore implements LinkStore {
                        p.title,
                        p.tags_json,
                        p.hostname,
+                       p.version,
                        COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = p.slug), 0) AS click_total
                 FROM link_catalog_projection p
                 WHERE 1 = 1
@@ -309,6 +320,7 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("title"),
                         resultSet.getString("tags_json"),
                         resultSet.getString("hostname"),
+                        resultSet.getLong("version"),
                         resultSet.getLong("click_total")),
                 parameters.toArray());
     }
@@ -568,8 +580,10 @@ public class PostgresLinkStore implements LinkStore {
                     tags_json = ?,
                     hostname = ?,
                     expires_at = ?,
-                    deleted_at = ?
+                    deleted_at = ?,
+                    version = ?
                 WHERE slug = ?
+                  AND version < ?
                 """,
                 linkLifecycleEvent.originalUrl(),
                 linkLifecycleEvent.occurredAt(),
@@ -578,7 +592,9 @@ public class PostgresLinkStore implements LinkStore {
                 linkLifecycleEvent.hostname(),
                 linkLifecycleEvent.expiresAt(),
                 deletedAt,
-                linkLifecycleEvent.slug());
+                linkLifecycleEvent.version(),
+                linkLifecycleEvent.slug(),
+                linkLifecycleEvent.version());
         if (updated == 1) {
             return;
         }
@@ -587,8 +603,8 @@ public class PostgresLinkStore implements LinkStore {
             jdbcTemplate.update(
                     """
                     INSERT INTO link_catalog_projection (
-                        slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at, version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     linkLifecycleEvent.slug(),
                     linkLifecycleEvent.originalUrl(),
@@ -598,7 +614,8 @@ public class PostgresLinkStore implements LinkStore {
                     tagsJson,
                     linkLifecycleEvent.hostname(),
                     linkLifecycleEvent.expiresAt(),
-                    deletedAt);
+                    deletedAt,
+                    linkLifecycleEvent.version());
         } catch (DuplicateKeyException exception) {
             jdbcTemplate.update(
                     """
@@ -609,8 +626,10 @@ public class PostgresLinkStore implements LinkStore {
                         tags_json = ?,
                         hostname = ?,
                         expires_at = ?,
-                        deleted_at = ?
+                        deleted_at = ?,
+                        version = ?
                     WHERE slug = ?
+                      AND version < ?
                     """,
                     linkLifecycleEvent.originalUrl(),
                     linkLifecycleEvent.occurredAt(),
@@ -619,7 +638,9 @@ public class PostgresLinkStore implements LinkStore {
                     linkLifecycleEvent.hostname(),
                     linkLifecycleEvent.expiresAt(),
                     deletedAt,
-                    linkLifecycleEvent.slug());
+                    linkLifecycleEvent.version(),
+                    linkLifecycleEvent.slug(),
+                    linkLifecycleEvent.version());
         }
     }
 
@@ -750,8 +771,9 @@ public class PostgresLinkStore implements LinkStore {
             String title,
             String tagsJson,
             String hostname,
+            long version,
             long clickTotal) {
-        return new LinkDetails(slug, originalUrl, createdAt, expiresAt, title, deserializeTags(tagsJson), hostname, clickTotal);
+        return new LinkDetails(slug, originalUrl, createdAt, expiresAt, title, deserializeTags(tagsJson), hostname, version, clickTotal);
     }
 
     private String serializeTags(List<String> tags) {

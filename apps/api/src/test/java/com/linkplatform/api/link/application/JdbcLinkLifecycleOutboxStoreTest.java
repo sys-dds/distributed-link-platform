@@ -39,12 +39,14 @@ class JdbcLinkLifecycleOutboxStoreTest {
                 List.of("docs"),
                 "example.com",
                 null,
+                1L,
                 OffsetDateTime.parse("2026-04-04T09:00:00Z")));
 
         LinkLifecycleOutboxRecord stored = findByEventId("event-1");
 
         assertEquals("launch-page", stored.eventKey());
         assertEquals("CREATED", stored.eventType());
+        org.junit.jupiter.api.Assertions.assertTrue(stored.payloadJson().contains("\"version\":1"));
         assertEquals(1.0, meterRegistry.get("link.lifecycle.outbox.unpublished").gauge().value());
         assertEquals(1.0, meterRegistry.get("link.lifecycle.outbox.eligible").gauge().value());
     }
@@ -60,6 +62,7 @@ class JdbcLinkLifecycleOutboxStoreTest {
                 List.of("docs"),
                 "example.com",
                 null,
+                2L,
                 OffsetDateTime.parse("2026-04-04T09:00:00Z")));
 
         LinkLifecycleOutboxRecord claimed = store.claimBatch(
@@ -96,6 +99,7 @@ class JdbcLinkLifecycleOutboxStoreTest {
                 List.of("docs"),
                 "example.com",
                 null,
+                3L,
                 OffsetDateTime.parse("2026-04-04T09:00:00Z")));
 
         LinkLifecycleOutboxRecord claimed = store.claimBatch(

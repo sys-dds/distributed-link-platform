@@ -1,7 +1,9 @@
 package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.DuplicateLinkSlugException;
+import com.linkplatform.api.link.application.LinkMutationConflictException;
 import com.linkplatform.api.link.application.LinkNotFoundException;
+import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
 import com.linkplatform.api.link.application.ReservedLinkSlugException;
 import com.linkplatform.api.link.application.SelfTargetLinkException;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,11 @@ public class LinkApiExceptionHandler {
         return problemDetail(HttpStatus.CONFLICT, exception.getMessage());
     }
 
+    @ExceptionHandler(LinkMutationConflictException.class)
+    public ProblemDetail handleMutationConflict(LinkMutationConflictException exception) {
+        return problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
     @ExceptionHandler(ReservedLinkSlugException.class)
     public ProblemDetail handleReservedSlug(ReservedLinkSlugException exception) {
         return problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
@@ -35,6 +42,11 @@ public class LinkApiExceptionHandler {
     @ExceptionHandler(LinkNotFoundException.class)
     public ProblemDetail handleMissingSlug(LinkNotFoundException exception) {
         return problemDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+    }
+
+    @ExceptionHandler(LinkPreconditionRequiredException.class)
+    public ProblemDetail handleMissingPrecondition(LinkPreconditionRequiredException exception) {
+        return problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 
     private ProblemDetail problemDetail(HttpStatus status, String detail) {

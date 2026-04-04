@@ -1,99 +1,90 @@
 
-## 🎯 TICKET-028
+### 🎯 TICKET-029
 
 #### title[]
 
-Build link catalog projection and upgrade projection jobs to chunked resumable execution
+Build idempotent link mutations, optimistic concurrency, and version-aware projection safety
 
 #### technical_detail[]
 
-Broaden the event-driven architecture from analytics and activity feed into a true control-plane read-model layer by introducing a worker-maintained **link catalog projection**, and at the same time mature the new projection-job system so rebuild/replay work is **chunked, resumable, and progress-aware** instead of one-shot full-table processing.
+The platform now has real async lifecycle-driven read models, which makes **write safety** the next best move.
 
-The project now has:
+This ticket should harden the mutation side of the system so retries, duplicate submissions, concurrent edits, and stale async events cannot corrupt link state or projections.
 
-* durable lifecycle history
-* async lifecycle consumer
-* async analytics pipeline
-* projection jobs for replay/rebuild
+Bundle these capabilities into one coherent slice:
 
-That is a strong base, but the current projection jobs are still full-scan/full-rebuild operations, and core control-plane reads such as list/search/suggestions are still not clearly treated as a dedicated projection. The next step should fix both together.
+* add a **monotonic `version`** to the link write model
+* include that version in **lifecycle events**
+* add a **version** column to `link_catalog_projection`
+* make catalog projection application **ignore stale or duplicate lifecycle events**
+* add **idempotency key** support for create/update/delete style link mutations
+* add **optimistic concurrency** for update/delete style mutations
+* expose link version in control-plane responses where it matters
 
-This ticket should introduce a **`link_catalog_projection`** table maintained asynchronously from lifecycle events, then move the main control-plane read APIs onto that projection while preserving current response shapes and behavior from the client point of view.
+Implementation should stay practical and link-specific. Do **not** build a generic command bus, generic middleware, or abstract framework.
 
-At the same time, upgrade projection jobs so they can process in chunks with durable checkpoint state. That should apply to:
+Use a small, explicit design:
 
-* existing `ACTIVITY_FEED_REPLAY`
-* existing `CLICK_ROLLUP_REBUILD`
-* new `LINK_CATALOG_REBUILD`
-
-Keep this intentionally practical. Do not build a generic event platform or workflow engine.
+* `Idempotency-Key` request header for mutation endpoints
+* plain integer `If-Match` header for mutation preconditions on update/delete-style operations
+* a small JDBC-backed idempotency store scoped to link mutations
+* SQL update patterns that enforce version matching atomically
 
 #### feature_delivered_by_end[]
 
-The platform has a real async-maintained control-plane catalog projection, and projection rebuild/replay jobs are chunked and resumable instead of one-shot operations.
+The platform can safely handle:
+
+* client retries without duplicate mutation effects
+* concurrent edits without silent overwrite
+* duplicate or out-of-order lifecycle event delivery without stale projection state winning
 
 #### how_this_unlocks_next_feature[]
 
-This creates the first believable **read-model separation** for the control plane and gives you projection infrastructure that can support later search/index projections, service extraction, and larger rebuilds without manual DB surgery or fragile full-table jobs.
+This unlocks the next commercial/control layer cleanly:
+
+* ownership
+* API keys
+* plans
+* quotas
+* abuse controls
+
+It also makes later worker hardening and service-boundary work much safer because mutation correctness is no longer the weak link.
 
 #### acceptance_criteria[]
 
-* a new durable `link_catalog_projection` exists and is maintained asynchronously from lifecycle events
-* lifecycle consumer updates the catalog projection for:
-
-  * create
-  * update
-  * delete
-  * expiration update
-* catalog projection keeps enough snapshot data to serve current control-plane read behavior
-* list/search/suggestions read from the catalog projection instead of rebuilding directly from the write model
-* single-link control-plane read also uses the projection if it can be done cleanly without changing client behavior
-* redirect behavior remains unchanged and continues to use the current runtime path
-* current client-facing response shapes and semantics stay stable
-* projection jobs support durable checkpoint/progress state
-* projection jobs run in chunks instead of one-shot full-table operations
-* failed chunked jobs can resume from saved checkpoint state
-* existing `ACTIVITY_FEED_REPLAY` is converted to chunked replay
-* existing `CLICK_ROLLUP_REBUILD` is converted to chunked rebuild
-* new `LINK_CATALOG_REBUILD` can rebuild the catalog projection from lifecycle history
-* worker/all runtime modes execute projection jobs
-* api-only mode does not execute projection jobs
-* metrics expose at minimum:
-
-  * queued jobs
-  * active jobs
-  * started/completed/failed counts
-  * job duration
-  * job progress/checkpoint visibility, or the smallest equivalent useful signal
-* focused tests cover:
-
-  * lifecycle consumer maintaining catalog projection correctly
-  * list/search/suggestions correctness from catalog projection
-  * deleted/expired behavior preserved
-  * chunked job progress and resume behavior
-  * link catalog rebuild correctness
-  * activity feed replay still idempotent after chunking
-  * click rollup rebuild still deterministic after chunking
-  * multi-worker-safe job claiming still works
-* no README, Postman, or ticket-tracking repo changes
+* creating a link with the same `Idempotency-Key` and same payload does **not** create duplicates
+* reusing the same `Idempotency-Key` with a different payload returns a **409 Problem Details** response
+* update/delete-style mutations require a valid current version via `If-Match`
+* stale `If-Match` values return a **409 Problem Details** response
+* link version increments on every successful mutation
+* lifecycle events include the new version
+* `link_catalog_projection` stores version and only applies newer events
+* replay/rebuild still reconstructs correct final projection state
+* control-plane reads expose version where needed for future safe clients
+* no repo ticket-tracking/doc churn
 
 #### code_target[]
 
-* `apps/api`
-* Flyway migration(s) for:
-
-  * `link_catalog_projection`
-  * projection-job checkpoint/progress state
-* `application.yml` for small chunk-size / poll settings only
-* `infra/docker-compose` only if a tiny worker config addition is directly required
+* link API mutation endpoints and request handling
+* link application service mutation flows
+* `LinkStore` and `PostgresLinkStore`
+* lifecycle event model / serialization / outbox write path
+* `link_catalog_projection` schema and projection write logic
+* new small idempotency persistence component under the existing JDBC style
+* API and projection tests
+* **do not touch** `docs/tickets.md`, README, or Postman files
 
 #### proof[]
 
-* control-plane reads are served from the catalog projection
-* lifecycle events maintain the projection asynchronously
-* projection jobs are chunked and resumable
-* catalog rebuild works correctly
-* existing activity feed replay and click rollup rebuild still work correctly after migration to chunked execution
-* automated tests pass
+* integration test proving duplicate create retry returns one logical result
+* integration test proving same key + different payload returns 409
+* integration test proving concurrent/stale update is rejected
+* projection test proving stale lifecycle event does not overwrite newer projection state
+* rebuild/replay test proving final projection state is still correct after versioned events
+* targeted test output showing green results
 
 #### delivery_note[]
+
+Keep this as one coherent correctness slice.
+Do not split idempotency, versioning, and projection safety into separate mini-tickets.
+Do not add ownership, API keys, quotas, or rate limiting yet.

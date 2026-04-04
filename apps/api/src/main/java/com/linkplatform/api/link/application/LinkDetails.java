@@ -11,5 +11,6 @@ public record LinkDetails(
         String title,
         List<String> tags,
         String hostname,
+        long version,
         long clickTotal) {
 }

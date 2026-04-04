@@ -51,6 +51,7 @@ class LinkControllerTest {
                         """))
                 .andExpect(jsonPath("$.slug").value("launch-page"))
                 .andExpect(jsonPath("$.originalUrl").value("https://example.com/launch"))
+                .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.type").doesNotExist())
                 .andExpect(jsonPath("$.title").doesNotExist())
                 .andExpect(jsonPath("$.status").doesNotExist())
@@ -76,7 +77,8 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.title").value("Launch Guide"))
                 .andExpect(jsonPath("$.tags[0]").value("product"))
                 .andExpect(jsonPath("$.tags[1]").value("docs"))
-                .andExpect(jsonPath("$.hostname").value("docs.example.com"));
+                .andExpect(jsonPath("$.hostname").value("docs.example.com"))
+                .andExpect(jsonPath("$.version").value(1));
     }
 
     @Test
@@ -96,6 +98,7 @@ class LinkControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value("future-link"))
                 .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"))
+                .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.clickTotal").value(0));
     }
 
@@ -139,6 +142,60 @@ class LinkControllerTest {
                                 }
                                 """))
                 .andExpect(problemDetail(409, "Conflict", "Link slug already exists: repeatable"));
+    }
+
+    @Test
+    void createLinkReplaysSafelyWithIdempotencyKey() throws Exception {
+        String request = """
+                {
+                  "slug": "idempotent-create",
+                  "originalUrl": "https://example.com/idempotent"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/links")
+                        .header("Idempotency-Key", "create-key-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(post("/api/v1/links")
+                        .header("Idempotency-Key", "create-key-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.slug").value("idempotent-create"))
+                .andExpect(jsonPath("$.version").value(1));
+
+        assertCount("SELECT COUNT(*) FROM links WHERE slug = 'idempotent-create'", 1);
+        assertCount("SELECT COUNT(*) FROM link_mutation_idempotency WHERE idempotency_key = 'create-key-1'", 1);
+    }
+
+    @Test
+    void createLinkRejectsIdempotencyKeyReuseWithDifferentPayload() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .header("Idempotency-Key", "create-key-2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "first-payload",
+                                  "originalUrl": "https://example.com/first"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/links")
+                        .header("Idempotency-Key", "create-key-2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "second-payload",
+                                  "originalUrl": "https://example.com/second"
+                                }
+                                """))
+                .andExpect(problemDetail(409, "Conflict",
+                        "Idempotency key cannot be reused for a different link mutation request"));
     }
 
     @Test
@@ -212,6 +269,7 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.tags").isArray())
                 .andExpect(jsonPath("$.tags.length()").value(0))
                 .andExpect(jsonPath("$.hostname").value("example.com"))
+                .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.clickTotal").value(0));
     }
 
@@ -235,6 +293,7 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$[2].slug").value("beta"))
                 .andExpect(jsonPath("$[0].createdAt").exists())
                 .andExpect(jsonPath("$[0].expiresAt").doesNotExist())
+                .andExpect(jsonPath("$[0].version").value(1))
                 .andExpect(jsonPath("$[0].clickTotal").value(0));
     }
 
@@ -507,6 +566,7 @@ class LinkControllerTest {
                 .andExpect(status().isCreated());
 
         mockMvc.perform(put("/api/v1/links/editable")
+                        .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -521,7 +581,8 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.title").doesNotExist())
                 .andExpect(jsonPath("$.tags").isArray())
                 .andExpect(jsonPath("$.tags.length()").value(0))
-                .andExpect(jsonPath("$.hostname").value("example.com"));
+                .andExpect(jsonPath("$.hostname").value("example.com"))
+                .andExpect(jsonPath("$.version").value(2));
     }
 
     @Test
@@ -537,6 +598,7 @@ class LinkControllerTest {
                 .andExpect(status().isCreated());
 
         mockMvc.perform(put("/api/v1/links/editable-meta")
+                        .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -549,7 +611,8 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.title").value("Updated Title"))
                 .andExpect(jsonPath("$.tags[0]").value("docs"))
                 .andExpect(jsonPath("$.tags[1]").value("product"))
-                .andExpect(jsonPath("$.hostname").value("docs.example.com"));
+                .andExpect(jsonPath("$.hostname").value("docs.example.com"))
+                .andExpect(jsonPath("$.version").value(2));
     }
 
     @Test
@@ -565,6 +628,7 @@ class LinkControllerTest {
                 .andExpect(status().isCreated());
 
         mockMvc.perform(put("/api/v1/links/expiring")
+                        .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -573,12 +637,14 @@ class LinkControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"));
+                .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"))
+                .andExpect(jsonPath("$.version").value(2));
     }
 
     @Test
     void updateLinkReturnsNotFoundForMissingSlug() throws Exception {
         mockMvc.perform(put("/api/v1/links/missing-link")
+                        .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -586,6 +652,74 @@ class LinkControllerTest {
                                 }
                                 """))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
+    }
+
+    @Test
+    void updateLinkRejectsMissingIfMatchHeader() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "missing-precondition",
+                                  "originalUrl": "https://example.com/original"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/api/v1/links/missing-precondition")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/updated"
+                                }
+                                """))
+                .andExpect(problemDetail(400, "Bad Request", "If-Match header is required"));
+    }
+
+    @Test
+    void updateLinkRejectsInvalidIfMatchHeader() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "invalid-precondition",
+                                  "originalUrl": "https://example.com/original"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/api/v1/links/invalid-precondition")
+                        .header("If-Match", "W/\"1\"")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/updated"
+                                }
+                                """))
+                .andExpect(problemDetail(400, "Bad Request", "If-Match header must be a plain integer version"));
+    }
+
+    @Test
+    void updateLinkRejectsStaleIfMatchVersion() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "stale-update",
+                                  "originalUrl": "https://example.com/original"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/api/v1/links/stale-update")
+                        .header("If-Match", "0")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/updated"
+                                }
+                                """))
+                .andExpect(problemDetail(409, "Conflict", "Link version conflict for slug: stale-update"));
     }
 
     @Test
@@ -601,6 +735,7 @@ class LinkControllerTest {
                 .andExpect(status().isCreated());
 
         mockMvc.perform(put("/api/v1/links/editable")
+                        .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -624,6 +759,7 @@ class LinkControllerTest {
                 .andExpect(status().isCreated());
 
         mockMvc.perform(put("/api/v1/links/editable")
+                        .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -646,7 +782,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(delete("/api/v1/links/delete-me"))
+        mockMvc.perform(delete("/api/v1/links/delete-me").header("If-Match", "1"))
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""));
 
@@ -669,6 +805,7 @@ class LinkControllerTest {
         assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'CREATED'", 1);
 
         mockMvc.perform(put("/api/v1/links/async-feed")
+                        .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -679,7 +816,7 @@ class LinkControllerTest {
         assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
         assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'UPDATED'", 1);
 
-        mockMvc.perform(delete("/api/v1/links/async-feed"))
+        mockMvc.perform(delete("/api/v1/links/async-feed").header("If-Match", "2"))
                 .andExpect(status().isNoContent());
         assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
         assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'DELETED'", 1);
@@ -687,8 +824,24 @@ class LinkControllerTest {
 
     @Test
     void deleteLinkReturnsNotFoundForMissingSlug() throws Exception {
-        mockMvc.perform(delete("/api/v1/links/missing-link"))
+        mockMvc.perform(delete("/api/v1/links/missing-link").header("If-Match", "1"))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
+    }
+
+    @Test
+    void deleteLinkRejectsStaleIfMatchVersion() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "stale-delete",
+                                  "originalUrl": "https://example.com/delete"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(delete("/api/v1/links/stale-delete").header("If-Match", "0"))
+                .andExpect(problemDetail(409, "Conflict", "Link version conflict for slug: stale-delete"));
     }
 
     @Test

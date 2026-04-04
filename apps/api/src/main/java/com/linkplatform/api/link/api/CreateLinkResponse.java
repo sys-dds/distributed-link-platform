@@ -1,4 +1,4 @@
 package com.linkplatform.api.link.api;
 
-public record CreateLinkResponse(String slug, String originalUrl) {
+public record CreateLinkResponse(String slug, String originalUrl, long version) {
 }
