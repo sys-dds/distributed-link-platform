@@ -10,5 +10,6 @@ public record LinkResponse(
         OffsetDateTime expiresAt,
         String title,
         List<String> tags,
-        String hostname) {
+        String hostname,
+        long version) {
 }

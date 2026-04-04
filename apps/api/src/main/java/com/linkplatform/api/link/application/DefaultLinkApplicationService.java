@@ -4,6 +4,9 @@ import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -21,10 +24,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class DefaultLinkApplicationService implements LinkApplicationService {
 
     private static final Set<String> RESERVED_TOP_LEVEL_SLUGS = Set.of("api", "actuator", "error");
+    private static final String CREATE_OPERATION = "CREATE";
+    private static final String UPDATE_OPERATION = "UPDATE";
+    private static final String DELETE_OPERATION = "DELETE";
 
     private final LinkStore linkStore;
     private final AnalyticsOutboxStore analyticsOutboxStore;
     private final LinkLifecycleOutboxStore linkLifecycleOutboxStore;
+    private final LinkMutationIdempotencyStore linkMutationIdempotencyStore;
     private final URI publicBaseUri;
     private final Clock clock;
 
@@ -32,17 +39,19 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             LinkStore linkStore,
             AnalyticsOutboxStore analyticsOutboxStore,
             LinkLifecycleOutboxStore linkLifecycleOutboxStore,
+            LinkMutationIdempotencyStore linkMutationIdempotencyStore,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
         this.linkStore = linkStore;
         this.analyticsOutboxStore = analyticsOutboxStore;
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
+        this.linkMutationIdempotencyStore = linkMutationIdempotencyStore;
         this.publicBaseUri = URI.create(publicBaseUrl);
         this.clock = Clock.systemUTC();
     }
 
     @Override
     @Transactional
-    public Link createLink(CreateLinkCommand command) {
+    public LinkMutationResult createLink(CreateLinkCommand command, String idempotencyKey) {
         OffsetDateTime now = now();
         Link link = new Link(new LinkSlug(command.slug()), new OriginalUrl(command.originalUrl()));
         rejectReservedSlug(link.slug());
@@ -50,50 +59,75 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         String normalizedTitle = normalizeTitle(command.title());
         List<String> normalizedTags = normalizeTags(command.tags());
         String hostname = extractHostname(link.originalUrl().value());
+        String requestHash = fingerprintCreate(command.slug(), command.originalUrl(), command.expiresAt(), normalizedTitle, normalizedTags);
+        LinkMutationResult replayed = findReplayIfPresent(idempotencyKey, CREATE_OPERATION, requestHash);
+        if (replayed != null) {
+            return replayed;
+        }
 
-        if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname)) {
+        if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname, 1L)) {
             throw new DuplicateLinkSlugException(link.slug().value());
         }
+        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(link.slug().value())
+                .orElseThrow(() -> new LinkNotFoundException(link.slug().value()));
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(new LinkLifecycleEvent(
                 UUID.randomUUID().toString(),
                 LinkLifecycleEventType.CREATED,
-                link.slug().value(),
-                link.originalUrl().value(),
-                normalizedTitle,
-                normalizedTags,
-                hostname,
-                command.expiresAt(),
+                storedDetails.slug(),
+                storedDetails.originalUrl(),
+                storedDetails.title(),
+                storedDetails.tags(),
+                storedDetails.hostname(),
+                storedDetails.expiresAt(),
+                storedDetails.version(),
                 now));
-
-        return link;
+        LinkMutationResult result = LinkMutationResult.fromDetails(storedDetails);
+        saveIdempotentResult(idempotencyKey, CREATE_OPERATION, requestHash, result, now);
+        return result;
     }
 
     @Override
     @Transactional
-    public LinkDetails updateLink(
+    public LinkMutationResult updateLink(
             String slug,
             String originalUrl,
             OffsetDateTime expiresAt,
             String title,
-            List<String> tags) {
+            List<String> tags,
+            long expectedVersion,
+            String idempotencyKey) {
         OffsetDateTime now = now();
         LinkSlug linkSlug = new LinkSlug(slug);
         OriginalUrl validatedOriginalUrl = new OriginalUrl(originalUrl);
         rejectSelfTargetUrl(validatedOriginalUrl);
-        LinkDetails beforeUpdate = linkStore.findStoredDetailsBySlug(linkSlug.value())
-                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         String normalizedTitle = normalizeTitle(title);
         List<String> normalizedTags = normalizeTags(tags);
         String hostname = extractHostname(validatedOriginalUrl.value());
+        String requestHash = fingerprintUpdate(
+                linkSlug.value(),
+                validatedOriginalUrl.value(),
+                expiresAt,
+                normalizedTitle,
+                normalizedTags,
+                expectedVersion);
+        LinkMutationResult replayed = findReplayIfPresent(idempotencyKey, UPDATE_OPERATION, requestHash);
+        if (replayed != null) {
+            return replayed;
+        }
 
+        LinkDetails beforeUpdate = linkStore.findStoredDetailsBySlug(linkSlug.value())
+                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+        long nextVersion = beforeUpdate.version() + 1;
         if (!linkStore.update(
                 linkSlug.value(),
                 validatedOriginalUrl.value(),
                 expiresAt,
                 normalizedTitle,
                 normalizedTags,
-                hostname)) {
-            throw new LinkNotFoundException(linkSlug.value());
+                hostname,
+                expectedVersion,
+                nextVersion)) {
+            throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
         }
 
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value())
@@ -102,26 +136,46 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 determineUpdateEventType(beforeUpdate, storedDetails),
                 storedDetails,
                 now));
-
-        return linkStore.findDetailsBySlug(linkSlug.value(), now)
+        LinkDetails visibleDetails = linkStore.findDetailsBySlug(linkSlug.value(), now)
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+        LinkMutationResult result = LinkMutationResult.fromDetails(visibleDetails);
+        saveIdempotentResult(idempotencyKey, UPDATE_OPERATION, requestHash, result, now);
+        return result;
     }
 
     @Override
     @Transactional
-    public void deleteLink(String slug) {
+    public LinkMutationResult deleteLink(String slug, long expectedVersion, String idempotencyKey) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
+        String requestHash = fingerprintDelete(linkSlug.value(), expectedVersion);
+        LinkMutationResult replayed = findReplayIfPresent(idempotencyKey, DELETE_OPERATION, requestHash);
+        if (replayed != null) {
+            return replayed;
+        }
+
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
 
-        if (!linkStore.deleteBySlug(linkSlug.value())) {
-            throw new LinkNotFoundException(linkSlug.value());
+        if (!linkStore.deleteBySlug(linkSlug.value(), expectedVersion)) {
+            throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
         }
+        LinkMutationResult result = new LinkMutationResult(
+                storedDetails.slug(),
+                storedDetails.originalUrl(),
+                storedDetails.createdAt(),
+                storedDetails.expiresAt(),
+                storedDetails.title(),
+                storedDetails.tags(),
+                storedDetails.hostname(),
+                storedDetails.version() + 1,
+                true);
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(toLifecycleEvent(
                 LinkLifecycleEventType.DELETED,
-                storedDetails,
+                result,
                 now));
+        saveIdempotentResult(idempotencyKey, DELETE_OPERATION, requestHash, result, now);
+        return result;
     }
 
     @Override
@@ -279,6 +333,24 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 linkDetails.tags(),
                 linkDetails.hostname(),
                 linkDetails.expiresAt(),
+                linkDetails.version(),
+                occurredAt);
+    }
+
+    private LinkLifecycleEvent toLifecycleEvent(
+            LinkLifecycleEventType type,
+            LinkMutationResult result,
+            OffsetDateTime occurredAt) {
+        return new LinkLifecycleEvent(
+                UUID.randomUUID().toString(),
+                type,
+                result.slug(),
+                result.originalUrl(),
+                result.title(),
+                result.tags(),
+                result.hostname(),
+                result.expiresAt(),
+                result.version(),
                 occurredAt);
     }
 
@@ -303,5 +375,69 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 .mapToObj(startDate::plusDays)
                 .map(day -> new DailyClickBucket(day, clickTotalsByDay.getOrDefault(day, 0L)))
                 .toList();
+    }
+
+    private LinkMutationResult findReplayIfPresent(String idempotencyKey, String operation, String requestHash) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return null;
+        }
+        return linkMutationIdempotencyStore.findByKey(idempotencyKey)
+                .map(record -> {
+                    if (!record.operation().equals(operation) || !record.requestHash().equals(requestHash)) {
+                        throw new LinkMutationConflictException("Idempotency key cannot be reused for a different link mutation request");
+                    }
+                    return record.result();
+                })
+                .orElse(null);
+    }
+
+    private void saveIdempotentResult(
+            String idempotencyKey,
+            String operation,
+            String requestHash,
+            LinkMutationResult result,
+            OffsetDateTime createdAt) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return;
+        }
+        linkMutationIdempotencyStore.saveResult(idempotencyKey, operation, requestHash, result, createdAt);
+    }
+
+    private String fingerprintCreate(
+            String slug,
+            String originalUrl,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags) {
+        return sha256(CREATE_OPERATION + "|" + slug + "|" + originalUrl + "|" + expiresAt + "|" + title + "|" + String.join(",", tags));
+    }
+
+    private String fingerprintUpdate(
+            String slug,
+            String originalUrl,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags,
+            long expectedVersion) {
+        return sha256(UPDATE_OPERATION + "|" + slug + "|" + originalUrl + "|" + expiresAt + "|" + title + "|"
+                + String.join(",", tags) + "|" + expectedVersion);
+    }
+
+    private String fingerprintDelete(String slug, long expectedVersion) {
+        return sha256(DELETE_OPERATION + "|" + slug + "|" + expectedVersion);
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte part : hash) {
+                hex.append(String.format("%02x", part));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 not available", exception);
+        }
     }
 }

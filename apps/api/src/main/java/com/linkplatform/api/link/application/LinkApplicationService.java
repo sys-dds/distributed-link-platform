@@ -5,16 +5,18 @@ import java.util.List;
 
 public interface LinkApplicationService {
 
-    Link createLink(CreateLinkCommand command);
+    LinkMutationResult createLink(CreateLinkCommand command, String idempotencyKey);
 
-    LinkDetails updateLink(
+    LinkMutationResult updateLink(
             String slug,
             String originalUrl,
             java.time.OffsetDateTime expiresAt,
             String title,
-            List<String> tags);
+            List<String> tags,
+            long expectedVersion,
+            String idempotencyKey);
 
-    void deleteLink(String slug);
+    LinkMutationResult deleteLink(String slug, long expectedVersion, String idempotencyKey);
 
     Link resolveLink(String slug);
 

@@ -7,11 +7,19 @@ import java.util.Optional;
 
 public interface LinkStore {
 
-    boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname);
+    boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname, long version);
 
-    boolean update(String slug, String originalUrl, OffsetDateTime expiresAt, String title, List<String> tags, String hostname);
+    boolean update(
+            String slug,
+            String originalUrl,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags,
+            String hostname,
+            long expectedVersion,
+            long nextVersion);
 
-    boolean deleteBySlug(String slug);
+    boolean deleteBySlug(String slug, long expectedVersion);
 
     boolean recordClickIfAbsent(LinkClick linkClick);
 

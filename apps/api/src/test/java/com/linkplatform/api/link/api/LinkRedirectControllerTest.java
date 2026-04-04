@@ -73,7 +73,7 @@ class LinkRedirectControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(delete("/api/v1/links/gone-link"))
+        mockMvc.perform(delete("/api/v1/links/gone-link").header("If-Match", "1"))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/gone-link"))

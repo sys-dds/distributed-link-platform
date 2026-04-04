@@ -49,6 +49,7 @@ class LinkLifecycleConsumerTest {
                 List.of("docs"),
                 "example.com",
                 null,
+                1L,
                 OffsetDateTime.parse("2026-04-04T09:00:00Z"));
 
         consumer.consume(objectMapper.writeValueAsString(event));
@@ -77,6 +78,7 @@ class LinkLifecycleConsumerTest {
                 List.of("docs"),
                 "example.com",
                 OffsetDateTime.parse("2030-04-01T08:00:00Z"),
+                2L,
                 OffsetDateTime.parse("2026-04-04T09:00:00Z"));
         String payload = objectMapper.writeValueAsString(event);
 
@@ -102,6 +104,7 @@ class LinkLifecycleConsumerTest {
                 List.of("archived"),
                 "example.com",
                 null,
+                3L,
                 OffsetDateTime.parse("2026-04-04T09:00:00Z"));
 
         consumer.consume(objectMapper.writeValueAsString(event));
@@ -130,6 +133,7 @@ class LinkLifecycleConsumerTest {
                 List.of("docs"),
                 "example.com",
                 OffsetDateTime.parse("2030-04-01T08:00:00Z"),
+                4L,
                 OffsetDateTime.parse("2026-04-04T09:00:00Z"));
 
         consumer.consume(objectMapper.writeValueAsString(event));
@@ -138,5 +142,45 @@ class LinkLifecycleConsumerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("updated"))
                 .andExpect(jsonPath("$[0].expiresAt").value("2030-04-01T08:00:00Z"));
+    }
+
+    @Test
+    void catalogProjectionIgnoresStaleLifecycleVersion() throws Exception {
+        LinkLifecycleEvent newer = new LinkLifecycleEvent(
+                "event-5",
+                LinkLifecycleEventType.UPDATED,
+                "launch-page",
+                "https://example.com/newer",
+                "Newer",
+                List.of("docs"),
+                "example.com",
+                null,
+                5L,
+                OffsetDateTime.parse("2026-04-04T09:10:00Z"));
+        LinkLifecycleEvent stale = new LinkLifecycleEvent(
+                "event-6",
+                LinkLifecycleEventType.UPDATED,
+                "launch-page",
+                "https://example.com/stale",
+                "Stale",
+                List.of("docs"),
+                "example.com",
+                null,
+                4L,
+                OffsetDateTime.parse("2026-04-04T09:00:00Z"));
+
+        consumer.consume(objectMapper.writeValueAsString(newer));
+        consumer.consume(objectMapper.writeValueAsString(stale));
+
+        assertEquals(
+                "https://example.com/newer",
+                jdbcTemplate.queryForObject(
+                        "SELECT original_url FROM link_catalog_projection WHERE slug = 'launch-page'",
+                        String.class));
+        assertEquals(
+                5L,
+                jdbcTemplate.queryForObject(
+                        "SELECT version FROM link_catalog_projection WHERE slug = 'launch-page'",
+                        Long.class));
     }
 }

@@ -38,9 +38,9 @@ class ProjectionJobRunnerTest {
 
     @Test
     void activityFeedReplayProcessesInChunksAndCompletesIdempotently() throws Exception {
-        insertLifecycleHistory("event-1", "CREATED", "alpha", "https://example.com/alpha", "Alpha", "[\"docs\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
-        insertLifecycleHistory("event-2", "UPDATED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:05:00Z"));
-        insertLifecycleHistory("event-3", "DELETED", "gone", "https://example.com/gone", "Gone", "[\"archived\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:10:00Z"));
+        insertLifecycleHistory("event-1", "CREATED", "alpha", "https://example.com/alpha", "Alpha", "[\"docs\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
+        insertLifecycleHistory("event-2", "UPDATED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, 2L, OffsetDateTime.parse("2026-04-04T09:05:00Z"));
+        insertLifecycleHistory("event-3", "DELETED", "gone", "https://example.com/gone", "Gone", "[\"archived\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:10:00Z"));
 
         ProjectionJob firstJob = projectionJobService.createJob(ProjectionJobType.ACTIVITY_FEED_REPLAY);
 
@@ -100,10 +100,10 @@ class ProjectionJobRunnerTest {
 
     @Test
     void linkCatalogRebuildReplaysLifecycleHistoryIntoControlPlaneProjection() throws Exception {
-        insertLifecycleHistory("event-1", "CREATED", "launch-page", "https://docs.example.com/launch", "Launch", "[\"docs\"]", "docs.example.com", null, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
-        insertLifecycleHistory("event-2", "UPDATED", "launch-page", "https://docs.example.com/launch-v2", "Launch v2", "[\"docs\",\"product\"]", "docs.example.com", OffsetDateTime.parse("2030-04-01T08:00:00Z"), OffsetDateTime.parse("2026-04-04T09:05:00Z"));
-        insertLifecycleHistory("event-3", "CREATED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:06:00Z"));
-        insertLifecycleHistory("event-4", "DELETED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:07:00Z"));
+        insertLifecycleHistory("event-1", "CREATED", "launch-page", "https://docs.example.com/launch", "Launch", "[\"docs\"]", "docs.example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
+        insertLifecycleHistory("event-2", "UPDATED", "launch-page", "https://docs.example.com/launch-v2", "Launch v2", "[\"docs\",\"product\"]", "docs.example.com", OffsetDateTime.parse("2030-04-01T08:00:00Z"), 2L, OffsetDateTime.parse("2026-04-04T09:05:00Z"));
+        insertLifecycleHistory("event-3", "CREATED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:06:00Z"));
+        insertLifecycleHistory("event-4", "DELETED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, 2L, OffsetDateTime.parse("2026-04-04T09:07:00Z"));
 
         ProjectionJob job = projectionJobService.createJob(ProjectionJobType.LINK_CATALOG_REBUILD);
         projectionJobRunner.runPendingJobs();
@@ -116,6 +116,7 @@ class ProjectionJobRunnerTest {
                 .andExpect(jsonPath("$[0].slug").value("launch-page"))
                 .andExpect(jsonPath("$[0].originalUrl").value("https://docs.example.com/launch-v2"))
                 .andExpect(jsonPath("$[0].title").value("Launch v2"))
+                .andExpect(jsonPath("$[0].version").value(2))
                 .andExpect(jsonPath("$[0].tags[1]").value("product"));
     }
 
@@ -154,6 +155,7 @@ class ProjectionJobRunnerTest {
             String tagsJson,
             String hostname,
             OffsetDateTime expiresAt,
+            long version,
             OffsetDateTime occurredAt) {
         jdbcTemplate.update(
                 """
@@ -164,7 +166,7 @@ class ProjectionJobRunnerTest {
                 eventType,
                 slug,
                 """
-                {"eventId":"%s","eventType":"%s","slug":"%s","originalUrl":"%s","title":%s,"tags":%s,"hostname":"%s","expiresAt":%s,"occurredAt":"%s"}
+                {"eventId":"%s","eventType":"%s","slug":"%s","originalUrl":"%s","title":%s,"tags":%s,"hostname":"%s","expiresAt":%s,"version":%d,"occurredAt":"%s"}
                 """.formatted(
                         eventId,
                         eventType,
@@ -174,6 +176,7 @@ class ProjectionJobRunnerTest {
                         tagsJson == null ? "null" : tagsJson,
                         hostname,
                         expiresAt == null ? "null" : "\"" + expiresAt + "\"",
+                        version,
                         occurredAt),
                 occurredAt,
                 occurredAt);
@@ -200,8 +203,8 @@ class ProjectionJobRunnerTest {
         jdbcTemplate.update(
                 """
                 INSERT INTO link_catalog_projection (
-                    slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                    slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at, version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)
                 """,
                 slug,
                 originalUrl,
