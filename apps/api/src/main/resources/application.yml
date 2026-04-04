@@ -35,6 +35,9 @@ link-platform:
     outbox-relay-batch-size: ${LINK_PLATFORM_ANALYTICS_OUTBOX_BATCH_SIZE:50}
     outbox-relay-delay: ${LINK_PLATFORM_ANALYTICS_OUTBOX_DELAY:5000}
     outbox-relay-lease-duration: ${LINK_PLATFORM_ANALYTICS_OUTBOX_LEASE_DURATION:PT30S}
+    outbox-relay-retry-base-delay: ${LINK_PLATFORM_ANALYTICS_OUTBOX_RETRY_BASE_DELAY:PT5S}
+    outbox-relay-retry-max-delay: ${LINK_PLATFORM_ANALYTICS_OUTBOX_RETRY_MAX_DELAY:PT5M}
+    outbox-relay-max-attempts: ${LINK_PLATFORM_ANALYTICS_OUTBOX_MAX_ATTEMPTS:5}
 
 management:
   endpoints:

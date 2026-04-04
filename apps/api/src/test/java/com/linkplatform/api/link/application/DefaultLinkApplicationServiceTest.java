@@ -499,12 +499,46 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public long countEligible(OffsetDateTime now) {
+            return events.size();
+        }
+
+        @Override
+        public long countParked() {
+            return 0;
+        }
+
+        @Override
+        public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
+            return events.isEmpty() ? null : 0.0;
+        }
+
+        @Override
         public List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) {
             return List.of();
         }
 
         @Override
         public void markPublished(long id, OffsetDateTime publishedAt) {
+        }
+
+        @Override
+        public void recordPublishFailure(
+                long id,
+                int attemptCount,
+                OffsetDateTime nextAttemptAt,
+                String lastErrorSummary,
+                OffsetDateTime parkedAt) {
+        }
+
+        @Override
+        public List<AnalyticsOutboxRecord> findParked(int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) {
+            return false;
         }
 
         private List<RedirectClickAnalyticsEvent> events() {

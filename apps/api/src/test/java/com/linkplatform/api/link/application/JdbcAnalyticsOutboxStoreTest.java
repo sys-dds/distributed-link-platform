@@ -47,7 +47,8 @@ class JdbcAnalyticsOutboxStoreTest {
 
         AnalyticsOutboxRecord outboxRecord = jdbcTemplate.queryForObject(
                 """
-                SELECT id, event_id, event_type, event_key, payload_json, created_at, published_at, claimed_by, claimed_until
+                SELECT id, event_id, event_type, event_key, payload_json, created_at, published_at, claimed_by, claimed_until,
+                       attempt_count, next_attempt_at, last_error_summary, parked_at
                 FROM analytics_outbox
                 WHERE event_id = ?
                 """,
@@ -78,6 +79,9 @@ class JdbcAnalyticsOutboxStoreTest {
 
         assertEquals(2L, jdbcAnalyticsOutboxStore.countUnpublished());
         assertEquals(2.0, meterRegistry.get("link.analytics.outbox.unpublished").gauge().value());
+        assertEquals(2.0, meterRegistry.get("link.analytics.outbox.eligible").gauge().value());
+        assertEquals(0.0, meterRegistry.get("link.analytics.outbox.parked").gauge().value());
+        assertTrue(meterRegistry.get("link.analytics.outbox.oldest.eligible.age.seconds").gauge().value() >= 0.0);
     }
 
     @Test
@@ -174,25 +178,112 @@ class JdbcAnalyticsOutboxStoreTest {
     }
 
     @Test
-    void failedPublishLeavesRowRecoverableAfterLeaseExpiry() {
+    void failedPublishLeavesRowRecoverableAfterRetryDelay() {
         saveEvent("event-50", "alpha-link", OffsetDateTime.parse("2026-04-03T09:00:00Z"));
 
-        List<AnalyticsOutboxRecord> firstClaim = jdbcAnalyticsOutboxStore.claimBatch(
+        AnalyticsOutboxRecord firstClaim = jdbcAnalyticsOutboxStore.claimBatch(
                 "worker-a",
                 OffsetDateTime.parse("2026-04-03T09:00:10Z"),
                 OffsetDateTime.parse("2026-04-03T09:01:00Z"),
+                10).getFirst();
+        jdbcAnalyticsOutboxStore.recordPublishFailure(
+                firstClaim.id(),
+                1,
+                OffsetDateTime.parse("2026-04-03T09:02:00Z"),
+                "RuntimeException: Kafka unavailable",
+                null);
+        AnalyticsOutboxRecord storedAfterFailure = findByEventId("event-50");
+        List<AnalyticsOutboxRecord> blockedClaim = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-b",
+                OffsetDateTime.parse("2026-04-03T09:01:30Z"),
+                OffsetDateTime.parse("2026-04-03T09:02:30Z"),
                 10);
         List<AnalyticsOutboxRecord> recoveredClaim = jdbcAnalyticsOutboxStore.claimBatch(
                 "worker-b",
-                OffsetDateTime.parse("2026-04-03T09:01:30Z"),
-                OffsetDateTime.parse("2026-04-03T09:02:00Z"),
+                OffsetDateTime.parse("2026-04-03T09:02:01Z"),
+                OffsetDateTime.parse("2026-04-03T09:03:00Z"),
                 10);
 
-        assertEquals(1, firstClaim.size());
+        assertEquals(1, storedAfterFailure.attemptCount());
+        assertEquals(OffsetDateTime.parse("2026-04-03T09:02:00Z"), storedAfterFailure.nextAttemptAt());
+        assertEquals("RuntimeException: Kafka unavailable", storedAfterFailure.lastErrorSummary());
+        assertNull(storedAfterFailure.claimedBy());
+        assertNull(storedAfterFailure.claimedUntil());
+        assertEquals(0, blockedClaim.size());
         assertEquals(1, recoveredClaim.size());
         assertEquals("event-50", recoveredClaim.getFirst().eventId());
         assertNull(recoveredClaim.getFirst().publishedAt());
         assertEquals("worker-b", recoveredClaim.getFirst().claimedBy());
+    }
+
+    @Test
+    void parkedRowsAreExcludedFromClaimsAndCountedByGauge() {
+        saveEvent("event-60", "alpha-link", OffsetDateTime.parse("2026-04-03T09:00:00Z"));
+
+        AnalyticsOutboxRecord claimed = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-a",
+                OffsetDateTime.parse("2026-04-03T09:00:10Z"),
+                OffsetDateTime.parse("2026-04-03T09:01:00Z"),
+                10).getFirst();
+        jdbcAnalyticsOutboxStore.recordPublishFailure(
+                claimed.id(),
+                5,
+                null,
+                "RuntimeException: Permanent failure",
+                OffsetDateTime.parse("2026-04-03T09:00:20Z"));
+
+        List<AnalyticsOutboxRecord> laterClaim = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-b",
+                OffsetDateTime.parse("2026-04-03T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-03T10:01:00Z"),
+                10);
+
+        assertTrue(laterClaim.isEmpty());
+        assertEquals(0L, jdbcAnalyticsOutboxStore.countEligible(OffsetDateTime.parse("2026-04-03T10:00:00Z")));
+        assertEquals(1L, jdbcAnalyticsOutboxStore.countParked());
+        assertEquals(1.0, meterRegistry.get("link.analytics.outbox.parked").gauge().value());
+        assertEquals(0.0, meterRegistry.get("link.analytics.outbox.eligible").gauge().value());
+        assertNull(jdbcAnalyticsOutboxStore.findOldestEligibleAgeSeconds(OffsetDateTime.parse("2026-04-03T10:00:00Z")));
+    }
+
+    @Test
+    void requeueMakesParkedRowEligibleAgain() {
+        saveEvent("event-70", "alpha-link", OffsetDateTime.parse("2026-04-03T09:00:00Z"));
+
+        AnalyticsOutboxRecord claimed = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-a",
+                OffsetDateTime.parse("2026-04-03T09:00:10Z"),
+                OffsetDateTime.parse("2026-04-03T09:01:00Z"),
+                10).getFirst();
+        jdbcAnalyticsOutboxStore.recordPublishFailure(
+                claimed.id(),
+                5,
+                null,
+                "RuntimeException: Permanent failure",
+                OffsetDateTime.parse("2026-04-03T09:00:20Z"));
+
+        assertTrue(jdbcAnalyticsOutboxStore.requeueParked(claimed.id(), OffsetDateTime.parse("2026-04-03T09:05:00Z")));
+
+        AnalyticsOutboxRecord stored = findByEventId("event-70");
+        assertNull(stored.parkedAt());
+        assertEquals(OffsetDateTime.parse("2026-04-03T09:05:00Z"), stored.nextAttemptAt());
+        assertNull(stored.lastErrorSummary());
+        assertTrue(jdbcAnalyticsOutboxStore.findParked(10).isEmpty());
+
+        List<AnalyticsOutboxRecord> blockedClaim = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-b",
+                OffsetDateTime.parse("2026-04-03T09:04:59Z"),
+                OffsetDateTime.parse("2026-04-03T09:05:30Z"),
+                10);
+        List<AnalyticsOutboxRecord> recoveredClaim = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-b",
+                OffsetDateTime.parse("2026-04-03T09:05:00Z"),
+                OffsetDateTime.parse("2026-04-03T09:05:30Z"),
+                10);
+
+        assertTrue(blockedClaim.isEmpty());
+        assertEquals(1, recoveredClaim.size());
+        assertEquals("event-70", recoveredClaim.getFirst().eventId());
     }
 
     private List<AnalyticsOutboxRecord> claimAsync(String workerId, CountDownLatch ready, CountDownLatch start) throws Exception {
@@ -218,7 +309,8 @@ class JdbcAnalyticsOutboxStoreTest {
     private AnalyticsOutboxRecord findByEventId(String eventId) {
         return jdbcTemplate.queryForObject(
                 """
-                SELECT id, event_id, event_type, event_key, payload_json, created_at, published_at, claimed_by, claimed_until
+                SELECT id, event_id, event_type, event_key, payload_json, created_at, published_at, claimed_by, claimed_until,
+                       attempt_count, next_attempt_at, last_error_summary, parked_at
                 FROM analytics_outbox
                 WHERE event_id = ?
                 """,
@@ -236,6 +328,10 @@ class JdbcAnalyticsOutboxStoreTest {
                 resultSet.getObject("created_at", OffsetDateTime.class),
                 resultSet.getObject("published_at", OffsetDateTime.class),
                 resultSet.getString("claimed_by"),
-                resultSet.getObject("claimed_until", OffsetDateTime.class));
+                resultSet.getObject("claimed_until", OffsetDateTime.class),
+                resultSet.getInt("attempt_count"),
+                resultSet.getObject("next_attempt_at", OffsetDateTime.class),
+                resultSet.getString("last_error_summary"),
+                resultSet.getObject("parked_at", OffsetDateTime.class));
     }
 }
