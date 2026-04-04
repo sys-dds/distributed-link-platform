@@ -1,106 +1,99 @@
 
-
-## 🎯 TICKET-027
+## 🎯 TICKET-028
 
 #### title[]
 
-Add projection rebuild and replay operations for analytics and lifecycle
+Build link catalog projection and upgrade projection jobs to chunked resumable execution
 
 #### technical_detail[]
 
-Operationalize the new event-driven read models by introducing explicit rebuild/replay jobs for the projections the platform now depends on.
+Broaden the event-driven architecture from analytics and activity feed into a true control-plane read-model layer by introducing a worker-maintained **link catalog projection**, and at the same time mature the new projection-job system so rebuild/replay work is **chunked, resumable, and progress-aware** instead of one-shot full-table processing.
 
-The project now has two real async projection paths:
+The project now has:
 
-* analytics event processing that produces raw clicks and daily rollups
-* lifecycle event processing that produces the activity feed projection
+* durable lifecycle history
+* async lifecycle consumer
+* async analytics pipeline
+* projection jobs for replay/rebuild
 
-That is strong progress, but it is still missing a safe operator-grade recovery model. If the lifecycle consumer logic changes, if analytics rollups drift, or if a worker failure leaves projections incomplete, the current system depends too much on ad hoc repair. This ticket should add a small but real projection-operations capability so projections can be rebuilt or replayed intentionally and safely.
+That is a strong base, but the current projection jobs are still full-scan/full-rebuild operations, and core control-plane reads such as list/search/suggestions are still not clearly treated as a dedicated projection. The next step should fix both together.
 
-This ticket should add a dedicated projection-operations flow for:
+This ticket should introduce a **`link_catalog_projection`** table maintained asynchronously from lifecycle events, then move the main control-plane read APIs onto that projection while preserving current response shapes and behavior from the client point of view.
 
-* **activity feed replay** from durable lifecycle outbox history
-* **daily click rollup rebuild** from durable click data
+At the same time, upgrade projection jobs so they can process in chunks with durable checkpoint state. That should apply to:
 
-The implementation should stay practical and specific to existing projections. Do not build a generic workflow engine or broad platform abstraction.
+* existing `ACTIVITY_FEED_REPLAY`
+* existing `CLICK_ROLLUP_REBUILD`
+* new `LINK_CATALOG_REBUILD`
 
-At minimum, this ticket should:
-
-* introduce a small projection-job model with durable job records
-* support creating and tracking jobs such as:
-
-  * `ACTIVITY_FEED_REPLAY`
-  * `CLICK_ROLLUP_REBUILD`
-* execute jobs in worker/all runtime modes only
-* make job claiming safe for multiple workers
-* provide progress and status tracking for jobs
-* replay lifecycle history into `link_activity_events` idempotently
-* rebuild daily click rollups from `link_clicks` deterministically
-* expose minimal operator APIs for:
-
-  * create rebuild/replay job
-  * inspect job status
-  * list recent jobs
-* add focused metrics for:
-
-  * job started/completed/failed counts
-  * job duration
-  * active job count or queued job count
-* keep current API behavior unchanged from the client point of view
-* keep implementation intentionally small and interview-explainable
-
-Do not broaden this into generic backfill platforms, service extraction, dashboards, or auth yet.
+Keep this intentionally practical. Do not build a generic event platform or workflow engine.
 
 #### feature_delivered_by_end[]
 
-The platform gains first-class rebuild/replay operations for its async projections, so activity feed and analytics rollups can be repaired or regenerated intentionally instead of relying on manual DB fixes.
+The platform has a real async-maintained control-plane catalog projection, and projection rebuild/replay jobs are chunked and resumable instead of one-shot operations.
 
 #### how_this_unlocks_next_feature[]
 
-This makes the event-driven backbone operationally trustworthy. Later projection domains, service extraction, search/index projections, notifications, and replay-heavy distributed workflows can build on a recovery model that already exists.
+This creates the first believable **read-model separation** for the control plane and gives you projection infrastructure that can support later search/index projections, service extraction, and larger rebuilds without manual DB surgery or fragile full-table jobs.
 
 #### acceptance_criteria[]
 
-* activity feed replay jobs can rebuild the feed projection from durable lifecycle history
-* replay is idempotent and does not create duplicate feed rows
-* click rollup rebuild jobs can recompute daily rollups from durable click data
-* rebuild output is deterministic and correct
-* projection jobs are stored durably with status/progress/error summary
-* jobs can be claimed and executed safely by worker instances
-* worker/all runtime modes can execute jobs
-* api-only mode does not execute jobs
-* operator APIs exist to:
+* a new durable `link_catalog_projection` exists and is maintained asynchronously from lifecycle events
+* lifecycle consumer updates the catalog projection for:
 
-  * create a job
-  * get a job by id
-  * list recent jobs
-* focused metrics exist for job counts and duration
-* current feed/reporting endpoints still behave correctly after rebuild/replay
+  * create
+  * update
+  * delete
+  * expiration update
+* catalog projection keeps enough snapshot data to serve current control-plane read behavior
+* list/search/suggestions read from the catalog projection instead of rebuilding directly from the write model
+* single-link control-plane read also uses the projection if it can be done cleanly without changing client behavior
+* redirect behavior remains unchanged and continues to use the current runtime path
+* current client-facing response shapes and semantics stay stable
+* projection jobs support durable checkpoint/progress state
+* projection jobs run in chunks instead of one-shot full-table operations
+* failed chunked jobs can resume from saved checkpoint state
+* existing `ACTIVITY_FEED_REPLAY` is converted to chunked replay
+* existing `CLICK_ROLLUP_REBUILD` is converted to chunked rebuild
+* new `LINK_CATALOG_REBUILD` can rebuild the catalog projection from lifecycle history
+* worker/all runtime modes execute projection jobs
+* api-only mode does not execute projection jobs
+* metrics expose at minimum:
+
+  * queued jobs
+  * active jobs
+  * started/completed/failed counts
+  * job duration
+  * job progress/checkpoint visibility, or the smallest equivalent useful signal
 * focused tests cover:
 
-  * activity feed replay correctness
-  * replay idempotency
-  * click rollup rebuild correctness
-  * multi-worker-safe job claiming
-  * job status/progress transitions
-  * api mode not executing jobs
+  * lifecycle consumer maintaining catalog projection correctly
+  * list/search/suggestions correctness from catalog projection
+  * deleted/expired behavior preserved
+  * chunked job progress and resume behavior
+  * link catalog rebuild correctness
+  * activity feed replay still idempotent after chunking
+  * click rollup rebuild still deterministic after chunking
+  * multi-worker-safe job claiming still works
 * no README, Postman, or ticket-tracking repo changes
 
 #### code_target[]
 
 * `apps/api`
-* Flyway migration(s) for projection job state
-* `application.yml` only for small job polling / batch settings
-* `infra/docker-compose` only if a tiny worker config adjustment is directly required
+* Flyway migration(s) for:
+
+  * `link_catalog_projection`
+  * projection-job checkpoint/progress state
+* `application.yml` for small chunk-size / poll settings only
+* `infra/docker-compose` only if a tiny worker config addition is directly required
 
 #### proof[]
 
-* activity feed can be replayed from lifecycle history
-* daily rollups can be rebuilt from click history
-* jobs are durable, observable, and multi-worker safe
-* rebuilt projections remain correct
+* control-plane reads are served from the catalog projection
+* lifecycle events maintain the projection asynchronously
+* projection jobs are chunked and resumable
+* catalog rebuild works correctly
+* existing activity feed replay and click rollup rebuild still work correctly after migration to chunked execution
 * automated tests pass
 
 #### delivery_note[]
-
-Deliberately postponed: generic workflow engines, dashboards, alerts, search index replay, service extraction, auth, quotas, caching, and broader event-platform abstractions.

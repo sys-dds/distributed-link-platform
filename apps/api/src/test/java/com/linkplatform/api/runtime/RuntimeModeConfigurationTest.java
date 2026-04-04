@@ -52,7 +52,8 @@ class RuntimeModeConfigurationTest {
                     "link-platform.lifecycle.outbox-relay-retry-max-delay=PT5M",
                     "link-platform.lifecycle.outbox-relay-max-attempts=5",
                     "link-platform.projection-jobs.runner-delay=5000",
-                    "link-platform.projection-jobs.lease-duration=PT30S")
+                    "link-platform.projection-jobs.lease-duration=PT30S",
+                    "link-platform.projection-jobs.chunk-size=100")
             .withUserConfiguration(
                     TestConfiguration.class,
                     AnalyticsOutboxRelay.class,
@@ -234,6 +235,11 @@ class RuntimeModeConfigurationTest {
 
                 @Override
                 public List<com.linkplatform.api.link.application.LinkLifecycleEvent> findAllHistory() {
+                    return List.of();
+                }
+
+                @Override
+                public List<com.linkplatform.api.link.application.LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit) {
                     return List.of();
                 }
             };

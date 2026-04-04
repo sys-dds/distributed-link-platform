@@ -227,6 +227,23 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
     }
 
     @Override
+    public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, payload_json
+                FROM link_lifecycle_outbox
+                WHERE id > ?
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> new LinkLifecycleHistoryRecord(
+                        resultSet.getLong("id"),
+                        deserialize(resultSet.getString("payload_json"))),
+                afterId,
+                limit);
+    }
+
+    @Override
     public List<LinkLifecycleOutboxRecord> findParked(int limit) {
         return jdbcTemplate.query(
                 """

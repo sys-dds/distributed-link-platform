@@ -95,6 +95,25 @@ class JdbcProjectionJobStoreTest {
         assertEquals("worker-b", reclaimed.claimedBy());
     }
 
+    @Test
+    void failedJobRemainsCountedAsQueuedBacklogAndCanBeReclaimed() {
+        ProjectionJob created = store.createJob(
+                ProjectionJobType.LINK_CATALOG_REBUILD,
+                OffsetDateTime.parse("2026-04-04T10:00:00Z"));
+        store.markFailed(created.id(), OffsetDateTime.parse("2026-04-04T10:05:00Z"), "boom");
+
+        assertEquals(1L, store.countQueued());
+
+        ProjectionJob reclaimed = store.claimNext(
+                        "worker-c",
+                        OffsetDateTime.parse("2026-04-04T10:06:00Z"),
+                        OffsetDateTime.parse("2026-04-04T10:07:00Z"))
+                .orElseThrow();
+
+        assertEquals(created.id(), reclaimed.id());
+        assertEquals(ProjectionJobStatus.RUNNING, reclaimed.status());
+    }
+
     private ProjectionJob claimAsync(String workerId, CountDownLatch ready, CountDownLatch start) throws Exception {
         ready.countDown();
         assertTrue(start.await(5, TimeUnit.SECONDS));

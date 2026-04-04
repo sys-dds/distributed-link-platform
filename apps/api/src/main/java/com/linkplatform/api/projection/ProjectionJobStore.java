@@ -14,7 +14,9 @@ public interface ProjectionJobStore {
 
     Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil);
 
-    void markCompleted(long id, OffsetDateTime completedAt, long processedCount);
+    void markProgress(long id, long processedCountIncrement, Long checkpointId);
+
+    void markCompleted(long id, OffsetDateTime completedAt, long processedCountIncrement, Long checkpointId);
 
     void markFailed(long id, OffsetDateTime completedAt, String errorSummary);
 

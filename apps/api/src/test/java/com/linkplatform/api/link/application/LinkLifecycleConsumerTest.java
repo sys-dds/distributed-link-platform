@@ -58,6 +58,11 @@ class LinkLifecycleConsumerTest {
                 .andExpect(jsonPath("$[0].type").value("created"))
                 .andExpect(jsonPath("$[0].slug").value("launch-page"))
                 .andExpect(jsonPath("$[0].title").value("Launch"));
+        assertEquals(
+                "https://example.com/launch",
+                jdbcTemplate.queryForObject(
+                        "SELECT original_url FROM link_catalog_projection WHERE slug = 'launch-page'",
+                        String.class));
         assertEquals(1.0, meterRegistry.get("link.lifecycle.consumer.processed").counter().count());
     }
 
@@ -80,6 +85,8 @@ class LinkLifecycleConsumerTest {
 
         Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM link_activity_events WHERE event_id = 'event-2'", Integer.class);
         assertEquals(1, count);
+        Integer catalogCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM link_catalog_projection WHERE slug = 'launch-page'", Integer.class);
+        assertEquals(1, catalogCount);
         assertEquals(1.0, meterRegistry.get("link.lifecycle.consumer.processed").counter().count());
         assertEquals(1.0, meterRegistry.get("link.lifecycle.consumer.duplicate").counter().count());
     }
@@ -105,6 +112,11 @@ class LinkLifecycleConsumerTest {
                 .andExpect(jsonPath("$[0].slug").value("gone-link"))
                 .andExpect(jsonPath("$[0].originalUrl").value("https://example.com/gone"))
                 .andExpect(jsonPath("$[0].title").value("Gone"));
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM link_catalog_projection WHERE slug = 'gone-link' AND deleted_at IS NOT NULL",
+                        Integer.class));
     }
 
     @Test

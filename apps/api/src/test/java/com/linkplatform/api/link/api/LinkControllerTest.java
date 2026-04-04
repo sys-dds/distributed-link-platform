@@ -708,6 +708,21 @@ class LinkControllerTest {
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: expired-read"));
     }
 
+    @Test
+    void listLinksExcludesDeletedCatalogProjectionRows() throws Exception {
+        insertLink("visible", "https://example.com/visible", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+        insertLink("deleted", "https://example.com/deleted", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
+        jdbcTemplate.update(
+                "UPDATE link_catalog_projection SET deleted_at = ? WHERE slug = ?",
+                OffsetDateTime.parse("2026-04-02T08:00:00Z"),
+                "deleted");
+
+        mockMvc.perform(get("/api/v1/links").param("state", "all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("visible"));
+    }
+
     private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt, OffsetDateTime expiresAt) {
         insertLink(slug, originalUrl, createdAt, expiresAt, null, null, hostnameFrom(originalUrl));
     }
@@ -732,6 +747,20 @@ class LinkControllerTest {
                 title,
                 tagsJson,
                 hostname);
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_catalog_projection (
+                    slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                """,
+                slug,
+                originalUrl,
+                createdAt,
+                createdAt,
+                title,
+                tagsJson,
+                hostname,
+                expiresAt);
     }
 
     private void insertClick(String slug, OffsetDateTime clickedAt) {

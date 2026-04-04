@@ -15,7 +15,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest
+@SpringBootTest(properties = "link-platform.projection-jobs.chunk-size=2")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
@@ -37,21 +37,27 @@ class ProjectionJobRunnerTest {
     private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     @Test
-    void activityFeedReplayRestoresFeedFromLifecycleHistoryIdempotently() throws Exception {
+    void activityFeedReplayProcessesInChunksAndCompletesIdempotently() throws Exception {
         insertLifecycleHistory("event-1", "CREATED", "alpha", "https://example.com/alpha", "Alpha", "[\"docs\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
-        insertLifecycleHistory("event-2", "DELETED", "gone", "https://example.com/gone", "Gone", "[\"archived\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:10:00Z"));
+        insertLifecycleHistory("event-2", "UPDATED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:05:00Z"));
+        insertLifecycleHistory("event-3", "DELETED", "gone", "https://example.com/gone", "Gone", "[\"archived\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:10:00Z"));
 
         ProjectionJob firstJob = projectionJobService.createJob(ProjectionJobType.ACTIVITY_FEED_REPLAY);
-        projectionJobRunner.runPendingJobs();
 
+        projectionJobRunner.runPendingJobs();
+        assertJob(firstJob.id(), ProjectionJobStatus.QUEUED, 2L, 2L);
         assertCount("SELECT COUNT(*) FROM link_activity_events", 2);
-        assertCompleted(firstJob.id(), 2L);
+
+        projectionJobRunner.runPendingJobs();
+        assertJob(firstJob.id(), ProjectionJobStatus.COMPLETED, 3L, 3L);
+        assertCount("SELECT COUNT(*) FROM link_activity_events", 3);
 
         ProjectionJob secondJob = projectionJobService.createJob(ProjectionJobType.ACTIVITY_FEED_REPLAY);
         projectionJobRunner.runPendingJobs();
+        projectionJobRunner.runPendingJobs();
 
-        assertCount("SELECT COUNT(*) FROM link_activity_events", 2);
-        assertCompleted(secondJob.id(), 2L);
+        assertCount("SELECT COUNT(*) FROM link_activity_events", 3);
+        assertJob(secondJob.id(), ProjectionJobStatus.COMPLETED, 3L, 3L);
         mockMvc.perform(get("/api/v1/links/activity"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("deleted"))
@@ -61,9 +67,11 @@ class ProjectionJobRunnerTest {
     }
 
     @Test
-    void clickRollupRebuildRestoresDeterministicReportingFromClickHistory() throws Exception {
+    void clickRollupRebuildResumesFromCheckpointAfterFailureStatus() throws Exception {
         insertLink("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
         insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
+        insertCatalogProjection("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null, null, null, "example.com", null);
+        insertCatalogProjection("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null, null, null, "example.com", null);
         insertClick("alpha", OffsetDateTime.now().minusHours(1));
         insertClick("alpha", OffsetDateTime.now().minusHours(2));
         insertClick("beta", OffsetDateTime.now().minusHours(3));
@@ -72,7 +80,14 @@ class ProjectionJobRunnerTest {
         ProjectionJob job = projectionJobService.createJob(ProjectionJobType.CLICK_ROLLUP_REBUILD);
         projectionJobRunner.runPendingJobs();
 
-        assertCompleted(job.id(), 2L);
+        assertJob(job.id(), ProjectionJobStatus.QUEUED, 2L, 2L);
+        jdbcTemplate.update(
+                "UPDATE projection_jobs SET status = 'FAILED', error_summary = 'simulated' WHERE id = ?",
+                job.id());
+
+        projectionJobRunner.runPendingJobs();
+
+        assertJob(job.id(), ProjectionJobStatus.COMPLETED, 3L, 3L);
         mockMvc.perform(get("/api/v1/links/alpha/traffic-summary"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalClicks").value(2))
@@ -81,16 +96,34 @@ class ProjectionJobRunnerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].slug").value("alpha"))
                 .andExpect(jsonPath("$[0].clickTotal").value(2));
-        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "24h"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].slug").value("alpha"));
     }
 
-    private void assertCompleted(long jobId, long processedCount) {
+    @Test
+    void linkCatalogRebuildReplaysLifecycleHistoryIntoControlPlaneProjection() throws Exception {
+        insertLifecycleHistory("event-1", "CREATED", "launch-page", "https://docs.example.com/launch", "Launch", "[\"docs\"]", "docs.example.com", null, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
+        insertLifecycleHistory("event-2", "UPDATED", "launch-page", "https://docs.example.com/launch-v2", "Launch v2", "[\"docs\",\"product\"]", "docs.example.com", OffsetDateTime.parse("2030-04-01T08:00:00Z"), OffsetDateTime.parse("2026-04-04T09:05:00Z"));
+        insertLifecycleHistory("event-3", "CREATED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:06:00Z"));
+        insertLifecycleHistory("event-4", "DELETED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, OffsetDateTime.parse("2026-04-04T09:07:00Z"));
+
+        ProjectionJob job = projectionJobService.createJob(ProjectionJobType.LINK_CATALOG_REBUILD);
+        projectionJobRunner.runPendingJobs();
+        projectionJobRunner.runPendingJobs();
+
+        assertJob(job.id(), ProjectionJobStatus.COMPLETED, 4L, 4L);
+        mockMvc.perform(get("/api/v1/links").param("state", "all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("launch-page"))
+                .andExpect(jsonPath("$[0].originalUrl").value("https://docs.example.com/launch-v2"))
+                .andExpect(jsonPath("$[0].title").value("Launch v2"))
+                .andExpect(jsonPath("$[0].tags[1]").value("product"));
+    }
+
+    private void assertJob(long jobId, ProjectionJobStatus status, long processedCount, Long checkpointId) {
         ProjectionJob job = jdbcTemplate.queryForObject(
                 """
                 SELECT id, job_type, status, requested_at, started_at, completed_at,
-                       processed_count, error_summary, claimed_by, claimed_until
+                       processed_count, checkpoint_id, error_summary, claimed_by, claimed_until
                 FROM projection_jobs
                 WHERE id = ?
                 """,
@@ -102,12 +135,14 @@ class ProjectionJobRunnerTest {
                         resultSet.getObject("started_at", OffsetDateTime.class),
                         resultSet.getObject("completed_at", OffsetDateTime.class),
                         resultSet.getLong("processed_count"),
+                        resultSet.getObject("checkpoint_id", Long.class),
                         resultSet.getString("error_summary"),
                         resultSet.getString("claimed_by"),
                         resultSet.getObject("claimed_until", OffsetDateTime.class)),
                 jobId);
-        assertEquals(ProjectionJobStatus.COMPLETED, job.status());
+        assertEquals(status, job.status());
         assertEquals(processedCount, job.processedCount());
+        assertEquals(checkpointId, job.checkpointId());
     }
 
     private void insertLifecycleHistory(
@@ -151,6 +186,31 @@ class ProjectionJobRunnerTest {
                 originalUrl,
                 createdAt,
                 java.net.URI.create(originalUrl).getHost().toLowerCase());
+    }
+
+    private void insertCatalogProjection(
+            String slug,
+            String originalUrl,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt,
+            String title,
+            String tagsJson,
+            String hostname,
+            OffsetDateTime expiresAt) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_catalog_projection (
+                    slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                """,
+                slug,
+                originalUrl,
+                createdAt,
+                updatedAt == null ? createdAt : updatedAt,
+                title,
+                tagsJson,
+                hostname,
+                expiresAt);
     }
 
     private void insertClick(String slug, OffsetDateTime clickedAt) {

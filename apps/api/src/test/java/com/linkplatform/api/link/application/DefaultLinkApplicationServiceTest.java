@@ -321,6 +321,28 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent) {
+        }
+
+        @Override
+        public void resetCatalogProjection() {
+        }
+
+        @Override
+        public List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public long applyClickHistoryChunkToDailyRollups(List<LinkClickHistoryRecord> clickHistoryChunk) {
+            return clickHistoryChunk.size();
+        }
+
+        @Override
+        public void resetClickDailyRollups() {
+        }
+
+        @Override
         public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
             if (isExpired(slug, now)) {
                 return Optional.empty();
@@ -618,6 +640,11 @@ class DefaultLinkApplicationServiceTest {
         @Override
         public List<LinkLifecycleEvent> findAllHistory() {
             return List.copyOf(events);
+        }
+
+        @Override
+        public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit) {
+            return List.of();
         }
 
         @Override
