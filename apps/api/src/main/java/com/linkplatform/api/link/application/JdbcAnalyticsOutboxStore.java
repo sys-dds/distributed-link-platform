@@ -4,9 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.OffsetDateTime;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -22,6 +23,7 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final Clock clock;
 
     public JdbcAnalyticsOutboxStore(
             JdbcTemplate jdbcTemplate,
@@ -31,8 +33,22 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
+        this.clock = Clock.systemUTC();
         Gauge.builder("link.analytics.outbox.unpublished", this, JdbcAnalyticsOutboxStore::countUnpublished)
                 .description("Number of unpublished analytics outbox records")
+                .register(meterRegistry);
+        Gauge.builder("link.analytics.outbox.eligible", this, store -> store.countEligible(OffsetDateTime.now(clock)))
+                .description("Number of eligible analytics outbox records awaiting delivery")
+                .register(meterRegistry);
+        Gauge.builder("link.analytics.outbox.parked", this, JdbcAnalyticsOutboxStore::countParked)
+                .description("Number of parked analytics outbox records")
+                .register(meterRegistry);
+        Gauge.builder("link.analytics.outbox.oldest.eligible.age.seconds", this,
+                        store -> {
+                            Double ageSeconds = store.findOldestEligibleAgeSeconds(OffsetDateTime.now(clock));
+                            return ageSeconds == null ? 0.0 : ageSeconds;
+                        })
+                .description("Age in seconds of the oldest eligible analytics outbox record")
                 .register(meterRegistry);
     }
 
@@ -57,12 +73,15 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                     SELECT id
                     FROM analytics_outbox
                     WHERE published_at IS NULL
+                      AND parked_at IS NULL
+                      AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
                       AND (claimed_until IS NULL OR claimed_until < ?)
                     ORDER BY created_at ASC, id ASC
                     LIMIT ?
                     FOR UPDATE SKIP LOCKED
                     """,
                     (resultSet, rowNum) -> resultSet.getLong("id"),
+                    now,
                     now,
                     limit);
             if (ids.isEmpty()) {
@@ -85,7 +104,8 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
 
             return jdbcTemplate.query(
                     """
-                    SELECT id, event_id, event_type, event_key, payload_json, created_at, published_at, claimed_by, claimed_until
+                    SELECT id, event_id, event_type, event_key, payload_json, created_at, published_at,
+                           claimed_by, claimed_until, attempt_count, next_attempt_at, last_error_summary, parked_at
                     FROM analytics_outbox
                     WHERE id IN (%s)
                     ORDER BY created_at ASC, id ASC
@@ -104,16 +124,131 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
     }
 
     @Override
+    public long countEligible(OffsetDateTime now) {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM analytics_outbox
+                WHERE published_at IS NULL
+                  AND parked_at IS NULL
+                  AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                  AND (claimed_until IS NULL OR claimed_until < ?)
+                """,
+                Long.class,
+                now,
+                now);
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public long countParked() {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM analytics_outbox WHERE parked_at IS NOT NULL AND published_at IS NULL",
+                Long.class);
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
+        OffsetDateTime oldest = jdbcTemplate.query(
+                        """
+                        SELECT created_at
+                        FROM analytics_outbox
+                        WHERE published_at IS NULL
+                          AND parked_at IS NULL
+                          AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                          AND (claimed_until IS NULL OR claimed_until < ?)
+                        ORDER BY created_at ASC, id ASC
+                        LIMIT 1
+                        """,
+                        (resultSet, rowNum) -> resultSet.getObject("created_at", OffsetDateTime.class),
+                        now,
+                        now)
+                .stream()
+                .findFirst()
+                .orElse(null);
+        if (oldest == null) {
+            return null;
+        }
+        return (double) java.time.Duration.between(oldest, now).toSeconds();
+    }
+
+    @Override
     public void markPublished(long id, OffsetDateTime publishedAt) {
         jdbcTemplate.update(
                 """
                 UPDATE analytics_outbox
-                SET published_at = ?, claimed_by = NULL, claimed_until = NULL
+                SET published_at = ?,
+                    claimed_by = NULL,
+                    claimed_until = NULL,
+                    next_attempt_at = NULL,
+                    last_error_summary = NULL,
+                    parked_at = NULL
                 WHERE id = ?
                   AND published_at IS NULL
                 """,
                 publishedAt,
                 id);
+    }
+
+    @Override
+    public void recordPublishFailure(
+            long id,
+            int attemptCount,
+            OffsetDateTime nextAttemptAt,
+            String lastErrorSummary,
+            OffsetDateTime parkedAt) {
+        jdbcTemplate.update(
+                """
+                UPDATE analytics_outbox
+                SET attempt_count = ?,
+                    next_attempt_at = ?,
+                    last_error_summary = ?,
+                    parked_at = ?,
+                    claimed_by = NULL,
+                    claimed_until = NULL
+                WHERE id = ?
+                  AND published_at IS NULL
+                """,
+                attemptCount,
+                nextAttemptAt,
+                lastErrorSummary,
+                parkedAt,
+                id);
+    }
+
+    @Override
+    public List<AnalyticsOutboxRecord> findParked(int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, event_id, event_type, event_key, payload_json, created_at, published_at,
+                       claimed_by, claimed_until, attempt_count, next_attempt_at, last_error_summary, parked_at
+                FROM analytics_outbox
+                WHERE parked_at IS NOT NULL
+                  AND published_at IS NULL
+                ORDER BY parked_at DESC, id DESC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> mapRecord(resultSet),
+                limit);
+    }
+
+    @Override
+    public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) {
+        return jdbcTemplate.update(
+                """
+                UPDATE analytics_outbox
+                SET parked_at = NULL,
+                    next_attempt_at = ?,
+                    last_error_summary = NULL,
+                    claimed_by = NULL,
+                    claimed_until = NULL
+                WHERE id = ?
+                  AND parked_at IS NOT NULL
+                  AND published_at IS NULL
+                """,
+                nextAttemptAt,
+                id) == 1;
     }
 
     private AnalyticsOutboxRecord mapRecord(ResultSet resultSet) throws SQLException {
@@ -126,7 +261,11 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 resultSet.getObject("created_at", OffsetDateTime.class),
                 resultSet.getObject("published_at", OffsetDateTime.class),
                 resultSet.getString("claimed_by"),
-                resultSet.getObject("claimed_until", OffsetDateTime.class));
+                resultSet.getObject("claimed_until", OffsetDateTime.class),
+                resultSet.getInt("attempt_count"),
+                resultSet.getObject("next_attempt_at", OffsetDateTime.class),
+                resultSet.getString("last_error_summary"),
+                resultSet.getObject("parked_at", OffsetDateTime.class));
     }
 
     private String serialize(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent) {

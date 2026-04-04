@@ -9,7 +9,24 @@ public interface AnalyticsOutboxStore {
 
     long countUnpublished();
 
+    long countEligible(OffsetDateTime now);
+
+    long countParked();
+
+    Double findOldestEligibleAgeSeconds(OffsetDateTime now);
+
     List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit);
 
     void markPublished(long id, OffsetDateTime publishedAt);
+
+    void recordPublishFailure(
+            long id,
+            int attemptCount,
+            OffsetDateTime nextAttemptAt,
+            String lastErrorSummary,
+            OffsetDateTime parkedAt);
+
+    List<AnalyticsOutboxRecord> findParked(int limit);
+
+    boolean requeueParked(long id, OffsetDateTime nextAttemptAt);
 }

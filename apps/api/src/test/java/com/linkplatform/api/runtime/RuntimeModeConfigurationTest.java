@@ -35,7 +35,10 @@ class RuntimeModeConfigurationTest {
                     "spring.kafka.listener.auto-startup=false",
                     "link-platform.analytics.click-topic=link-platform.analytics.redirect-clicks",
                     "link-platform.analytics.outbox-relay-batch-size=50",
-                    "link-platform.analytics.outbox-relay-lease-duration=PT30S")
+                    "link-platform.analytics.outbox-relay-lease-duration=PT30S",
+                    "link-platform.analytics.outbox-relay-retry-base-delay=PT5S",
+                    "link-platform.analytics.outbox-relay-retry-max-delay=PT5M",
+                    "link-platform.analytics.outbox-relay-max-attempts=5")
             .withUserConfiguration(TestConfiguration.class, AnalyticsOutboxRelay.class, RedirectClickAnalyticsConsumer.class);
 
     @Test
@@ -92,6 +95,21 @@ class RuntimeModeConfigurationTest {
                 }
 
                 @Override
+                public long countEligible(OffsetDateTime now) {
+                    return 0;
+                }
+
+                @Override
+                public long countParked() {
+                    return 0;
+                }
+
+                @Override
+                public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
+                    return null;
+                }
+
+                @Override
                 public List<com.linkplatform.api.link.application.AnalyticsOutboxRecord> claimBatch(
                         String workerId,
                         OffsetDateTime now,
@@ -102,6 +120,25 @@ class RuntimeModeConfigurationTest {
 
                 @Override
                 public void markPublished(long id, OffsetDateTime publishedAt) {
+                }
+
+                @Override
+                public void recordPublishFailure(
+                        long id,
+                        int attemptCount,
+                        OffsetDateTime nextAttemptAt,
+                        String lastErrorSummary,
+                        OffsetDateTime parkedAt) {
+                }
+
+                @Override
+                public List<com.linkplatform.api.link.application.AnalyticsOutboxRecord> findParked(int limit) {
+                    return List.of();
+                }
+
+                @Override
+                public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) {
+                    return false;
                 }
             };
         }

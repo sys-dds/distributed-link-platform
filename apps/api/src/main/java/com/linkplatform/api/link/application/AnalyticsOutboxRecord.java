@@ -11,5 +11,9 @@ public record AnalyticsOutboxRecord(
         OffsetDateTime createdAt,
         OffsetDateTime publishedAt,
         String claimedBy,
-        OffsetDateTime claimedUntil) {
+        OffsetDateTime claimedUntil,
+        int attemptCount,
+        OffsetDateTime nextAttemptAt,
+        String lastErrorSummary,
+        OffsetDateTime parkedAt) {
 }
