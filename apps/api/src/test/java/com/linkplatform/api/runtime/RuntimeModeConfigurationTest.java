@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linkplatform.api.link.application.AnalyticsOutboxRelay;
 import com.linkplatform.api.link.application.AnalyticsOutboxStore;
+import com.linkplatform.api.link.application.LinkLifecycleConsumer;
+import com.linkplatform.api.link.application.LinkLifecycleOutboxRelay;
+import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
 import com.linkplatform.api.link.application.LinkStore;
 import com.linkplatform.api.link.application.RedirectClickAnalyticsConsumer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -38,14 +41,27 @@ class RuntimeModeConfigurationTest {
                     "link-platform.analytics.outbox-relay-lease-duration=PT30S",
                     "link-platform.analytics.outbox-relay-retry-base-delay=PT5S",
                     "link-platform.analytics.outbox-relay-retry-max-delay=PT5M",
-                    "link-platform.analytics.outbox-relay-max-attempts=5")
-            .withUserConfiguration(TestConfiguration.class, AnalyticsOutboxRelay.class, RedirectClickAnalyticsConsumer.class);
+                    "link-platform.analytics.outbox-relay-max-attempts=5",
+                    "link-platform.lifecycle.topic=link-platform.lifecycle.link-events",
+                    "link-platform.lifecycle.outbox-relay-batch-size=50",
+                    "link-platform.lifecycle.outbox-relay-lease-duration=PT30S",
+                    "link-platform.lifecycle.outbox-relay-retry-base-delay=PT5S",
+                    "link-platform.lifecycle.outbox-relay-retry-max-delay=PT5M",
+                    "link-platform.lifecycle.outbox-relay-max-attempts=5")
+            .withUserConfiguration(
+                    TestConfiguration.class,
+                    AnalyticsOutboxRelay.class,
+                    RedirectClickAnalyticsConsumer.class,
+                    LinkLifecycleOutboxRelay.class,
+                    LinkLifecycleConsumer.class);
 
     @Test
     void defaultCombinedModeKeepsAsyncComponentsEnabled() {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(AnalyticsOutboxRelay.class);
             assertThat(context).hasSingleBean(RedirectClickAnalyticsConsumer.class);
+            assertThat(context).hasSingleBean(LinkLifecycleOutboxRelay.class);
+            assertThat(context).hasSingleBean(LinkLifecycleConsumer.class);
 
             TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
             context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
@@ -59,6 +75,8 @@ class RuntimeModeConfigurationTest {
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(AnalyticsOutboxRelay.class);
                     assertThat(context).doesNotHaveBean(RedirectClickAnalyticsConsumer.class);
+                    assertThat(context).doesNotHaveBean(LinkLifecycleOutboxRelay.class);
+                    assertThat(context).doesNotHaveBean(LinkLifecycleConsumer.class);
 
                     TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
                     context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
@@ -72,6 +90,8 @@ class RuntimeModeConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(AnalyticsOutboxRelay.class);
                     assertThat(context).hasSingleBean(RedirectClickAnalyticsConsumer.class);
+                    assertThat(context).hasSingleBean(LinkLifecycleOutboxRelay.class);
+                    assertThat(context).hasSingleBean(LinkLifecycleConsumer.class);
 
                     TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
                     context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
@@ -133,6 +153,67 @@ class RuntimeModeConfigurationTest {
 
                 @Override
                 public List<com.linkplatform.api.link.application.AnalyticsOutboxRecord> findParked(int limit) {
+                    return List.of();
+                }
+
+                @Override
+                public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) {
+                    return false;
+                }
+            };
+        }
+
+        @Bean
+        LinkLifecycleOutboxStore linkLifecycleOutboxStore() {
+            return new LinkLifecycleOutboxStore() {
+                @Override
+                public void saveLinkLifecycleEvent(com.linkplatform.api.link.application.LinkLifecycleEvent linkLifecycleEvent) {
+                }
+
+                @Override
+                public long countUnpublished() {
+                    return 0;
+                }
+
+                @Override
+                public long countEligible(OffsetDateTime now) {
+                    return 0;
+                }
+
+                @Override
+                public long countParked() {
+                    return 0;
+                }
+
+                @Override
+                public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
+                    return null;
+                }
+
+                @Override
+                public List<com.linkplatform.api.link.application.LinkLifecycleOutboxRecord> claimBatch(
+                        String workerId,
+                        OffsetDateTime now,
+                        OffsetDateTime claimedUntil,
+                        int limit) {
+                    return List.of();
+                }
+
+                @Override
+                public void markPublished(long id, OffsetDateTime publishedAt) {
+                }
+
+                @Override
+                public void recordPublishFailure(
+                        long id,
+                        int attemptCount,
+                        OffsetDateTime nextAttemptAt,
+                        String lastErrorSummary,
+                        OffsetDateTime parkedAt) {
+                }
+
+                @Override
+                public List<com.linkplatform.api.link.application.LinkLifecycleOutboxRecord> findParked(int limit) {
                     return List.of();
                 }
 

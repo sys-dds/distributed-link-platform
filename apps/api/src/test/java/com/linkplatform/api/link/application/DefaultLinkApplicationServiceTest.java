@@ -18,8 +18,9 @@ class DefaultLinkApplicationServiceTest {
 
     private final TestLinkStore linkStore = new TestLinkStore();
     private final TestAnalyticsOutboxStore analyticsOutboxStore = new TestAnalyticsOutboxStore();
+    private final TestLinkLifecycleOutboxStore linkLifecycleOutboxStore = new TestLinkLifecycleOutboxStore();
     private final DefaultLinkApplicationService service =
-            new DefaultLinkApplicationService(linkStore, analyticsOutboxStore, "http://LOCALHOST:80");
+            new DefaultLinkApplicationService(linkStore, analyticsOutboxStore, linkLifecycleOutboxStore, "http://LOCALHOST:80");
 
     @Test
     void createsAndStoresValidatedLinkFromCommand() {
@@ -30,14 +31,15 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
-    void recordsCreateActivityEvent() {
+    void createLinkWritesLifecycleEventButNotSynchronousActivityProjection() {
         service.createLink(new CreateLinkCommand("launch-page", "https://example.com/launch", null, "Launch", List.of("product")));
 
         List<LinkActivityEvent> activity = service.getRecentActivity(10);
 
-        assertEquals(1, activity.size());
-        assertEquals(LinkActivityType.CREATED, activity.getFirst().type());
-        assertEquals("launch-page", activity.getFirst().slug());
+        assertTrue(activity.isEmpty());
+        assertEquals(1, linkLifecycleOutboxStore.events().size());
+        assertEquals(LinkLifecycleEventType.CREATED, linkLifecycleOutboxStore.events().getFirst().eventType());
+        assertEquals("launch-page", linkLifecycleOutboxStore.events().getFirst().slug());
     }
 
     @Test
@@ -183,15 +185,16 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
-    void recordsUpdateActivityEvent() {
+    void updateLinkWritesLifecycleEventButNotSynchronousActivityProjection() {
         service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null));
 
         service.updateLink("docs", "https://app.example.com/docs", null, "Docs Portal", List.of("portal"));
 
         List<LinkActivityEvent> activity = service.getRecentActivity(10);
 
-        assertEquals(LinkActivityType.UPDATED, activity.getFirst().type());
-        assertEquals("Docs Portal", activity.getFirst().title());
+        assertTrue(activity.isEmpty());
+        assertEquals(LinkLifecycleEventType.UPDATED, linkLifecycleOutboxStore.events().getLast().eventType());
+        assertEquals("Docs Portal", linkLifecycleOutboxStore.events().getLast().title());
     }
 
     @Test
@@ -206,16 +209,26 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
-    void recordsDeleteActivityEvent() {
+    void deleteLinkWritesLifecycleEventButNotSynchronousActivityProjection() {
         service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, "Docs", List.of("portal")));
 
         service.deleteLink("docs");
 
         List<LinkActivityEvent> activity = service.getRecentActivity(10);
 
-        assertEquals(LinkActivityType.DELETED, activity.getFirst().type());
-        assertEquals("docs", activity.getFirst().slug());
-        assertEquals("Docs", activity.getFirst().title());
+        assertTrue(activity.isEmpty());
+        assertEquals(LinkLifecycleEventType.DELETED, linkLifecycleOutboxStore.events().getLast().eventType());
+        assertEquals("docs", linkLifecycleOutboxStore.events().getLast().slug());
+        assertEquals("Docs", linkLifecycleOutboxStore.events().getLast().title());
+    }
+
+    @Test
+    void expirationOnlyUpdateWritesDedicatedLifecycleEvent() {
+        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, "Docs", List.of("portal")));
+
+        service.updateLink("docs", "https://example.com/docs", OffsetDateTime.parse("2030-04-01T08:00:00Z"), "Docs", List.of("portal"));
+
+        assertEquals(LinkLifecycleEventType.EXPIRATION_UPDATED, linkLifecycleOutboxStore.events().getLast().eventType());
     }
 
     @Test
@@ -240,7 +253,6 @@ class DefaultLinkApplicationServiceTest {
         private final Map<String, OffsetDateTime> expiresAtBySlug = new ConcurrentHashMap<>();
         private final Map<String, Long> clickTotalsBySlug = new ConcurrentHashMap<>();
         private final Map<String, Boolean> deletedSlugs = new ConcurrentHashMap<>();
-        private final List<LinkActivityEvent> activityEvents = new java.util.concurrent.CopyOnWriteArrayList<>();
         private int saveAttempts;
 
         @Override
@@ -299,8 +311,8 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
-        public void recordActivity(LinkActivityEvent linkActivityEvent) {
-            activityEvents.add(0, linkActivityEvent);
+        public boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent) {
+            return false;
         }
 
         @Override
@@ -384,7 +396,7 @@ class DefaultLinkApplicationServiceTest {
 
         @Override
         public List<LinkActivityEvent> findRecentActivity(int limit) {
-            return activityEvents.stream().limit(limit).toList();
+            return List.of();
         }
 
         @Override
@@ -542,6 +554,68 @@ class DefaultLinkApplicationServiceTest {
         }
 
         private List<RedirectClickAnalyticsEvent> events() {
+            return events;
+        }
+    }
+
+    private static final class TestLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
+
+        private final List<LinkLifecycleEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public void saveLinkLifecycleEvent(LinkLifecycleEvent linkLifecycleEvent) {
+            events.add(linkLifecycleEvent);
+        }
+
+        @Override
+        public long countUnpublished() {
+            return events.size();
+        }
+
+        @Override
+        public long countEligible(OffsetDateTime now) {
+            return events.size();
+        }
+
+        @Override
+        public long countParked() {
+            return 0;
+        }
+
+        @Override
+        public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
+            return events.isEmpty() ? null : 0.0;
+        }
+
+        @Override
+        public List<LinkLifecycleOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public void markPublished(long id, OffsetDateTime publishedAt) {
+        }
+
+        @Override
+        public void recordPublishFailure(
+                long id,
+                int attemptCount,
+                OffsetDateTime nextAttemptAt,
+                String lastErrorSummary,
+                OffsetDateTime parkedAt) {
+        }
+
+        @Override
+        public List<LinkLifecycleOutboxRecord> findParked(int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) {
+            return false;
+        }
+
+        private List<LinkLifecycleEvent> events() {
             return events;
         }
     }

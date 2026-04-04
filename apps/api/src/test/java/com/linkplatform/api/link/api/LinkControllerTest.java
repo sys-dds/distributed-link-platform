@@ -655,6 +655,37 @@ class LinkControllerTest {
     }
 
     @Test
+    void controlPlaneWritesLifecycleOutboxWithoutSynchronousActivityProjection() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "async-feed",
+                                  "originalUrl": "https://example.com/async-feed"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+        assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
+        assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'CREATED'", 1);
+
+        mockMvc.perform(put("/api/v1/links/async-feed")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/async-feed-v2"
+                                }
+                                """))
+                .andExpect(status().isOk());
+        assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
+        assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'UPDATED'", 1);
+
+        mockMvc.perform(delete("/api/v1/links/async-feed"))
+                .andExpect(status().isNoContent());
+        assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
+        assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'DELETED'", 1);
+    }
+
+    @Test
     void deleteLinkReturnsNotFoundForMissingSlug() throws Exception {
         mockMvc.perform(delete("/api/v1/links/missing-link"))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
@@ -731,6 +762,11 @@ class LinkControllerTest {
                     slug,
                     clickedAt.toLocalDate());
         }
+    }
+
+    private void assertCount(String sql, int expectedCount) {
+        Integer actualCount = jdbcTemplate.queryForObject(sql, Integer.class);
+        org.junit.jupiter.api.Assertions.assertEquals(expectedCount, actualCount);
     }
 
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(

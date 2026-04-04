@@ -61,6 +61,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8080
       LINK_PLATFORM_RUNTIME_MODE: api
+      LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
     ports:
       - "8080:8080"
 
@@ -82,6 +83,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8080
       LINK_PLATFORM_RUNTIME_MODE: worker
+      LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
 
 volumes:
   postgres-data:
