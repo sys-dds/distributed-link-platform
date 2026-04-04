@@ -43,8 +43,8 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         jdbcTemplate.update(connection -> {
             PreparedStatement statement = connection.prepareStatement(
                     """
-                    INSERT INTO projection_jobs (job_type, status, requested_at)
-                    VALUES (?, ?, ?)
+                    INSERT INTO projection_jobs (job_type, status, requested_at, checkpoint_id)
+                    VALUES (?, ?, ?, NULL)
                     """,
                     new String[]{"id"});
             statement.setString(1, jobType.name());
@@ -64,7 +64,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return jdbcTemplate.query(
                         """
                         SELECT id, job_type, status, requested_at, started_at, completed_at,
-                               processed_count, error_summary, claimed_by, claimed_until
+                               processed_count, checkpoint_id, error_summary, claimed_by, claimed_until
                         FROM projection_jobs
                         WHERE id = ?
                         """,
@@ -79,7 +79,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return jdbcTemplate.query(
                 """
                 SELECT id, job_type, status, requested_at, started_at, completed_at,
-                       processed_count, error_summary, claimed_by, claimed_until
+                       processed_count, checkpoint_id, error_summary, claimed_by, claimed_until
                 FROM projection_jobs
                 ORDER BY requested_at DESC, id DESC
                 LIMIT ?
@@ -93,9 +93,10 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return transactionTemplate.execute(status -> jdbcTemplate.query(
                         """
                         SELECT id, job_type, status, requested_at, started_at, completed_at,
-                               processed_count, error_summary, claimed_by, claimed_until
+                               processed_count, checkpoint_id, error_summary, claimed_by, claimed_until
                         FROM projection_jobs
                         WHERE (status = 'QUEUED'
+                               OR status = 'FAILED'
                                OR (status = 'RUNNING' AND claimed_until IS NOT NULL AND claimed_until < ?))
                         ORDER BY requested_at ASC, id ASC
                         LIMIT 1
@@ -127,13 +128,33 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public void markCompleted(long id, OffsetDateTime completedAt, long processedCount) {
+    public void markProgress(long id, long processedCountIncrement, Long checkpointId) {
+        jdbcTemplate.update(
+                """
+                UPDATE projection_jobs
+                SET status = ?,
+                    processed_count = processed_count + ?,
+                    checkpoint_id = ?,
+                    claimed_by = NULL,
+                    claimed_until = NULL,
+                    error_summary = NULL
+                WHERE id = ?
+                """,
+                ProjectionJobStatus.QUEUED.name(),
+                processedCountIncrement,
+                checkpointId,
+                id);
+    }
+
+    @Override
+    public void markCompleted(long id, OffsetDateTime completedAt, long processedCountIncrement, Long checkpointId) {
         jdbcTemplate.update(
                 """
                 UPDATE projection_jobs
                 SET status = ?,
                     completed_at = ?,
-                    processed_count = ?,
+                    processed_count = processed_count + ?,
+                    checkpoint_id = ?,
                     claimed_by = NULL,
                     claimed_until = NULL,
                     error_summary = NULL
@@ -141,7 +162,8 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 """,
                 ProjectionJobStatus.COMPLETED.name(),
                 completedAt,
-                processedCount,
+                processedCountIncrement,
+                checkpointId,
                 id);
     }
 
@@ -166,7 +188,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     @Override
     public long countQueued() {
         Long count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM projection_jobs WHERE status = 'QUEUED'",
+                "SELECT COUNT(*) FROM projection_jobs WHERE status IN ('QUEUED', 'FAILED')",
                 Long.class);
         return count == null ? 0L : count;
     }
@@ -188,8 +210,14 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 resultSet.getObject("started_at", OffsetDateTime.class),
                 resultSet.getObject("completed_at", OffsetDateTime.class),
                 resultSet.getLong("processed_count"),
+                getNullableLong(resultSet, "checkpoint_id"),
                 resultSet.getString("error_summary"),
                 resultSet.getString("claimed_by"),
                 resultSet.getObject("claimed_until", OffsetDateTime.class));
+    }
+
+    private Long getNullableLong(ResultSet resultSet, String column) throws SQLException {
+        long value = resultSet.getLong(column);
+        return resultSet.wasNull() ? null : value;
     }
 }

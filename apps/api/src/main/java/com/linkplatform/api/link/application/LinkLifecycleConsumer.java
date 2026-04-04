@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @ConditionalOnExpression("'${link-platform.runtime.mode:all}' == 'all' or '${link-platform.runtime.mode:all}' == 'worker'")
@@ -29,12 +30,14 @@ public class LinkLifecycleConsumer {
     }
 
     @KafkaListener(topics = "${link-platform.lifecycle.topic}")
+    @Transactional
     public void consume(String payloadJson) {
         LinkLifecycleEvent linkLifecycleEvent = deserialize(payloadJson);
         boolean persisted = linkStore.recordActivityIfAbsent(
                 linkLifecycleEvent.eventId(),
                 toActivityEvent(linkLifecycleEvent));
         if (persisted) {
+            linkStore.projectCatalogEvent(linkLifecycleEvent);
             processedCounter.increment();
             return;
         }

@@ -19,6 +19,16 @@ public interface LinkStore {
 
     long rebuildClickDailyRollups();
 
+    void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent);
+
+    void resetCatalogProjection();
+
+    List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit);
+
+    long applyClickHistoryChunkToDailyRollups(List<LinkClickHistoryRecord> clickHistoryChunk);
+
+    void resetClickDailyRollups();
+
     Optional<Link> findBySlug(String slug, OffsetDateTime now);
 
     Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);

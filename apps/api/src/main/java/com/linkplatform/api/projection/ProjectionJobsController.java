@@ -61,6 +61,7 @@ public class ProjectionJobsController {
                 job.startedAt(),
                 job.completedAt(),
                 job.processedCount(),
+                job.checkpointId(),
                 job.errorSummary());
     }
 }

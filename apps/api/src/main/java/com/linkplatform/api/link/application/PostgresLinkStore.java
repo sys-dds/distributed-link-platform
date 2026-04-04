@@ -135,6 +135,68 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent) {
+        String tagsJson = serializeTags(linkLifecycleEvent.tags());
+        switch (linkLifecycleEvent.eventType()) {
+            case CREATED, UPDATED, EXPIRATION_UPDATED -> upsertCatalogProjection(
+                    linkLifecycleEvent,
+                    tagsJson,
+                    null);
+            case DELETED -> upsertCatalogProjection(
+                    linkLifecycleEvent,
+                    tagsJson,
+                    linkLifecycleEvent.occurredAt());
+        }
+    }
+
+    @Override
+    public void resetCatalogProjection() {
+        jdbcTemplate.update("DELETE FROM link_catalog_projection");
+    }
+
+    @Override
+    public List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, slug, CAST(clicked_at AS DATE) AS rollup_date
+                FROM link_clicks
+                WHERE id > ?
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> new LinkClickHistoryRecord(
+                        resultSet.getLong("id"),
+                        resultSet.getString("slug"),
+                        resultSet.getObject("rollup_date", LocalDate.class)),
+                afterId,
+                limit);
+    }
+
+    @Override
+    public long applyClickHistoryChunkToDailyRollups(List<LinkClickHistoryRecord> clickHistoryChunk) {
+        if (clickHistoryChunk.isEmpty()) {
+            return 0L;
+        }
+
+        java.util.Map<String, Long> countsBySlugAndDate = clickHistoryChunk.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        record -> record.slug() + "|" + record.rollupDate(),
+                        java.util.stream.Collectors.counting()));
+        countsBySlugAndDate.forEach((slugAndDate, increment) -> {
+            int delimiterIndex = slugAndDate.indexOf('|');
+            String slug = slugAndDate.substring(0, delimiterIndex);
+            LocalDate rollupDate = LocalDate.parse(slugAndDate.substring(delimiterIndex + 1));
+            upsertDailyRollupCount(slug, rollupDate, increment);
+        });
+        return clickHistoryChunk.size();
+    }
+
+    @Override
+    public void resetClickDailyRollups() {
+        jdbcTemplate.update("DELETE FROM link_click_daily_rollups");
+    }
+
+    @Override
     public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
                         """
@@ -213,16 +275,17 @@ public class PostgresLinkStore implements LinkStore {
     @Override
     public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state) {
         StringBuilder sql = new StringBuilder("""
-                SELECT l.slug,
-                       l.original_url,
-                       l.created_at,
-                       l.expires_at,
-                       l.title,
-                       l.tags_json,
-                       l.hostname,
-                       COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
-                FROM links l
+                SELECT p.slug,
+                       p.original_url,
+                       p.created_at,
+                       p.expires_at,
+                       p.title,
+                       p.tags_json,
+                       p.hostname,
+                       COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = p.slug), 0) AS click_total
+                FROM link_catalog_projection p
                 WHERE 1 = 1
+                  AND p.deleted_at IS NULL
                 """);
         List<Object> parameters = new ArrayList<>();
 
@@ -256,17 +319,18 @@ public class PostgresLinkStore implements LinkStore {
 
         return jdbcTemplate.query(
                 """
-                SELECT l.slug, l.title, l.hostname
-                FROM links l
-                WHERE (l.expires_at IS NULL OR l.expires_at > ?)
+                SELECT p.slug, p.title, p.hostname
+                FROM link_catalog_projection p
+                WHERE p.deleted_at IS NULL
+                  AND (p.expires_at IS NULL OR p.expires_at > ?)
                   AND (
-                    LOWER(l.slug) LIKE ?
-                    OR LOWER(l.original_url) LIKE ?
-                    OR LOWER(COALESCE(l.title, '')) LIKE ?
-                    OR LOWER(COALESCE(l.tags_json, '')) LIKE ?
-                    OR LOWER(COALESCE(l.hostname, '')) LIKE ?
+                    LOWER(p.slug) LIKE ?
+                    OR LOWER(p.original_url) LIKE ?
+                    OR LOWER(COALESCE(p.title, '')) LIKE ?
+                    OR LOWER(COALESCE(p.tags_json, '')) LIKE ?
+                    OR LOWER(COALESCE(p.hostname, '')) LIKE ?
                   )
-                ORDER BY l.slug ASC
+                ORDER BY p.slug ASC
                 LIMIT ?
                 """,
                 (resultSet, rowNum) -> new LinkSuggestion(
@@ -407,11 +471,11 @@ public class PostgresLinkStore implements LinkStore {
         sql.append("""
                 
                   AND (
-                    LOWER(l.slug) LIKE ?
-                    OR LOWER(l.original_url) LIKE ?
-                    OR LOWER(COALESCE(l.title, '')) LIKE ?
-                    OR LOWER(COALESCE(l.tags_json, '')) LIKE ?
-                    OR LOWER(COALESCE(l.hostname, '')) LIKE ?
+                    LOWER(p.slug) LIKE ?
+                    OR LOWER(p.original_url) LIKE ?
+                    OR LOWER(COALESCE(p.title, '')) LIKE ?
+                    OR LOWER(COALESCE(p.tags_json, '')) LIKE ?
+                    OR LOWER(COALESCE(p.hostname, '')) LIKE ?
                   )
                 """);
         String pattern = "%" + query.toLowerCase(Locale.ROOT).trim() + "%";
@@ -452,6 +516,110 @@ public class PostgresLinkStore implements LinkStore {
                     """,
                     slug,
                     rollupDate);
+        }
+    }
+
+    private void upsertDailyRollupCount(String slug, LocalDate rollupDate, long increment) {
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE link_click_daily_rollups
+                SET click_count = click_count + ?
+                WHERE slug = ? AND rollup_date = ?
+                """,
+                increment,
+                slug,
+                rollupDate);
+        if (updated == 1) {
+            return;
+        }
+
+        try {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO link_click_daily_rollups (slug, rollup_date, click_count)
+                    VALUES (?, ?, ?)
+                    """,
+                    slug,
+                    rollupDate,
+                    increment);
+        } catch (DuplicateKeyException exception) {
+            jdbcTemplate.update(
+                    """
+                    UPDATE link_click_daily_rollups
+                    SET click_count = click_count + ?
+                    WHERE slug = ? AND rollup_date = ?
+                    """,
+                    increment,
+                    slug,
+                    rollupDate);
+        }
+    }
+
+    private void upsertCatalogProjection(
+            LinkLifecycleEvent linkLifecycleEvent,
+            String tagsJson,
+            OffsetDateTime deletedAt) {
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE link_catalog_projection
+                SET original_url = ?,
+                    updated_at = ?,
+                    title = ?,
+                    tags_json = ?,
+                    hostname = ?,
+                    expires_at = ?,
+                    deleted_at = ?
+                WHERE slug = ?
+                """,
+                linkLifecycleEvent.originalUrl(),
+                linkLifecycleEvent.occurredAt(),
+                linkLifecycleEvent.title(),
+                tagsJson,
+                linkLifecycleEvent.hostname(),
+                linkLifecycleEvent.expiresAt(),
+                deletedAt,
+                linkLifecycleEvent.slug());
+        if (updated == 1) {
+            return;
+        }
+
+        try {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO link_catalog_projection (
+                        slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    linkLifecycleEvent.slug(),
+                    linkLifecycleEvent.originalUrl(),
+                    linkLifecycleEvent.occurredAt(),
+                    linkLifecycleEvent.occurredAt(),
+                    linkLifecycleEvent.title(),
+                    tagsJson,
+                    linkLifecycleEvent.hostname(),
+                    linkLifecycleEvent.expiresAt(),
+                    deletedAt);
+        } catch (DuplicateKeyException exception) {
+            jdbcTemplate.update(
+                    """
+                    UPDATE link_catalog_projection
+                    SET original_url = ?,
+                        updated_at = ?,
+                        title = ?,
+                        tags_json = ?,
+                        hostname = ?,
+                        expires_at = ?,
+                        deleted_at = ?
+                    WHERE slug = ?
+                    """,
+                    linkLifecycleEvent.originalUrl(),
+                    linkLifecycleEvent.occurredAt(),
+                    linkLifecycleEvent.title(),
+                    tagsJson,
+                    linkLifecycleEvent.hostname(),
+                    linkLifecycleEvent.expiresAt(),
+                    deletedAt,
+                    linkLifecycleEvent.slug());
         }
     }
 

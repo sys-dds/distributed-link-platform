@@ -81,9 +81,10 @@ public class ProjectionJobRunner {
         startedCounter.increment();
         Timer.Sample sample = Timer.start();
         try {
-            long processedCount = projectionJobService.executeJob(job);
-            projectionJobStore.markCompleted(job.id(), OffsetDateTime.now(clock), processedCount);
-            completedCounter.increment();
+            ProjectionJobChunkResult result = projectionJobService.executeClaimedJobChunk(job);
+            if (result.completed()) {
+                completedCounter.increment();
+            }
         } catch (RuntimeException exception) {
             projectionJobStore.markFailed(job.id(), OffsetDateTime.now(clock), compactErrorSummary(exception));
             failedCounter.increment();

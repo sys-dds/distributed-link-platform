@@ -28,6 +28,8 @@ public interface LinkLifecycleOutboxStore {
 
     List<LinkLifecycleEvent> findAllHistory();
 
+    List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit);
+
     List<LinkLifecycleOutboxRecord> findParked(int limit);
 
     boolean requeueParked(long id, OffsetDateTime nextAttemptAt);

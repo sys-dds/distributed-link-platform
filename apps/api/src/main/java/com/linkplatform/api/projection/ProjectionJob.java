@@ -10,6 +10,7 @@ public record ProjectionJob(
         OffsetDateTime startedAt,
         OffsetDateTime completedAt,
         long processedCount,
+        Long checkpointId,
         String errorSummary,
         String claimedBy,
         OffsetDateTime claimedUntil) {

@@ -49,6 +49,7 @@ link-platform:
   projection-jobs:
     runner-delay: ${LINK_PLATFORM_PROJECTION_JOBS_RUNNER_DELAY:5000}
     lease-duration: ${LINK_PLATFORM_PROJECTION_JOBS_LEASE_DURATION:PT30S}
+    chunk-size: ${LINK_PLATFORM_PROJECTION_JOBS_CHUNK_SIZE:100}
 
 management:
   endpoints:
