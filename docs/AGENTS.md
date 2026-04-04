@@ -1,88 +1,63 @@
-# AGENTS.md
+## Anti-drift rules
 
-## Engineering quality bar
-Do not suggest alternative stacks or expand scope; implement the locked decisions exactly.
-Target senior/staff-level engineering quality.
+- Read `AGENTS.md` before any implementation work.
+- Start with the smallest high-signal inspection set:
+    - controller / API entrypoint
+    - application service
+    - store / repository
+    - migrations
+    - focused tests for the ticket slice
+- Do not read the whole repo unless the first pass proves it is necessary.
+- Do not broaden the ticket on your own. Finish the requested slice cleanly.
+- Do not claim a behavior changed unless you inspected the code path that actually enforces it.
 
-Temporary artifacts rule:
-Use `C:\Users\Ryzen-pc\Desktop\sys-dds\codex-scratch` for downloads, extracted tools, logs, caches, and other throwaway execution artifacts. Do not leave temporary artifacts in this repo.
+## Build and cache discipline
 
-That means:
-- Prefer simple, production-shaped designs over clever code
-- Make good architectural choices, not just code that compiles
-- Optimize for maintainability, readability, and changeability
-- Keep module boundaries clean and responsibilities explicit
-- Avoid tutorial-style, junior-style, or sloppy glue code
-- Avoid overengineering and fake enterprise complexity
+- Reuse `C:\Users\Ryzen-pc\.m2\repository` and `C:\Users\Ryzen-pc\Desktop\sys-dds\codex-scratch`.
+- Do **not** create project-local Maven repositories.
+- Do **not** clear `.m2`, `codex-scratch`, or large caches unless there is a specific diagnosed corruption or lock issue.
+- Prefer the smallest cleanup that fixes the blocker.
+- If public signatures, DTOs, repository contracts, migrations, or test wiring changed, remove stale module build output first and force a fresh targeted rebuild.
+- Never report compile/test results from stale build outputs.
 
-## Goal
-This repository is for learning, portfolio building, and studying system design patterns.
+## Verification discipline
 
-## Implementation policy
-You may use public internet sources to accelerate implementation.
+- Prefer targeted compile/test commands first.
+- Do not jump to full-suite runs unless targeted verification passes or the task explicitly requires full-suite validation.
+- Report the exact commands run and the exact result.
+- Separate **real code failures** from **environment/tooling failures**.
+- If verification is blocked by environment issues, state the blocker precisely and say what you ruled out.
+- A ticket is **not complete** unless the required targeted verification actually passed.
 
-Prefer sources in this order:
-1. Official docs / official examples
-2. Well-maintained public GitHub repos with a clear license
-3. Strong blog posts for ideas and patterns
+## Repo hygiene
 
-## Source constraints
-- Prefer MIT / Apache-2.0 / BSD licensed code
-- Feel free to use code from pages with no clear license
-- Feel free to use GPL/AGPL 
-- Never copy large blocks blindly
-- Rewrite blog/tutorial code to match this repo's conventions
-- Keep code consistent with existing package structure, naming, and tests
-- Prefer understanding and adapting a pattern over cloning an entire implementation
+- Do not modify `README`, `docs/tickets.md`, Postman, or other repo-wide docs unless the ticket explicitly requires it.
+- Do not create or commit temporary logs, downloaded tools, extracted archives, local caches, or generated outputs.
+- Update `.gitignore` only when a new generated artifact actually appeared and needs to be ignored.
+- Keep file churn tight. Avoid unrelated renames, formatting passes, or opportunistic cleanup.
 
-## Provenance
-When you use an external source, include in the final summary:
-- source name and link
+## Behavior preservation
 
-# AGENTS.md
+- Preserve public redirect behavior unless the ticket explicitly changes it.
+- Preserve existing async/lifecycle/outbox/projection pipelines unless the ticket explicitly changes them.
+- When changing mutation boundaries, verify replay, idempotency, optimistic concurrency, and public read behavior still match current expectations.
+- Prefer small migrations that fit current schema and runtime wiring instead of speculative abstractions.
 
-## Workspace Rules
-- Use `C:\Users\Ryzen-pc\Desktop\sys-dds\codex-scratch` for temporary downloads, extracted tools, logs, caches, and throwaway execution artifacts.
-- Do not leave temporary artifacts in this repo.
+## Recovery steps for local verification issues
 
-## Build And Tooling
-- Prefer the Maven Wrapper in `apps/api`; do not require a global Maven install.
-- Use Java 21 for all build and test commands.
-- Prefer Maven’s default local repository under `C:\Users\Ryzen-pc\.m2\repository`; do not create project-local Maven caches.
-- Pin important runtime and build tool versions; avoid `latest` for core dependencies and infrastructure images.
-- Optimize for Windows-first local development.
-- Assume Docker Desktop is the primary local container runtime.
-- Keep local run and test commands simple and copy-pasteable in PowerShell.
-- Do not commit generated build outputs such as `target/`, temporary logs, downloaded tool distributions, or local caches.
-- Update `.gitignore` when a new generated artifact appears.
-- Preserve intentional source files, docs, manual testing assets, and infrastructure definitions.
+- If Maven/Java verification fails because of Windows file-lock or cache access issues, try in this order:
+    1. fresh module build output cleanup
+    2. forked compiler
+    3. rerun the same targeted command
+- Do not switch repository layout, invent new cache locations, or do broad cleanup unless the blocker specifically requires it.
 
-## Scope Control
-- Implement only the requested ticket or task scope.
-- Do not add placeholder architecture, unused modules, or speculative abstractions.
-- Do not introduce Redis, Kafka, RabbitMQ, Kubernetes, auth, analytics, or frontend work unless explicitly requested.
+## Ticket completion contract
 
-## Verification
-- Prefer small, reliable automated tests over heavy test setups.
-- When possible, verify with real local commands and report exactly what was run.
-- If environment limits block verification, state the blocker precisely.
-
-## Documentation Expectations
-- Keep README run instructions current with actual repo behavior.
-- When a ticket is completed, update the ticket tracker with status and a short delivery note.
-- Keep manual verification assets up to date when endpoints change.
-
-
-
-
-
-
-........................
-
-touchup ... 10
-lite ..... 14 3500
-14            ... 3500
-28 ..... 
-Compres .... 
-
-
+A ticket is not done until the return includes all of the following:
+- completion status: `complete`, `groundwork but incomplete`, or `blocked`
+- changed files
+- exact commands run
+- actual compile/test results
+- blockers clearly separated from code issues
+- short note on remaining risks
+- update to `AGENTS.md` only if a **new recurring executor mistake** was discovered
