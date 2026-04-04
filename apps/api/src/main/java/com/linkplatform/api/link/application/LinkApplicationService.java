@@ -1,13 +1,15 @@
 package com.linkplatform.api.link.application;
 
+import com.linkplatform.api.owner.application.AuthenticatedOwner;
 import com.linkplatform.api.link.domain.Link;
 import java.util.List;
 
 public interface LinkApplicationService {
 
-    LinkMutationResult createLink(CreateLinkCommand command, String idempotencyKey);
+    LinkMutationResult createLink(AuthenticatedOwner owner, CreateLinkCommand command, String idempotencyKey);
 
     LinkMutationResult updateLink(
+            AuthenticatedOwner owner,
             String slug,
             String originalUrl,
             java.time.OffsetDateTime expiresAt,
@@ -16,7 +18,7 @@ public interface LinkApplicationService {
             long expectedVersion,
             String idempotencyKey);
 
-    LinkMutationResult deleteLink(String slug, long expectedVersion, String idempotencyKey);
+    LinkMutationResult deleteLink(AuthenticatedOwner owner, String slug, long expectedVersion, String idempotencyKey);
 
     Link resolveLink(String slug);
 

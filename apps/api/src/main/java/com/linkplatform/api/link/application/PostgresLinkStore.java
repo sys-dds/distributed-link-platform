@@ -31,12 +31,19 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname, long version) {
+    public boolean save(
+            Link link,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags,
+            String hostname,
+            long version,
+            long ownerId) {
         try {
             return jdbcTemplate.update(
                     """
-                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname, version, owner_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     link.slug().value(),
                     link.originalUrl().value(),
@@ -44,7 +51,8 @@ public class PostgresLinkStore implements LinkStore {
                     title,
                     serializeTags(tags),
                     hostname,
-                    version) == 1;
+                    version,
+                    ownerId) == 1;
         } catch (DuplicateKeyException exception) {
             return false;
         }
@@ -59,12 +67,14 @@ public class PostgresLinkStore implements LinkStore {
             List<String> tags,
             String hostname,
             long expectedVersion,
-            long nextVersion) {
+            long nextVersion,
+            long ownerId) {
         return jdbcTemplate.update(
                 """
                 UPDATE links
                 SET original_url = ?, expires_at = ?, title = ?, tags_json = ?, hostname = ?, version = ?
                 WHERE slug = ?
+                  AND owner_id = ?
                   AND version = ?
                 """,
                 originalUrl,
@@ -74,12 +84,25 @@ public class PostgresLinkStore implements LinkStore {
                 hostname,
                 nextVersion,
                 slug,
+                ownerId,
                 expectedVersion) == 1;
     }
 
     @Override
-    public boolean deleteBySlug(String slug, long expectedVersion) {
-        return jdbcTemplate.update("DELETE FROM links WHERE slug = ? AND version = ?", slug, expectedVersion) == 1;
+    public boolean deleteBySlug(String slug, long expectedVersion, long ownerId) {
+        return jdbcTemplate.update(
+                "DELETE FROM links WHERE slug = ? AND owner_id = ? AND version = ?",
+                slug,
+                ownerId,
+                expectedVersion) == 1;
+    }
+
+    @Override
+    public long countActiveLinksByOwner(long ownerId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM links WHERE owner_id = ?",
+                Long.class,
+                ownerId);
     }
 
     @Override
@@ -278,6 +301,39 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
                         slug)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<LinkDetails> findStoredDetailsBySlugForOwner(String slug, long ownerId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT l.slug,
+                               l.original_url,
+                               l.created_at,
+                               l.expires_at,
+                               l.title,
+                               l.tags_json,
+                               l.hostname,
+                               l.version,
+                               COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
+                        FROM links l
+                        WHERE l.slug = ?
+                          AND l.owner_id = ?
+                        """,
+                        (resultSet, rowNum) -> toLinkDetails(
+                                resultSet.getString("slug"),
+                                resultSet.getString("original_url"),
+                                resultSet.getObject("created_at", OffsetDateTime.class),
+                                resultSet.getObject("expires_at", OffsetDateTime.class),
+                                resultSet.getString("title"),
+                                resultSet.getString("tags_json"),
+                                resultSet.getString("hostname"),
+                                resultSet.getLong("version"),
+                                resultSet.getLong("click_total")),
+                        slug,
+                        ownerId)
                 .stream()
                 .findFirst();
     }

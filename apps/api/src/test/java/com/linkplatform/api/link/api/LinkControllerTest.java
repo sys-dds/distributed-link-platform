@@ -18,12 +18,17 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class LinkControllerTest {
+
+    private static final String FREE_API_KEY = "dev-free-api-key";
+    private static final String PRO_API_KEY = "dev-pro-api-key";
+    private static final String INVALID_API_KEY = "invalid-api-key";
 
     @Autowired
     private MockMvc mockMvc;
@@ -33,7 +38,7 @@ class LinkControllerTest {
 
     @Test
     void createLinkReturnsCreatedResponse() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -59,8 +64,35 @@ class LinkControllerTest {
     }
 
     @Test
-    void createLinkWithMetadataPersistsMetadata() throws Exception {
+    void missingApiKeyFailsCleanlyOnProtectedMutationEndpoint() throws Exception {
         mockMvc.perform(post("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "missing-auth",
+                                  "originalUrl": "https://example.com/missing-auth"
+                                }
+                                """))
+                .andExpect(problemDetail(401, "Unauthorized", "X-API-Key header is required"));
+    }
+
+    @Test
+    void invalidApiKeyFailsCleanlyOnProtectedMutationEndpoint() throws Exception {
+        mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", INVALID_API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "invalid-auth",
+                                  "originalUrl": "https://example.com/invalid-auth"
+                                }
+                                """))
+                .andExpect(problemDetail(401, "Unauthorized", "X-API-Key is invalid"));
+    }
+
+    @Test
+    void createLinkWithMetadataPersistsMetadata() throws Exception {
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -79,11 +111,12 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.tags[1]").value("docs"))
                 .andExpect(jsonPath("$.hostname").value("docs.example.com"))
                 .andExpect(jsonPath("$.version").value(1));
+        assertCount("SELECT COUNT(*) FROM links WHERE slug = 'metadata-link' AND owner_id = 100", 1);
     }
 
     @Test
     void createLinkWithFutureExpirationPersistsExpiration() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -104,7 +137,7 @@ class LinkControllerTest {
 
     @Test
     void createLinkWithPastExpirationBecomesUnavailableImmediately() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -128,12 +161,12 @@ class LinkControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -153,14 +186,14 @@ class LinkControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .header("Idempotency-Key", "create-key-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.version").value(1));
 
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .header("Idempotency-Key", "create-key-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
@@ -169,12 +202,36 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.version").value(1));
 
         assertCount("SELECT COUNT(*) FROM links WHERE slug = 'idempotent-create'", 1);
-        assertCount("SELECT COUNT(*) FROM link_mutation_idempotency WHERE idempotency_key = 'create-key-1'", 1);
+        assertCount("SELECT COUNT(*) FROM link_mutation_idempotency WHERE owner_id = 100 AND idempotency_key = 'create-key-1'", 1);
+    }
+
+    @Test
+    void sameIdempotencyKeyUsedByDifferentOwnersDoesNotCollide() throws Exception {
+        String request = """
+                {
+                  "slug": "%s",
+                  "originalUrl": "%s"
+                }
+                """;
+
+        mockMvc.perform(authenticatedPost("/api/v1/links", FREE_API_KEY)
+                        .header("Idempotency-Key", "shared-owner-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request.formatted("free-owned", "https://example.com/free-owned")))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(authenticatedPost("/api/v1/links", PRO_API_KEY)
+                        .header("Idempotency-Key", "shared-owner-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request.formatted("pro-owned", "https://example.com/pro-owned")))
+                .andExpect(status().isCreated());
+
+        assertCount("SELECT COUNT(*) FROM link_mutation_idempotency WHERE idempotency_key = 'shared-owner-key'", 2);
     }
 
     @Test
     void createLinkRejectsIdempotencyKeyReuseWithDifferentPayload() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .header("Idempotency-Key", "create-key-2")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -185,7 +242,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .header("Idempotency-Key", "create-key-2")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -200,7 +257,7 @@ class LinkControllerTest {
 
     @Test
     void createLinkRejectsInvalidInput() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -221,7 +278,7 @@ class LinkControllerTest {
 
     @Test
     void createLinkRejectsReservedSlugCaseInsensitively() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -234,7 +291,7 @@ class LinkControllerTest {
 
     @Test
     void createLinkRejectsSelfTargetUrl() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -247,8 +304,81 @@ class LinkControllerTest {
     }
 
     @Test
+    void freePlanOwnerHitsQuotaAndReceivesProblemDetails() throws Exception {
+        mockMvc.perform(authenticatedPost("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "free-quota-one",
+                                  "originalUrl": "https://example.com/free-quota-one"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(authenticatedPost("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "free-quota-two",
+                                  "originalUrl": "https://example.com/free-quota-two"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(authenticatedPost("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "free-quota-three",
+                                  "originalUrl": "https://example.com/free-quota-three"
+                                }
+                                """))
+                .andExpect(problemDetail(409, "Conflict",
+                        "Active link quota exceeded for owner free-dev-owner on plan FREE"));
+    }
+
+    @Test
+    void proPlanOwnerCanExceedFreePlanThresholdUsedInTests() throws Exception {
+        mockMvc.perform(authenticatedPost("/api/v1/links", PRO_API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "pro-quota-one",
+                                  "originalUrl": "https://example.com/pro-quota-one"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(authenticatedPost("/api/v1/links", PRO_API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "pro-quota-two",
+                                  "originalUrl": "https://example.com/pro-quota-two"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(authenticatedPost("/api/v1/links", PRO_API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "pro-quota-three",
+                                  "originalUrl": "https://example.com/pro-quota-three"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void plaintextApiKeyIsNotStoredInDatabase() {
+        assertCount("SELECT COUNT(*) FROM owner_api_keys WHERE key_hash = 'dev-free-api-key'", 0);
+        assertCount("SELECT COUNT(*) FROM owner_api_keys WHERE key_hash = 'dev-pro-api-key'", 0);
+    }
+
+    @Test
     void getLinkReturnsExistingLink() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -555,7 +685,7 @@ class LinkControllerTest {
 
     @Test
     void updateLinkUpdatesExistingLink() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -565,7 +695,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(put("/api/v1/links/editable")
+        mockMvc.perform(authenticatedPut("/api/v1/links/editable")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -587,7 +717,7 @@ class LinkControllerTest {
 
     @Test
     void updateLinkUpdatesMetadata() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -597,7 +727,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(put("/api/v1/links/editable-meta")
+        mockMvc.perform(authenticatedPut("/api/v1/links/editable-meta")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -617,7 +747,7 @@ class LinkControllerTest {
 
     @Test
     void updateLinkUpdatesExpiration() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -627,7 +757,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(put("/api/v1/links/expiring")
+        mockMvc.perform(authenticatedPut("/api/v1/links/expiring")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -643,7 +773,7 @@ class LinkControllerTest {
 
     @Test
     void updateLinkReturnsNotFoundForMissingSlug() throws Exception {
-        mockMvc.perform(put("/api/v1/links/missing-link")
+        mockMvc.perform(authenticatedPut("/api/v1/links/missing-link")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -655,8 +785,31 @@ class LinkControllerTest {
     }
 
     @Test
+    void updateCannotMutateAnotherOwnersLink() throws Exception {
+        mockMvc.perform(authenticatedPost("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "owner-scoped-update",
+                                  "originalUrl": "https://example.com/owner-scoped-update"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(authenticatedPut("/api/v1/links/owner-scoped-update", PRO_API_KEY)
+                        .header("If-Match", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/pro-attempt"
+                                }
+                                """))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: owner-scoped-update"));
+    }
+
+    @Test
     void updateLinkRejectsMissingIfMatchHeader() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -666,7 +819,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(put("/api/v1/links/missing-precondition")
+        mockMvc.perform(authenticatedPut("/api/v1/links/missing-precondition")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -678,7 +831,7 @@ class LinkControllerTest {
 
     @Test
     void updateLinkRejectsInvalidIfMatchHeader() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -688,7 +841,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(put("/api/v1/links/invalid-precondition")
+        mockMvc.perform(authenticatedPut("/api/v1/links/invalid-precondition")
                         .header("If-Match", "W/\"1\"")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -701,7 +854,7 @@ class LinkControllerTest {
 
     @Test
     void updateLinkRejectsStaleIfMatchVersion() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -711,7 +864,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(put("/api/v1/links/stale-update")
+        mockMvc.perform(authenticatedPut("/api/v1/links/stale-update")
                         .header("If-Match", "0")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -724,7 +877,7 @@ class LinkControllerTest {
 
     @Test
     void updateLinkRejectsInvalidUrl() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -734,7 +887,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(put("/api/v1/links/editable")
+        mockMvc.perform(authenticatedPut("/api/v1/links/editable")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -748,7 +901,7 @@ class LinkControllerTest {
 
     @Test
     void updateLinkRejectsSelfTargetUrl() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -758,7 +911,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(put("/api/v1/links/editable")
+        mockMvc.perform(authenticatedPut("/api/v1/links/editable")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -772,7 +925,7 @@ class LinkControllerTest {
 
     @Test
     void deleteLinkDeletesExistingLink() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -782,7 +935,7 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(delete("/api/v1/links/delete-me").header("If-Match", "1"))
+        mockMvc.perform(authenticatedDelete("/api/v1/links/delete-me").header("If-Match", "1"))
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""));
 
@@ -792,7 +945,7 @@ class LinkControllerTest {
 
     @Test
     void controlPlaneWritesLifecycleOutboxWithoutSynchronousActivityProjection() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -804,7 +957,7 @@ class LinkControllerTest {
         assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
         assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'CREATED'", 1);
 
-        mockMvc.perform(put("/api/v1/links/async-feed")
+        mockMvc.perform(authenticatedPut("/api/v1/links/async-feed")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -816,7 +969,7 @@ class LinkControllerTest {
         assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
         assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'UPDATED'", 1);
 
-        mockMvc.perform(delete("/api/v1/links/async-feed").header("If-Match", "2"))
+        mockMvc.perform(authenticatedDelete("/api/v1/links/async-feed").header("If-Match", "2"))
                 .andExpect(status().isNoContent());
         assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
         assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'DELETED'", 1);
@@ -824,13 +977,30 @@ class LinkControllerTest {
 
     @Test
     void deleteLinkReturnsNotFoundForMissingSlug() throws Exception {
-        mockMvc.perform(delete("/api/v1/links/missing-link").header("If-Match", "1"))
+        mockMvc.perform(authenticatedDelete("/api/v1/links/missing-link").header("If-Match", "1"))
                 .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
     }
 
     @Test
+    void deleteCannotMutateAnotherOwnersLink() throws Exception {
+        mockMvc.perform(authenticatedPost("/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "owner-scoped-delete",
+                                  "originalUrl": "https://example.com/owner-scoped-delete"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(authenticatedDelete("/api/v1/links/owner-scoped-delete", PRO_API_KEY)
+                        .header("If-Match", "1"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: owner-scoped-delete"));
+    }
+
+    @Test
     void deleteLinkRejectsStaleIfMatchVersion() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -840,13 +1010,13 @@ class LinkControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(delete("/api/v1/links/stale-delete").header("If-Match", "0"))
+        mockMvc.perform(authenticatedDelete("/api/v1/links/stale-delete").header("If-Match", "0"))
                 .andExpect(problemDetail(409, "Conflict", "Link version conflict for slug: stale-delete"));
     }
 
     @Test
     void expiredLinkReadReturnsNotFound() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(authenticatedPost("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -949,6 +1119,30 @@ class LinkControllerTest {
     private void assertCount(String sql, int expectedCount) {
         Integer actualCount = jdbcTemplate.queryForObject(sql, Integer.class);
         org.junit.jupiter.api.Assertions.assertEquals(expectedCount, actualCount);
+    }
+
+    private MockHttpServletRequestBuilder authenticatedPost(String url) {
+        return authenticatedPost(url, FREE_API_KEY);
+    }
+
+    private MockHttpServletRequestBuilder authenticatedPost(String url, String apiKey) {
+        return post(url).header("X-API-Key", apiKey);
+    }
+
+    private MockHttpServletRequestBuilder authenticatedPut(String url) {
+        return authenticatedPut(url, FREE_API_KEY);
+    }
+
+    private MockHttpServletRequestBuilder authenticatedPut(String url, String apiKey) {
+        return put(url).header("X-API-Key", apiKey);
+    }
+
+    private MockHttpServletRequestBuilder authenticatedDelete(String url) {
+        return authenticatedDelete(url, FREE_API_KEY);
+    }
+
+    private MockHttpServletRequestBuilder authenticatedDelete(String url, String apiKey) {
+        return delete(url).header("X-API-Key", apiKey);
     }
 
     private static org.springframework.test.web.servlet.ResultMatcher problemDetail(

@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.linkplatform.api.link.domain.Link;
+import com.linkplatform.api.owner.application.AuthenticatedOwner;
+import com.linkplatform.api.owner.application.OwnerPlan;
+import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
+import com.linkplatform.api.owner.application.OwnerStore;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
@@ -16,24 +20,29 @@ import org.junit.jupiter.api.Test;
 
 class DefaultLinkApplicationServiceTest {
 
+    private static final AuthenticatedOwner FREE_OWNER = new AuthenticatedOwner(100L, "free-dev-owner", OwnerPlan.FREE);
+    private static final AuthenticatedOwner PRO_OWNER = new AuthenticatedOwner(200L, "pro-dev-owner", OwnerPlan.PRO);
+
     private final TestLinkStore linkStore = new TestLinkStore();
     private final TestAnalyticsOutboxStore analyticsOutboxStore = new TestAnalyticsOutboxStore();
     private final TestLinkLifecycleOutboxStore linkLifecycleOutboxStore = new TestLinkLifecycleOutboxStore();
     private final TestLinkMutationIdempotencyStore idempotencyStore = new TestLinkMutationIdempotencyStore();
+    private final TestOwnerStore ownerStore = new TestOwnerStore();
     private final DefaultLinkApplicationService service =
             new DefaultLinkApplicationService(
                     linkStore,
                     analyticsOutboxStore,
                     linkLifecycleOutboxStore,
                     idempotencyStore,
+                    ownerStore,
                     "http://LOCALHOST:80");
 
     @Test
     void createsAndStoresValidatedLinkFromCommand() {
         LinkMutationResult result = service.createLink(
+                FREE_OWNER,
                 new CreateLinkCommand("launch-page", "https://example.com/launch", null, null, null),
                 null);
-
         assertEquals("launch-page", result.slug());
         assertEquals("https://example.com/launch", result.originalUrl());
         assertEquals(1L, result.version());
@@ -41,10 +50,8 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void createLinkWritesLifecycleEventButNotSynchronousActivityProjection() {
-        service.createLink(new CreateLinkCommand("launch-page", "https://example.com/launch", null, "Launch", List.of("product")), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("launch-page", "https://example.com/launch", null, "Launch", List.of("product")), null);
         List<LinkActivityEvent> activity = service.getRecentActivity(10);
-
         assertTrue(activity.isEmpty());
         assertEquals(1, linkLifecycleOutboxStore.events().size());
         assertEquals(LinkLifecycleEventType.CREATED, linkLifecycleOutboxStore.events().getFirst().eventType());
@@ -54,23 +61,20 @@ class DefaultLinkApplicationServiceTest {
     @Test
     void failsWhenCommandContainsInvalidDomainData() {
         assertThrows(IllegalArgumentException.class,
-                () -> service.createLink(new CreateLinkCommand("no spaces allowed", "https://example.com", null, null, null), null));
+                () -> service.createLink(FREE_OWNER, new CreateLinkCommand("no spaces allowed", "https://example.com", null, null, null), null));
     }
 
     @Test
     void rejectsDuplicateSlug() {
-        service.createLink(new CreateLinkCommand("repeatable", "https://example.com/one", null, null, null), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("repeatable", "https://example.com/one", null, null, null), null);
         assertThrows(DuplicateLinkSlugException.class,
-                () -> service.createLink(new CreateLinkCommand("repeatable", "https://example.com/two", null, null, null), null));
+                () -> service.createLink(FREE_OWNER, new CreateLinkCommand("repeatable", "https://example.com/two", null, null, null), null));
     }
 
     @Test
     void resolvesStoredLinkBySlug() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
         Link link = service.resolveLink("docs");
-
         assertEquals("docs", link.slug().value());
         assertEquals("https://example.com/docs", link.originalUrl().value());
     }
@@ -82,30 +86,24 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void returnsStoredLinkDetailsBySlug() {
-        service.createLink(new CreateLinkCommand("details", "https://example.com/details", null, null, null), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("details", "https://example.com/details", null, null, null), null);
         LinkDetails linkDetails = service.getLink("details");
-
         assertEquals("details", linkDetails.slug());
         assertEquals("https://example.com/details", linkDetails.originalUrl());
     }
 
     @Test
     void listsRecentLinksFromStore() {
-        service.createLink(new CreateLinkCommand("alpha", "https://example.com/alpha", null, null, null), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("alpha", "https://example.com/alpha", null, null, null), null);
         List<LinkDetails> recentLinks = service.listRecentLinks(10, null, LinkLifecycleState.ACTIVE);
-
         assertEquals(1, recentLinks.size());
         assertEquals("alpha", recentLinks.getFirst().slug());
     }
 
     @Test
     void updatesExistingLinkOriginalUrl() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
-
-        LinkMutationResult result = service.updateLink("docs", "https://example.com/updated", null, null, null, 1L, null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
+        LinkMutationResult result = service.updateLink(FREE_OWNER, "docs", "https://example.com/updated", null, null, null, 1L, null);
         assertEquals("docs", result.slug());
         assertEquals("https://example.com/updated", result.originalUrl());
         assertEquals(2L, result.version());
@@ -113,10 +111,8 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void deletesExistingLink() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
-
-        LinkMutationResult result = service.deleteLink("docs", 1L, null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
+        LinkMutationResult result = service.deleteLink(FREE_OWNER, "docs", 1L, null);
         assertTrue(linkStore.deletedSlugs().containsKey("docs"));
         assertTrue(result.deleted());
         assertEquals(2L, result.version());
@@ -125,23 +121,19 @@ class DefaultLinkApplicationServiceTest {
     @Test
     void storesFutureExpirationOnCreate() {
         OffsetDateTime expiresAt = OffsetDateTime.parse("2030-04-01T08:00:00Z");
-
-        service.createLink(new CreateLinkCommand("expiring", "https://example.com/expiring", expiresAt, null, null), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("expiring", "https://example.com/expiring", expiresAt, null, null), null);
         assertEquals(expiresAt, service.getLink("expiring").expiresAt());
     }
 
     @Test
     void storesNormalizedMetadataOnCreate() {
-        service.createLink(new CreateLinkCommand(
+        service.createLink(FREE_OWNER, new CreateLinkCommand(
                 "tagged",
                 "https://Docs.Example.com/guide",
                 null,
                 "  Launch Guide  ",
                 List.of(" docs ", "product", "docs", "")), null);
-
         LinkDetails linkDetails = service.getLink("tagged");
-
         assertEquals("Launch Guide", linkDetails.title());
         assertEquals(List.of("docs", "product"), linkDetails.tags());
         assertEquals("docs.example.com", linkDetails.hostname());
@@ -149,42 +141,37 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void recordsRedirectClick() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
         service.recordRedirectClick("docs", "test-agent", "https://referrer.example", "127.0.0.1");
-
         assertEquals(1, analyticsOutboxStore.events().size());
         assertEquals("docs", analyticsOutboxStore.events().getFirst().slug());
     }
 
     @Test
     void allowsPastExpirationAndTreatsLinkAsExpiredImmediately() {
-        service.createLink(new CreateLinkCommand(
+        service.createLink(FREE_OWNER, new CreateLinkCommand(
                 "expired-now",
                 "https://example.com/expired",
                 OffsetDateTime.parse("2020-04-01T08:00:00Z"),
                 null,
                 null), null);
-
         assertThrows(LinkNotFoundException.class, () -> service.getLink("expired-now"));
         assertThrows(LinkNotFoundException.class, () -> service.resolveLink("expired-now"));
     }
 
     @Test
     void updatesExpiration() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
         OffsetDateTime expiresAt = OffsetDateTime.parse("2030-04-01T08:00:00Z");
-
-        LinkMutationResult linkDetails = service.updateLink("docs", "https://example.com/docs", expiresAt, null, null, 1L, null);
-
+        LinkMutationResult linkDetails = service.updateLink(FREE_OWNER, "docs", "https://example.com/docs", expiresAt, null, null, 1L, null);
         assertEquals(expiresAt, linkDetails.expiresAt());
     }
 
     @Test
     void updatesMetadata() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
         LinkMutationResult linkDetails = service.updateLink(
+                FREE_OWNER,
                 "docs",
                 "https://app.example.com/docs",
                 null,
@@ -192,7 +179,6 @@ class DefaultLinkApplicationServiceTest {
                 List.of("portal", "docs"),
                 1L,
                 null);
-
         assertEquals("Docs Portal", linkDetails.title());
         assertEquals(List.of("portal", "docs"), linkDetails.tags());
         assertEquals("app.example.com", linkDetails.hostname());
@@ -200,12 +186,9 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void updateLinkWritesLifecycleEventButNotSynchronousActivityProjection() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
-
-        service.updateLink("docs", "https://app.example.com/docs", null, "Docs Portal", List.of("portal"), 1L, null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
+        service.updateLink(FREE_OWNER, "docs", "https://app.example.com/docs", null, "Docs Portal", List.of("portal"), 1L, null);
         List<LinkActivityEvent> activity = service.getRecentActivity(10);
-
         assertTrue(activity.isEmpty());
         assertEquals(LinkLifecycleEventType.UPDATED, linkLifecycleOutboxStore.events().getLast().eventType());
         assertEquals("Docs Portal", linkLifecycleOutboxStore.events().getLast().title());
@@ -213,23 +196,18 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void suggestsMatchingActiveLinks() {
-        service.createLink(new CreateLinkCommand("alpha", "https://docs.example.com/alpha", null, "Alpha Docs", List.of("docs")), null);
-        service.createLink(new CreateLinkCommand("beta", "https://app.example.com/beta", null, "Beta App", List.of("app")), null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("alpha", "https://docs.example.com/alpha", null, "Alpha Docs", List.of("docs")), null);
+        service.createLink(PRO_OWNER, new CreateLinkCommand("beta", "https://app.example.com/beta", null, "Beta App", List.of("app")), null);
         List<LinkSuggestion> suggestions = service.suggestLinks("docs", 10);
-
         assertEquals(1, suggestions.size());
         assertEquals("alpha", suggestions.getFirst().slug());
     }
 
     @Test
     void deleteLinkWritesLifecycleEventButNotSynchronousActivityProjection() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, "Docs", List.of("portal")), null);
-
-        service.deleteLink("docs", 1L, null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, "Docs", List.of("portal")), null);
+        service.deleteLink(FREE_OWNER, "docs", 1L, null);
         List<LinkActivityEvent> activity = service.getRecentActivity(10);
-
         assertTrue(activity.isEmpty());
         assertEquals(LinkLifecycleEventType.DELETED, linkLifecycleOutboxStore.events().getLast().eventType());
         assertEquals("docs", linkLifecycleOutboxStore.events().getLast().slug());
@@ -238,40 +216,68 @@ class DefaultLinkApplicationServiceTest {
 
     @Test
     void expirationOnlyUpdateWritesDedicatedLifecycleEvent() {
-        service.createLink(new CreateLinkCommand("docs", "https://example.com/docs", null, "Docs", List.of("portal")), null);
-
-        service.updateLink("docs", "https://example.com/docs", OffsetDateTime.parse("2030-04-01T08:00:00Z"), "Docs", List.of("portal"), 1L, null);
-
+        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, "Docs", List.of("portal")), null);
+        service.updateLink(FREE_OWNER, "docs", "https://example.com/docs", OffsetDateTime.parse("2030-04-01T08:00:00Z"), "Docs", List.of("portal"), 1L, null);
         assertEquals(LinkLifecycleEventType.EXPIRATION_UPDATED, linkLifecycleOutboxStore.events().getLast().eventType());
     }
 
     @Test
     void rejectsReservedSlugCaseInsensitivelyBeforePersistence() {
         assertThrows(ReservedLinkSlugException.class,
-                () -> service.createLink(new CreateLinkCommand("AcTuAtOr", "https://example.com/system", null, null, null), null));
-
+                () -> service.createLink(FREE_OWNER, new CreateLinkCommand("AcTuAtOr", "https://example.com/system", null, null, null), null));
         assertEquals(0, linkStore.saveAttempts());
     }
 
     @Test
     void rejectsSelfTargetUrlBeforePersistenceIncludingDefaultPortEquivalence() {
         assertThrows(SelfTargetLinkException.class,
-                () -> service.createLink(new CreateLinkCommand("self-loop", "http://localhost/about", null, null, null), null));
-
+                () -> service.createLink(FREE_OWNER, new CreateLinkCommand("self-loop", "http://localhost/about", null, null, null), null));
         assertEquals(0, linkStore.saveAttempts());
     }
 
-    private static final class TestLinkStore implements LinkStore {
+    @Test
+    void createLinkEnforcesFreePlanQuotaPerOwner() {
+        service.createLink(FREE_OWNER, new CreateLinkCommand("free-one", "https://example.com/one", null, null, null), null);
+        service.createLink(FREE_OWNER, new CreateLinkCommand("free-two", "https://example.com/two", null, null, null), null);
+        assertThrows(OwnerQuotaExceededException.class,
+                () -> service.createLink(FREE_OWNER, new CreateLinkCommand("free-three", "https://example.com/three", null, null, null), null));
+    }
 
+    @Test
+    void sameIdempotencyKeyDoesNotCollideAcrossOwners() {
+        LinkMutationResult freeResult = service.createLink(
+                FREE_OWNER,
+                new CreateLinkCommand("free-key-link", "https://example.com/free", null, null, null),
+                "shared-key");
+        LinkMutationResult proResult = service.createLink(
+                PRO_OWNER,
+                new CreateLinkCommand("pro-key-link", "https://example.com/pro", null, null, null),
+                "shared-key");
+        assertEquals("free-key-link", freeResult.slug());
+        assertEquals("pro-key-link", proResult.slug());
+    }
+
+    @Test
+    void updateAndDeleteAreScopedToOwner() {
+        service.createLink(FREE_OWNER, new CreateLinkCommand("scoped-link", "https://example.com/scoped", null, null, null), null);
+        assertThrows(LinkNotFoundException.class,
+                () -> service.updateLink(PRO_OWNER, "scoped-link", "https://example.com/pro", null, null, null, 1L, null));
+        assertThrows(LinkNotFoundException.class,
+                () -> service.deleteLink(PRO_OWNER, "scoped-link", 1L, null));
+    }
+
+    private static final class TestLinkStore implements LinkStore {
         private final Map<String, Link> linksBySlug = new ConcurrentHashMap<>();
         private final Map<String, OffsetDateTime> expiresAtBySlug = new ConcurrentHashMap<>();
         private final Map<String, Long> clickTotalsBySlug = new ConcurrentHashMap<>();
         private final Map<String, Boolean> deletedSlugs = new ConcurrentHashMap<>();
         private final Map<String, Long> versionBySlug = new ConcurrentHashMap<>();
+        private final Map<String, LinkMetadata> metadataBySlug = new ConcurrentHashMap<>();
+        private final Map<String, Long> ownerIdBySlug = new ConcurrentHashMap<>();
         private int saveAttempts;
 
         @Override
-        public boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname, long version) {
+        public boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname, long version, long ownerId) {
             saveAttempts++;
             boolean inserted = linksBySlug.putIfAbsent(link.slug().value(), link) == null;
             if (inserted && expiresAt != null) {
@@ -280,6 +286,7 @@ class DefaultLinkApplicationServiceTest {
             if (inserted) {
                 metadataBySlug.put(link.slug().value(), new LinkMetadata(title, tags == null ? List.of() : List.copyOf(tags), hostname));
                 versionBySlug.put(link.slug().value(), version);
+                ownerIdBySlug.put(link.slug().value(), ownerId);
             }
             return inserted;
         }
@@ -293,8 +300,10 @@ class DefaultLinkApplicationServiceTest {
                 List<String> tags,
                 String hostname,
                 long expectedVersion,
-                long nextVersion) {
-            if (!java.util.Objects.equals(versionBySlug.get(slug), expectedVersion)) {
+                long nextVersion,
+                long ownerId) {
+            if (!java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId)
+                    || !java.util.Objects.equals(versionBySlug.get(slug), expectedVersion)) {
                 return false;
             }
             Link updated = linksBySlug.computeIfPresent(
@@ -314,8 +323,9 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
-        public boolean deleteBySlug(String slug, long expectedVersion) {
-            if (!java.util.Objects.equals(versionBySlug.get(slug), expectedVersion)) {
+        public boolean deleteBySlug(String slug, long expectedVersion, long ownerId) {
+            if (!java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId)
+                    || !java.util.Objects.equals(versionBySlug.get(slug), expectedVersion)) {
                 return false;
             }
             Link removed = linksBySlug.remove(slug);
@@ -324,10 +334,16 @@ class DefaultLinkApplicationServiceTest {
                 clickTotalsBySlug.remove(slug);
                 metadataBySlug.remove(slug);
                 versionBySlug.remove(slug);
+                ownerIdBySlug.remove(slug);
                 deletedSlugs.put(slug, true);
                 return true;
             }
             return false;
+        }
+
+        @Override
+        public long countActiveLinksByOwner(long ownerId) {
+            return ownerIdBySlug.values().stream().filter(id -> id == ownerId).count();
         }
 
         @Override
@@ -385,36 +401,21 @@ class DefaultLinkApplicationServiceTest {
             if (link == null) {
                 return Optional.empty();
             }
-
-            return Optional.of(new LinkDetails(
-                    link.slug().value(),
-                    link.originalUrl().value(),
-                    OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                    expiresAtBySlug.get(slug),
-                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).title(),
-                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).tags(),
-                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).hostname(),
-                    versionBySlug.getOrDefault(slug, 1L),
-                    clickTotalsBySlug.getOrDefault(slug, 0L)));
+            return Optional.of(toDetails(slug, link));
         }
 
         @Override
         public Optional<LinkDetails> findStoredDetailsBySlug(String slug) {
             Link link = linksBySlug.get(slug);
-            if (link == null) {
+            return link == null ? Optional.empty() : Optional.of(toDetails(slug, link));
+        }
+
+        @Override
+        public Optional<LinkDetails> findStoredDetailsBySlugForOwner(String slug, long ownerId) {
+            if (!java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId)) {
                 return Optional.empty();
             }
-
-            return Optional.of(new LinkDetails(
-                    link.slug().value(),
-                    link.originalUrl().value(),
-                    OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                    expiresAtBySlug.get(slug),
-                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).title(),
-                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).tags(),
-                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).hostname(),
-                    versionBySlug.getOrDefault(slug, 1L),
-                    clickTotalsBySlug.getOrDefault(slug, 0L)));
+            return findStoredDetailsBySlug(slug);
         }
 
         @Override
@@ -423,16 +424,7 @@ class DefaultLinkApplicationServiceTest {
                     .filter(link -> matchesState(link.slug().value(), now, state))
                     .filter(link -> matchesQuery(link, query))
                     .limit(limit)
-                    .map(link -> new LinkDetails(
-                            link.slug().value(),
-                            link.originalUrl().value(),
-                            OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                            expiresAtBySlug.get(link.slug().value()),
-                            metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty()).title(),
-                            metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty()).tags(),
-                            metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty()).hostname(),
-                            versionBySlug.getOrDefault(link.slug().value(), 1L),
-                            clickTotalsBySlug.getOrDefault(link.slug().value(), 0L)))
+                    .map(link -> toDetails(link.slug().value(), link))
                     .toList();
         }
 
@@ -464,14 +456,8 @@ class DefaultLinkApplicationServiceTest {
             if (link == null) {
                 return Optional.empty();
             }
-
             long clickTotal = clickTotalsBySlug.getOrDefault(slug, 0L);
-            return Optional.of(new LinkTrafficSummaryTotals(
-                    slug,
-                    link.originalUrl().value(),
-                    clickTotal,
-                    clickTotal,
-                    clickTotal));
+            return Optional.of(new LinkTrafficSummaryTotals(slug, link.originalUrl().value(), clickTotal, clickTotal, clickTotal));
         }
 
         @Override
@@ -486,8 +472,7 @@ class DefaultLinkApplicationServiceTest {
                             link.slug().value(),
                             link.originalUrl().value(),
                             clickTotalsBySlug.getOrDefault(link.slug().value(), 0L)))
-                    .sorted(Comparator.comparingLong(TopLinkTraffic::clickTotal).reversed()
-                            .thenComparing(TopLinkTraffic::slug))
+                    .sorted(Comparator.comparingLong(TopLinkTraffic::clickTotal).reversed().thenComparing(TopLinkTraffic::slug))
                     .toList();
         }
 
@@ -507,6 +492,19 @@ class DefaultLinkApplicationServiceTest {
                     .toList();
         }
 
+        private LinkDetails toDetails(String slug, Link link) {
+            return new LinkDetails(
+                    link.slug().value(),
+                    link.originalUrl().value(),
+                    OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                    expiresAtBySlug.get(slug),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).title(),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).tags(),
+                    metadataBySlug.getOrDefault(slug, LinkMetadata.empty()).hostname(),
+                    versionBySlug.getOrDefault(slug, 1L),
+                    clickTotalsBySlug.getOrDefault(slug, 0L));
+        }
+
         private boolean matchesState(String slug, OffsetDateTime now, LinkLifecycleState state) {
             return switch (state) {
                 case ACTIVE -> !isExpired(slug, now);
@@ -519,7 +517,6 @@ class DefaultLinkApplicationServiceTest {
             if (query == null || query.isBlank()) {
                 return true;
             }
-
             String normalizedQuery = query.toLowerCase();
             LinkMetadata metadata = metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty());
             return link.slug().value().toLowerCase().contains(normalizedQuery)
@@ -541,173 +538,58 @@ class DefaultLinkApplicationServiceTest {
         private Map<String, Boolean> deletedSlugs() {
             return deletedSlugs;
         }
-
-        private final Map<String, LinkMetadata> metadataBySlug = new ConcurrentHashMap<>();
     }
 
     private record LinkMetadata(String title, List<String> tags, String hostname) {
-
         private static LinkMetadata empty() {
             return new LinkMetadata(null, List.of(), null);
         }
     }
 
     private static final class TestAnalyticsOutboxStore implements AnalyticsOutboxStore {
-
         private final List<RedirectClickAnalyticsEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
-
-        @Override
-        public void saveRedirectClickEvent(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent) {
-            events.add(redirectClickAnalyticsEvent);
-        }
-
-        @Override
-        public long countUnpublished() {
-            return events.size();
-        }
-
-        @Override
-        public long countEligible(OffsetDateTime now) {
-            return events.size();
-        }
-
-        @Override
-        public long countParked() {
-            return 0;
-        }
-
-        @Override
-        public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
-            return events.isEmpty() ? null : 0.0;
-        }
-
-        @Override
-        public List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) {
-            return List.of();
-        }
-
-        @Override
-        public void markPublished(long id, OffsetDateTime publishedAt) {
-        }
-
-        @Override
-        public void recordPublishFailure(
-                long id,
-                int attemptCount,
-                OffsetDateTime nextAttemptAt,
-                String lastErrorSummary,
-                OffsetDateTime parkedAt) {
-        }
-
-        @Override
-        public List<AnalyticsOutboxRecord> findParked(int limit) {
-            return List.of();
-        }
-
-        @Override
-        public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) {
-            return false;
-        }
-
-        private List<RedirectClickAnalyticsEvent> events() {
-            return events;
-        }
+        @Override public void saveRedirectClickEvent(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent) { events.add(redirectClickAnalyticsEvent); }
+        @Override public long countUnpublished() { return events.size(); }
+        @Override public long countEligible(OffsetDateTime now) { return events.size(); }
+        @Override public long countParked() { return 0; }
+        @Override public Double findOldestEligibleAgeSeconds(OffsetDateTime now) { return events.isEmpty() ? null : 0.0; }
+        @Override public List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) { return List.of(); }
+        @Override public void markPublished(long id, OffsetDateTime publishedAt) { }
+        @Override public void recordPublishFailure(long id, int attemptCount, OffsetDateTime nextAttemptAt, String lastErrorSummary, OffsetDateTime parkedAt) { }
+        @Override public List<AnalyticsOutboxRecord> findParked(int limit) { return List.of(); }
+        @Override public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) { return false; }
+        private List<RedirectClickAnalyticsEvent> events() { return events; }
     }
 
     private static final class TestLinkMutationIdempotencyStore implements LinkMutationIdempotencyStore {
-
         private final Map<String, LinkMutationIdempotencyRecord> records = new ConcurrentHashMap<>();
-
-        @Override
-        public Optional<LinkMutationIdempotencyRecord> findByKey(String idempotencyKey) {
-            return Optional.ofNullable(records.get(idempotencyKey));
+        @Override public Optional<LinkMutationIdempotencyRecord> findByKey(long ownerId, String idempotencyKey) {
+            return Optional.ofNullable(records.get(ownerId + ":" + idempotencyKey));
         }
-
-        @Override
-        public void saveResult(
-                String idempotencyKey,
-                String operation,
-                String requestHash,
-                LinkMutationResult result,
-                OffsetDateTime createdAt) {
-            records.put(idempotencyKey, new LinkMutationIdempotencyRecord(
-                    idempotencyKey,
-                    operation,
-                    requestHash,
-                    result,
-                    createdAt));
+        @Override public void saveResult(long ownerId, String idempotencyKey, String operation, String requestHash, LinkMutationResult result, OffsetDateTime createdAt) {
+            records.put(ownerId + ":" + idempotencyKey, new LinkMutationIdempotencyRecord(ownerId, idempotencyKey, operation, requestHash, result, createdAt));
         }
     }
 
     private static final class TestLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
-
         private final List<LinkLifecycleEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        @Override public void saveLinkLifecycleEvent(LinkLifecycleEvent linkLifecycleEvent) { events.add(linkLifecycleEvent); }
+        @Override public long countUnpublished() { return events.size(); }
+        @Override public long countEligible(OffsetDateTime now) { return events.size(); }
+        @Override public long countParked() { return 0; }
+        @Override public Double findOldestEligibleAgeSeconds(OffsetDateTime now) { return events.isEmpty() ? null : 0.0; }
+        @Override public List<LinkLifecycleOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) { return List.of(); }
+        @Override public void markPublished(long id, OffsetDateTime publishedAt) { }
+        @Override public void recordPublishFailure(long id, int attemptCount, OffsetDateTime nextAttemptAt, String lastErrorSummary, OffsetDateTime parkedAt) { }
+        @Override public List<LinkLifecycleOutboxRecord> findParked(int limit) { return List.of(); }
+        @Override public List<LinkLifecycleEvent> findAllHistory() { return List.copyOf(events); }
+        @Override public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit) { return List.of(); }
+        @Override public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) { return false; }
+        private List<LinkLifecycleEvent> events() { return events; }
+    }
 
-        @Override
-        public void saveLinkLifecycleEvent(LinkLifecycleEvent linkLifecycleEvent) {
-            events.add(linkLifecycleEvent);
-        }
-
-        @Override
-        public long countUnpublished() {
-            return events.size();
-        }
-
-        @Override
-        public long countEligible(OffsetDateTime now) {
-            return events.size();
-        }
-
-        @Override
-        public long countParked() {
-            return 0;
-        }
-
-        @Override
-        public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
-            return events.isEmpty() ? null : 0.0;
-        }
-
-        @Override
-        public List<LinkLifecycleOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) {
-            return List.of();
-        }
-
-        @Override
-        public void markPublished(long id, OffsetDateTime publishedAt) {
-        }
-
-        @Override
-        public void recordPublishFailure(
-                long id,
-                int attemptCount,
-                OffsetDateTime nextAttemptAt,
-                String lastErrorSummary,
-                OffsetDateTime parkedAt) {
-        }
-
-        @Override
-        public List<LinkLifecycleOutboxRecord> findParked(int limit) {
-            return List.of();
-        }
-
-        @Override
-        public List<LinkLifecycleEvent> findAllHistory() {
-            return List.copyOf(events);
-        }
-
-        @Override
-        public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit) {
-            return List.of();
-        }
-
-        @Override
-        public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) {
-            return false;
-        }
-
-        private List<LinkLifecycleEvent> events() {
-            return events;
-        }
+    private static final class TestOwnerStore implements OwnerStore {
+        @Override public Optional<AuthenticatedOwner> findByApiKeyHash(String apiKeyHash) { return Optional.empty(); }
+        @Override public void lockById(long ownerId) { }
     }
 }

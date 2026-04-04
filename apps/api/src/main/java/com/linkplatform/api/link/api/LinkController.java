@@ -7,6 +7,8 @@ import com.linkplatform.api.link.application.LinkLifecycleState;
 import com.linkplatform.api.link.application.LinkMutationResult;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
 import com.linkplatform.api.link.application.LinkSuggestion;
+import com.linkplatform.api.owner.application.ApiKeyAuthenticationService;
+import com.linkplatform.api.owner.application.AuthenticatedOwner;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.http.HttpStatus;
@@ -32,17 +34,24 @@ public class LinkController {
     private static final int MAX_SUGGESTION_LIMIT = 20;
 
     private final LinkApplicationService linkApplicationService;
+    private final ApiKeyAuthenticationService apiKeyAuthenticationService;
 
-    public LinkController(LinkApplicationService linkApplicationService) {
+    public LinkController(
+            LinkApplicationService linkApplicationService,
+            ApiKeyAuthenticationService apiKeyAuthenticationService) {
         this.linkApplicationService = linkApplicationService;
+        this.apiKeyAuthenticationService = apiKeyAuthenticationService;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CreateLinkResponse createLink(
             @RequestBody CreateLinkRequest request,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey) {
+        AuthenticatedOwner owner = apiKeyAuthenticationService.authenticate(apiKey);
         LinkMutationResult result = linkApplicationService.createLink(
+                owner,
                 new CreateLinkCommand(
                         request.slug(),
                         request.originalUrl(),
@@ -58,8 +67,11 @@ public class LinkController {
             @PathVariable String slug,
             @RequestBody UpdateLinkRequest request,
             @RequestHeader(value = "If-Match", required = false) String ifMatch,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey) {
+        AuthenticatedOwner owner = apiKeyAuthenticationService.authenticate(apiKey);
         return toUpdateResponse(linkApplicationService.updateLink(
+                owner,
                 slug,
                 request.originalUrl(),
                 request.expiresAt(),
@@ -100,8 +112,13 @@ public class LinkController {
     public void deleteLink(
             @PathVariable String slug,
             @RequestHeader(value = "If-Match", required = false) String ifMatch,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-        linkApplicationService.deleteLink(slug, parseIfMatch(ifMatch), idempotencyKey);
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey) {
+        linkApplicationService.deleteLink(
+                apiKeyAuthenticationService.authenticate(apiKey),
+                slug,
+                parseIfMatch(ifMatch),
+                idempotencyKey);
     }
 
     private void validateLimit(int limit) {

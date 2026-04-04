@@ -24,6 +24,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class LinkRedirectControllerTest {
 
+    private static final String FREE_API_KEY = "dev-free-api-key";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -33,6 +35,7 @@ class LinkRedirectControllerTest {
     @Test
     void redirectReturnsTemporaryRedirectForKnownSlug() throws Exception {
         mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", FREE_API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -64,6 +67,7 @@ class LinkRedirectControllerTest {
     @Test
     void deletedLinkNoLongerRedirects() throws Exception {
         mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", FREE_API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -73,7 +77,9 @@ class LinkRedirectControllerTest {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(delete("/api/v1/links/gone-link").header("If-Match", "1"))
+        mockMvc.perform(delete("/api/v1/links/gone-link")
+                        .header("X-API-Key", FREE_API_KEY)
+                        .header("If-Match", "1"))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/gone-link"))
@@ -83,6 +89,7 @@ class LinkRedirectControllerTest {
     @Test
     void expiredLinkNoLongerRedirects() throws Exception {
         mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", FREE_API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

@@ -7,7 +7,7 @@ import java.util.Optional;
 
 public interface LinkStore {
 
-    boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname, long version);
+    boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname, long version, long ownerId);
 
     boolean update(
             String slug,
@@ -17,9 +17,12 @@ public interface LinkStore {
             List<String> tags,
             String hostname,
             long expectedVersion,
-            long nextVersion);
+            long nextVersion,
+            long ownerId);
 
-    boolean deleteBySlug(String slug, long expectedVersion);
+    boolean deleteBySlug(String slug, long expectedVersion, long ownerId);
+
+    long countActiveLinksByOwner(long ownerId);
 
     boolean recordClickIfAbsent(LinkClick linkClick);
 
@@ -42,6 +45,8 @@ public interface LinkStore {
     Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);
 
     Optional<LinkDetails> findStoredDetailsBySlug(String slug);
+
+    Optional<LinkDetails> findStoredDetailsBySlugForOwner(String slug, long ownerId);
 
     List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state);
 
