@@ -26,6 +26,8 @@ public interface LinkLifecycleOutboxStore {
             String lastErrorSummary,
             OffsetDateTime parkedAt);
 
+    List<LinkLifecycleEvent> findAllHistory();
+
     List<LinkLifecycleOutboxRecord> findParked(int limit);
 
     boolean requeueParked(long id, OffsetDateTime nextAttemptAt);

@@ -216,6 +216,17 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
     }
 
     @Override
+    public List<LinkLifecycleEvent> findAllHistory() {
+        return jdbcTemplate.query(
+                """
+                SELECT payload_json
+                FROM link_lifecycle_outbox
+                ORDER BY created_at ASC, id ASC
+                """,
+                (resultSet, rowNum) -> deserialize(resultSet.getString("payload_json")));
+    }
+
+    @Override
     public List<LinkLifecycleOutboxRecord> findParked(int limit) {
         return jdbcTemplate.query(
                 """
@@ -271,6 +282,14 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
             return objectMapper.writeValueAsString(linkLifecycleEvent);
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Lifecycle outbox payload could not be serialized", exception);
+        }
+    }
+
+    private LinkLifecycleEvent deserialize(String payloadJson) {
+        try {
+            return objectMapper.readValue(payloadJson, LinkLifecycleEvent.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("Lifecycle outbox payload could not be deserialized", exception);
         }
     }
 }

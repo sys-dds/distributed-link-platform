@@ -1,0 +1,105 @@
+package com.linkplatform.api.projection;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+@Component
+@ConditionalOnExpression("'${link-platform.runtime.mode:all}' == 'all' or '${link-platform.runtime.mode:all}' == 'worker'")
+public class ProjectionJobRunner {
+
+    private final ProjectionJobStore projectionJobStore;
+    private final ProjectionJobService projectionJobService;
+    private final Clock clock;
+    private final Duration leaseDuration;
+    private final String workerId;
+    private final Counter startedCounter;
+    private final Counter completedCounter;
+    private final Counter failedCounter;
+    private final Timer durationTimer;
+
+    @Autowired
+    public ProjectionJobRunner(
+            ProjectionJobStore projectionJobStore,
+            ProjectionJobService projectionJobService,
+            MeterRegistry meterRegistry,
+            @Value("${link-platform.projection-jobs.lease-duration}") String leaseDuration) {
+        this(
+                projectionJobStore,
+                projectionJobService,
+                meterRegistry,
+                Duration.parse(leaseDuration),
+                Clock.systemUTC(),
+                UUID.randomUUID().toString());
+    }
+
+    ProjectionJobRunner(
+            ProjectionJobStore projectionJobStore,
+            ProjectionJobService projectionJobService,
+            MeterRegistry meterRegistry,
+            Duration leaseDuration,
+            Clock clock,
+            String workerId) {
+        this.projectionJobStore = projectionJobStore;
+        this.projectionJobService = projectionJobService;
+        this.leaseDuration = leaseDuration;
+        this.clock = clock;
+        this.workerId = workerId;
+        this.startedCounter = Counter.builder("link.projection.jobs.started")
+                .description("Number of projection jobs started")
+                .register(meterRegistry);
+        this.completedCounter = Counter.builder("link.projection.jobs.completed")
+                .description("Number of projection jobs completed")
+                .register(meterRegistry);
+        this.failedCounter = Counter.builder("link.projection.jobs.failed")
+                .description("Number of projection jobs failed")
+                .register(meterRegistry);
+        this.durationTimer = Timer.builder("link.projection.jobs.duration")
+                .description("Duration of projection jobs")
+                .register(meterRegistry);
+    }
+
+    @Scheduled(fixedDelayString = "${link-platform.projection-jobs.runner-delay}")
+    public void runPendingJobs() {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        Optional<ProjectionJob> claimedJob = projectionJobStore.claimNext(workerId, now, now.plus(leaseDuration));
+        if (claimedJob.isEmpty()) {
+            return;
+        }
+
+        ProjectionJob job = claimedJob.orElseThrow();
+        startedCounter.increment();
+        Timer.Sample sample = Timer.start();
+        try {
+            long processedCount = projectionJobService.executeJob(job);
+            projectionJobStore.markCompleted(job.id(), OffsetDateTime.now(clock), processedCount);
+            completedCounter.increment();
+        } catch (RuntimeException exception) {
+            projectionJobStore.markFailed(job.id(), OffsetDateTime.now(clock), compactErrorSummary(exception));
+            failedCounter.increment();
+            throw exception;
+        } finally {
+            sample.stop(durationTimer);
+        }
+    }
+
+    private String compactErrorSummary(RuntimeException exception) {
+        Throwable root = exception;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        String message = root.getMessage();
+        String summary = root.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
+        return summary.length() <= 255 ? summary : summary.substring(0, 255);
+    }
+}
