@@ -46,6 +46,9 @@ link-platform:
     outbox-relay-retry-base-delay: ${LINK_PLATFORM_LIFECYCLE_OUTBOX_RETRY_BASE_DELAY:PT5S}
     outbox-relay-retry-max-delay: ${LINK_PLATFORM_LIFECYCLE_OUTBOX_RETRY_MAX_DELAY:PT5M}
     outbox-relay-max-attempts: ${LINK_PLATFORM_LIFECYCLE_OUTBOX_MAX_ATTEMPTS:5}
+  projection-jobs:
+    runner-delay: ${LINK_PLATFORM_PROJECTION_JOBS_RUNNER_DELAY:5000}
+    lease-duration: ${LINK_PLATFORM_PROJECTION_JOBS_LEASE_DURATION:PT30S}
 
 management:
   endpoints:

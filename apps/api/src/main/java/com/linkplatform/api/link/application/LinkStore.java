@@ -17,6 +17,8 @@ public interface LinkStore {
 
     boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent);
 
+    long rebuildClickDailyRollups();
+
     Optional<Link> findBySlug(String slug, OffsetDateTime now);
 
     Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);

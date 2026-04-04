@@ -10,6 +10,9 @@ import com.linkplatform.api.link.application.LinkLifecycleOutboxRelay;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
 import com.linkplatform.api.link.application.LinkStore;
 import com.linkplatform.api.link.application.RedirectClickAnalyticsConsumer;
+import com.linkplatform.api.projection.ProjectionJobRunner;
+import com.linkplatform.api.projection.ProjectionJobService;
+import com.linkplatform.api.projection.ProjectionJobStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -47,13 +50,17 @@ class RuntimeModeConfigurationTest {
                     "link-platform.lifecycle.outbox-relay-lease-duration=PT30S",
                     "link-platform.lifecycle.outbox-relay-retry-base-delay=PT5S",
                     "link-platform.lifecycle.outbox-relay-retry-max-delay=PT5M",
-                    "link-platform.lifecycle.outbox-relay-max-attempts=5")
+                    "link-platform.lifecycle.outbox-relay-max-attempts=5",
+                    "link-platform.projection-jobs.runner-delay=5000",
+                    "link-platform.projection-jobs.lease-duration=PT30S")
             .withUserConfiguration(
                     TestConfiguration.class,
                     AnalyticsOutboxRelay.class,
                     RedirectClickAnalyticsConsumer.class,
                     LinkLifecycleOutboxRelay.class,
-                    LinkLifecycleConsumer.class);
+                    LinkLifecycleConsumer.class,
+                    ProjectionJobService.class,
+                    ProjectionJobRunner.class);
 
     @Test
     void defaultCombinedModeKeepsAsyncComponentsEnabled() {
@@ -62,6 +69,7 @@ class RuntimeModeConfigurationTest {
             assertThat(context).hasSingleBean(RedirectClickAnalyticsConsumer.class);
             assertThat(context).hasSingleBean(LinkLifecycleOutboxRelay.class);
             assertThat(context).hasSingleBean(LinkLifecycleConsumer.class);
+            assertThat(context).hasSingleBean(ProjectionJobRunner.class);
 
             TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
             context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
@@ -77,6 +85,7 @@ class RuntimeModeConfigurationTest {
                     assertThat(context).doesNotHaveBean(RedirectClickAnalyticsConsumer.class);
                     assertThat(context).doesNotHaveBean(LinkLifecycleOutboxRelay.class);
                     assertThat(context).doesNotHaveBean(LinkLifecycleConsumer.class);
+                    assertThat(context).doesNotHaveBean(ProjectionJobRunner.class);
 
                     TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
                     context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
@@ -92,6 +101,7 @@ class RuntimeModeConfigurationTest {
                     assertThat(context).hasSingleBean(RedirectClickAnalyticsConsumer.class);
                     assertThat(context).hasSingleBean(LinkLifecycleOutboxRelay.class);
                     assertThat(context).hasSingleBean(LinkLifecycleConsumer.class);
+                    assertThat(context).hasSingleBean(ProjectionJobRunner.class);
 
                     TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
                     context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
@@ -221,12 +231,22 @@ class RuntimeModeConfigurationTest {
                 public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) {
                     return false;
                 }
+
+                @Override
+                public List<com.linkplatform.api.link.application.LinkLifecycleEvent> findAllHistory() {
+                    return List.of();
+                }
             };
         }
 
         @Bean
         LinkStore linkStore() {
             return Mockito.mock(LinkStore.class);
+        }
+
+        @Bean
+        ProjectionJobStore projectionJobStore() {
+            return Mockito.mock(ProjectionJobStore.class);
         }
 
         @Bean

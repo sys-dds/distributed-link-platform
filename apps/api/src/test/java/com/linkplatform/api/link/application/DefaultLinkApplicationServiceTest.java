@@ -316,6 +316,11 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public long rebuildClickDailyRollups() {
+            return 0;
+        }
+
+        @Override
         public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
             if (isExpired(slug, now)) {
                 return Optional.empty();
@@ -608,6 +613,11 @@ class DefaultLinkApplicationServiceTest {
         @Override
         public List<LinkLifecycleOutboxRecord> findParked(int limit) {
             return List.of();
+        }
+
+        @Override
+        public List<LinkLifecycleEvent> findAllHistory() {
+            return List.copyOf(events);
         }
 
         @Override

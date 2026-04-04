@@ -123,6 +123,18 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public long rebuildClickDailyRollups() {
+        jdbcTemplate.update("DELETE FROM link_click_daily_rollups");
+        return jdbcTemplate.update(
+                """
+                INSERT INTO link_click_daily_rollups (slug, rollup_date, click_count)
+                SELECT slug, CAST(clicked_at AS DATE), COUNT(*)
+                FROM link_clicks
+                GROUP BY slug, CAST(clicked_at AS DATE)
+                """);
+    }
+
+    @Override
     public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
                         """
