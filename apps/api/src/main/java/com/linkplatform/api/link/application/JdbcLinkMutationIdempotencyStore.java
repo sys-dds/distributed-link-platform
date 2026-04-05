@@ -22,14 +22,16 @@ public class JdbcLinkMutationIdempotencyStore implements LinkMutationIdempotency
     }
 
     @Override
-    public Optional<LinkMutationIdempotencyRecord> findByKey(String idempotencyKey) {
+    public Optional<LinkMutationIdempotencyRecord> findByKey(long ownerId, String idempotencyKey) {
         return jdbcTemplate.query(
                         """
-                        SELECT idempotency_key, operation, request_hash, response_json, created_at
+                        SELECT owner_id, idempotency_key, operation, request_hash, response_json, created_at
                         FROM link_mutation_idempotency
-                        WHERE idempotency_key = ?
+                        WHERE owner_id = ?
+                          AND idempotency_key = ?
                         """,
                         (resultSet, rowNum) -> mapRecord(resultSet),
+                        ownerId,
                         idempotencyKey)
                 .stream()
                 .findFirst();
@@ -37,6 +39,7 @@ public class JdbcLinkMutationIdempotencyStore implements LinkMutationIdempotency
 
     @Override
     public void saveResult(
+            long ownerId,
             String idempotencyKey,
             String operation,
             String requestHash,
@@ -46,9 +49,10 @@ public class JdbcLinkMutationIdempotencyStore implements LinkMutationIdempotency
             jdbcTemplate.update(
                     """
                     INSERT INTO link_mutation_idempotency (
-                        idempotency_key, operation, request_hash, response_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?)
+                        owner_id, idempotency_key, operation, request_hash, response_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     """,
+                    ownerId,
                     idempotencyKey,
                     operation,
                     requestHash,
@@ -61,6 +65,7 @@ public class JdbcLinkMutationIdempotencyStore implements LinkMutationIdempotency
 
     private LinkMutationIdempotencyRecord mapRecord(ResultSet resultSet) throws SQLException {
         return new LinkMutationIdempotencyRecord(
+                resultSet.getLong("owner_id"),
                 resultSet.getString("idempotency_key"),
                 resultSet.getString("operation"),
                 resultSet.getString("request_hash"),

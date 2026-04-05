@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.linkplatform.api.link.domain.Link;
+import com.linkplatform.api.owner.application.AuthenticatedOwner;
+import com.linkplatform.api.owner.application.OwnerPlan;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +20,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @SpringBootTest
 @Testcontainers
 class PostgresLinkPersistenceIntegrationTest {
+
+    private static final AuthenticatedOwner FREE_OWNER =
+            new AuthenticatedOwner(1L, "free-owner", "Free Owner", OwnerPlan.FREE);
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16.8")
@@ -50,6 +55,7 @@ class PostgresLinkPersistenceIntegrationTest {
     @Test
     void createAndResolveUsePostgresStorage() {
         LinkMutationResult createdLink = linkApplicationService.createLink(
+                FREE_OWNER,
                 new CreateLinkCommand("persistent-link", "https://example.com/persistent", null, null, null),
                 null);
 
@@ -66,12 +72,17 @@ class PostgresLinkPersistenceIntegrationTest {
 
     @Test
     void duplicateSlugIsRejectedAgainstPostgres() {
-        linkApplicationService.createLink(new CreateLinkCommand("repeatable", "https://example.com/one", null, null, null), null);
+        linkApplicationService.createLink(
+                FREE_OWNER,
+                new CreateLinkCommand("repeatable", "https://example.com/one", null, null, null),
+                null);
 
         assertThrows(
                 DuplicateLinkSlugException.class,
-                () -> linkApplicationService.createLink(new CreateLinkCommand(
-                        "repeatable", "https://example.com/two", null, null, null), null));
+                () -> linkApplicationService.createLink(
+                        FREE_OWNER,
+                        new CreateLinkCommand("repeatable", "https://example.com/two", null, null, null),
+                        null));
 
         Integer rowCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM links WHERE slug = ?",

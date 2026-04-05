@@ -6,6 +6,7 @@ import java.util.List;
 public record LinkLifecycleEvent(
         String eventId,
         LinkLifecycleEventType eventType,
+        long ownerId,
         String slug,
         String originalUrl,
         String title,

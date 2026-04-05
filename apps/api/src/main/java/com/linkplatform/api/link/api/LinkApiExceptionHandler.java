@@ -6,6 +6,9 @@ import com.linkplatform.api.link.application.LinkNotFoundException;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
 import com.linkplatform.api.link.application.ReservedLinkSlugException;
 import com.linkplatform.api.link.application.SelfTargetLinkException;
+import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
+import com.linkplatform.api.owner.application.ControlPlaneRateLimitExceededException;
+import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -26,6 +29,21 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(LinkMutationConflictException.class)
     public ProblemDetail handleMutationConflict(LinkMutationConflictException exception) {
+        return problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    @ExceptionHandler(ApiKeyAuthenticationException.class)
+    public ProblemDetail handleApiKeyAuthentication(ApiKeyAuthenticationException exception) {
+        return problemDetail(HttpStatus.UNAUTHORIZED, exception.getMessage());
+    }
+
+    @ExceptionHandler(ControlPlaneRateLimitExceededException.class)
+    public ProblemDetail handleRateLimitExceeded(ControlPlaneRateLimitExceededException exception) {
+        return problemDetail(HttpStatus.TOO_MANY_REQUESTS, exception.getMessage());
+    }
+
+    @ExceptionHandler(OwnerQuotaExceededException.class)
+    public ProblemDetail handleOwnerQuotaExceeded(OwnerQuotaExceededException exception) {
         return problemDetail(HttpStatus.CONFLICT, exception.getMessage());
     }
 

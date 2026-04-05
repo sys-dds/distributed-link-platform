@@ -7,6 +7,8 @@ import com.linkplatform.api.link.application.LinkLifecycleState;
 import com.linkplatform.api.link.application.LinkMutationResult;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
 import com.linkplatform.api.link.application.LinkSuggestion;
+import com.linkplatform.api.owner.application.OwnerAccessService;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.http.HttpStatus;
@@ -32,17 +34,26 @@ public class LinkController {
     private static final int MAX_SUGGESTION_LIMIT = 20;
 
     private final LinkApplicationService linkApplicationService;
+    private final OwnerAccessService ownerAccessService;
 
-    public LinkController(LinkApplicationService linkApplicationService) {
+    public LinkController(LinkApplicationService linkApplicationService, OwnerAccessService ownerAccessService) {
         this.linkApplicationService = linkApplicationService;
+        this.ownerAccessService = ownerAccessService;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CreateLinkResponse createLink(
             @RequestBody CreateLinkRequest request,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
         LinkMutationResult result = linkApplicationService.createLink(
+                ownerAccessService.authorizeMutation(
+                        apiKey,
+                        httpServletRequest.getMethod(),
+                        httpServletRequest.getRequestURI(),
+                        httpServletRequest.getRemoteAddr()),
                 new CreateLinkCommand(
                         request.slug(),
                         request.originalUrl(),
@@ -58,8 +69,15 @@ public class LinkController {
             @PathVariable String slug,
             @RequestBody UpdateLinkRequest request,
             @RequestHeader(value = "If-Match", required = false) String ifMatch,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
         return toUpdateResponse(linkApplicationService.updateLink(
+                ownerAccessService.authorizeMutation(
+                        apiKey,
+                        httpServletRequest.getMethod(),
+                        httpServletRequest.getRequestURI(),
+                        httpServletRequest.getRemoteAddr()),
                 slug,
                 request.originalUrl(),
                 request.expiresAt(),
@@ -70,17 +88,36 @@ public class LinkController {
     }
 
     @GetMapping("/{slug}")
-    public LinkReadResponse getLink(@PathVariable String slug) {
-        return toReadResponse(linkApplicationService.getLink(slug));
+    public LinkReadResponse getLink(
+            @PathVariable String slug,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        return toReadResponse(linkApplicationService.getLink(
+                ownerAccessService.authorizeRead(
+                        apiKey,
+                        httpServletRequest.getMethod(),
+                        httpServletRequest.getRequestURI(),
+                        httpServletRequest.getRemoteAddr()),
+                slug));
     }
 
     @GetMapping
     public List<LinkReadResponse> listLinks(
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
             @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "active") String state) {
+            @RequestParam(defaultValue = "active") String state,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
         validateLimit(limit);
-        return linkApplicationService.listRecentLinks(limit, q, parseState(state)).stream()
+        return linkApplicationService.listRecentLinks(
+                        ownerAccessService.authorizeRead(
+                                apiKey,
+                                httpServletRequest.getMethod(),
+                                httpServletRequest.getRequestURI(),
+                                httpServletRequest.getRemoteAddr()),
+                        limit,
+                        q,
+                        parseState(state)).stream()
                 .map(this::toReadResponse)
                 .toList();
     }
@@ -88,9 +125,18 @@ public class LinkController {
     @GetMapping("/suggestions")
     public List<LinkSuggestionResponse> suggestLinks(
             @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "" + DEFAULT_SUGGESTION_LIMIT) int limit) {
+            @RequestParam(defaultValue = "" + DEFAULT_SUGGESTION_LIMIT) int limit,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
         validateSuggestionLimit(limit);
-        return linkApplicationService.suggestLinks(q, limit).stream()
+        return linkApplicationService.suggestLinks(
+                        ownerAccessService.authorizeRead(
+                                apiKey,
+                                httpServletRequest.getMethod(),
+                                httpServletRequest.getRequestURI(),
+                                httpServletRequest.getRemoteAddr()),
+                        q,
+                        limit).stream()
                 .map(this::toSuggestionResponse)
                 .toList();
     }
@@ -100,8 +146,18 @@ public class LinkController {
     public void deleteLink(
             @PathVariable String slug,
             @RequestHeader(value = "If-Match", required = false) String ifMatch,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-        linkApplicationService.deleteLink(slug, parseIfMatch(ifMatch), idempotencyKey);
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        linkApplicationService.deleteLink(
+                ownerAccessService.authorizeMutation(
+                        apiKey,
+                        httpServletRequest.getMethod(),
+                        httpServletRequest.getRequestURI(),
+                        httpServletRequest.getRemoteAddr()),
+                slug,
+                parseIfMatch(ifMatch),
+                idempotencyKey);
     }
 
     private void validateLimit(int limit) {
