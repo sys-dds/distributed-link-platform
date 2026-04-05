@@ -14,6 +14,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -25,10 +26,15 @@ public class PostgresLinkStore implements LinkStore {
     };
 
     private final JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate queryJdbcTemplate;
     private final ObjectMapper objectMapper;
 
-    public PostgresLinkStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public PostgresLinkStore(
+            JdbcTemplate jdbcTemplate,
+            @Qualifier("queryJdbcTemplate") JdbcTemplate queryJdbcTemplate,
+            ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.queryJdbcTemplate = queryJdbcTemplate;
         this.objectMapper = objectMapper;
     }
 
@@ -286,7 +292,7 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now, long ownerId) {
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                         """
                         SELECT l.slug,
                                l.original_url,
@@ -412,7 +418,7 @@ public class PostgresLinkStore implements LinkStore {
                 """);
         parameters.add(limit);
 
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                 sql.toString(),
                 (resultSet, rowNum) -> toLinkDetails(
                         resultSet.getString("slug"),
@@ -431,7 +437,7 @@ public class PostgresLinkStore implements LinkStore {
     public List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId) {
         String pattern = "%" + query.toLowerCase(Locale.ROOT).trim() + "%";
 
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                 """
                 SELECT p.slug, p.title, p.hostname
                 FROM link_catalog_projection p
@@ -490,7 +496,7 @@ public class PostgresLinkStore implements LinkStore {
         sql.append(" ORDER BY ").append(discoveryOrderBy(query.sort())).append(" LIMIT ?");
         parameters.add(query.limit() + 1);
 
-        List<LinkDiscoveryItem> fetchedItems = jdbcTemplate.query(
+        List<LinkDiscoveryItem> fetchedItems = queryJdbcTemplate.query(
                 sql.toString(),
                 (resultSet, rowNum) -> new LinkDiscoveryItem(
                         resultSet.getString("slug"),
@@ -517,7 +523,7 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public List<LinkActivityEvent> findRecentActivity(int limit, long ownerId) {
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                 """
                 SELECT owner_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
                 FROM link_activity_events
@@ -545,7 +551,7 @@ public class PostgresLinkStore implements LinkStore {
             OffsetDateTime last24HoursSince,
             LocalDate last7DaysStartDate,
             long ownerId) {
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                         """
                         SELECT l.slug,
                                l.original_url,
@@ -580,7 +586,7 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate, long ownerId) {
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                 """
                 SELECT r.rollup_date, r.click_count
                 FROM link_click_daily_rollups r
@@ -1057,7 +1063,7 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     private List<TopLinkTraffic> findTopLinksLast24Hours(OffsetDateTime since, long ownerId) {
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                 """
                 SELECT l.slug, l.original_url, COUNT(*) AS click_total
                 FROM links l
@@ -1079,7 +1085,7 @@ public class PostgresLinkStore implements LinkStore {
         OffsetDateTime currentStart = now.minusHours(24);
         OffsetDateTime previousStart = now.minusHours(48);
 
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                 """
                 SELECT l.slug,
                        l.original_url,
@@ -1119,7 +1125,7 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     private List<TopLinkTraffic> findTopLinksLast7Days(LocalDate startDate, long ownerId) {
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                 """
                 SELECT l.slug, l.original_url, SUM(r.click_count) AS click_total
                 FROM links l
@@ -1141,7 +1147,7 @@ public class PostgresLinkStore implements LinkStore {
         LocalDate currentStart = today.minusDays(6);
         LocalDate previousStart = currentStart.minusDays(7);
 
-        return jdbcTemplate.query(
+        return queryJdbcTemplate.query(
                 """
                 SELECT l.slug,
                        l.original_url,

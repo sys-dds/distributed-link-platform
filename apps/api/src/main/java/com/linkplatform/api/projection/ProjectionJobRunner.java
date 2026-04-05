@@ -1,5 +1,7 @@
 package com.linkplatform.api.projection;
 
+import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
+import com.linkplatform.api.runtime.RuntimeMode;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -10,12 +12,11 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnExpression("'${link-platform.runtime.mode:all}' == 'all' or '${link-platform.runtime.mode:all}' == 'worker'")
+@ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.WORKER})
 public class ProjectionJobRunner {
 
     private final ProjectionJobStore projectionJobStore;

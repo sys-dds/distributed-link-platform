@@ -110,4 +110,42 @@ class RedisLinkReadCacheTest {
         assertTrue(cache.getOwnerTrafficSummary(1L, "launch").isEmpty());
         assertEquals(1.0, meterRegistry.get("link.cache.degraded").counter().count());
     }
+
+    @Test
+    void analyticsInvalidationBumpsGenerationForFreshKeys() {
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("link:owner:1:analytics:gen"))
+                .thenReturn(null)
+                .thenReturn("1");
+        RedisLinkReadCache cache = new RedisLinkReadCache(
+                redisTemplate,
+                new ObjectMapper(),
+                new SimpleMeterRegistry(),
+                Duration.ofMinutes(5),
+                Duration.ofSeconds(30),
+                Duration.ofSeconds(15));
+
+        LinkTrafficSummary summary = new LinkTrafficSummary(
+                "launch",
+                "https://example.com/launch",
+                4L,
+                1L,
+                4L,
+                List.of());
+
+        cache.putOwnerTrafficSummary(1L, "launch", summary);
+        cache.invalidateOwnerAnalytics(1L);
+        cache.putOwnerTrafficSummary(1L, "launch", summary);
+
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOperations, org.mockito.Mockito.times(2)).set(keyCaptor.capture(), any(String.class), any(Duration.class));
+        verify(valueOperations).increment("link:owner:1:analytics:gen");
+
+        List<String> keys = keyCaptor.getAllValues();
+        assertTrue(keys.contains("link:owner:1:analytics:v0:traffic_summary:launch"));
+        assertTrue(keys.contains("link:owner:1:analytics:v1:traffic_summary:launch"));
+    }
 }

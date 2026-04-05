@@ -2,15 +2,16 @@ package com.linkplatform.api.link.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
+import com.linkplatform.api.runtime.RuntimeMode;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-@ConditionalOnExpression("'${link-platform.runtime.mode:all}' == 'all' or '${link-platform.runtime.mode:all}' == 'worker'")
+@ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.WORKER})
 public class LinkLifecycleConsumer {
 
     private final ObjectMapper objectMapper;
