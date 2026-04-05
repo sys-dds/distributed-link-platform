@@ -52,6 +52,7 @@ public class ProjectionJobService {
             case ACTIVITY_FEED_REPLAY -> replayActivityFeedChunk(job);
             case CLICK_ROLLUP_REBUILD -> rebuildClickRollupsChunk(job);
             case LINK_CATALOG_REBUILD -> rebuildCatalogChunk(job);
+            case LINK_DISCOVERY_REBUILD -> rebuildDiscoveryChunk(job);
         };
         if (result.completed()) {
             projectionJobStore.markCompleted(job.id(), OffsetDateTime.now(clock), result.processedCount(), result.checkpointId());
@@ -111,6 +112,26 @@ public class ProjectionJobService {
         Set<Long> ownerIds = new HashSet<>();
         for (LinkLifecycleHistoryRecord historyRecord : historyChunk) {
             linkStore.projectCatalogEvent(historyRecord.event());
+            ownerIds.add(historyRecord.event().ownerId());
+        }
+        ownerIds.forEach(linkReadCache::invalidateOwnerControlPlane);
+        return new ProjectionJobChunkResult(
+                completed,
+                historyChunk.size(),
+                historyChunk.isEmpty() ? job.checkpointId() : historyChunk.getLast().outboxId());
+    }
+
+    private ProjectionJobChunkResult rebuildDiscoveryChunk(ProjectionJob job) {
+        if (job.checkpointId() == null) {
+            linkStore.resetDiscoveryProjection();
+        }
+        long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
+        List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(afterId, chunkSize + 1);
+        boolean completed = fetchedChunk.size() <= chunkSize;
+        List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
+        Set<Long> ownerIds = new HashSet<>();
+        for (LinkLifecycleHistoryRecord historyRecord : historyChunk) {
+            linkStore.projectDiscoveryEvent(historyRecord.event());
             ownerIds.add(historyRecord.event().ownerId());
         }
         ownerIds.forEach(linkReadCache::invalidateOwnerControlPlane);

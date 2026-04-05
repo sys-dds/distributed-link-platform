@@ -40,6 +40,9 @@ class LinkControllerTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
     @Test
     void validApiKeyCanCreateLinkAndStoreOwnerId() throws Exception {
         mockMvc.perform(mutationPost(FREE_API_KEY, "/api/v1/links")
@@ -135,6 +138,55 @@ class LinkControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].slug").value("alpha-free"));
+    }
+
+    @Test
+    void discoveryQuerySupportsOwnerScopedFiltersSortsAndCursorPaging() throws Exception {
+        insertOwnedLink(FREE_OWNER_ID, "alpha-free", "https://docs.example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null, "Alpha Guide", "[\"docs\"]");
+        insertOwnedLink(FREE_OWNER_ID, "beta-free", "https://docs.example.com/beta", OffsetDateTime.parse("2026-04-01T09:00:00Z"), OffsetDateTime.parse("2020-04-01T08:00:00Z"), "Beta Guide", "[\"docs\",\"beta\"]");
+        insertOwnedLink(PRO_OWNER_ID, "alpha-pro", "https://app.example.com/alpha", OffsetDateTime.parse("2026-04-01T10:00:00Z"), null, "Alpha App", "[\"product\"]");
+        jdbcTemplate.update("UPDATE link_discovery_projection SET updated_at = ? WHERE slug = ?", OffsetDateTime.parse("2026-04-02T08:00:00Z"), "alpha-free");
+        jdbcTemplate.update("UPDATE link_discovery_projection SET updated_at = ? WHERE slug = ?", OffsetDateTime.parse("2026-04-03T08:00:00Z"), "beta-free");
+        jdbcTemplate.update("UPDATE link_discovery_projection SET updated_at = ? WHERE slug = ?", OffsetDateTime.parse("2026-04-04T08:00:00Z"), "alpha-pro");
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links/discovery")
+                        .param("q", "guide")
+                        .param("hostname", "docs.example.com")
+                        .param("tag", "docs")
+                        .param("lifecycle", "all")
+                        .param("sort", "updated_desc")
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].slug").value("beta-free"))
+                .andExpect(jsonPath("$.items[0].lifecycleState").value("expired"))
+                .andExpect(jsonPath("$.hasMore").value(true))
+                .andExpect(jsonPath("$.nextCursor").isNotEmpty());
+
+        String firstPageJson = mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links/discovery")
+                        .param("q", "guide")
+                        .param("hostname", "docs.example.com")
+                        .param("tag", "docs")
+                        .param("lifecycle", "all")
+                        .param("sort", "updated_desc")
+                        .param("limit", "1"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String cursor = objectMapper.readTree(firstPageJson).get("nextCursor").asText();
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links/discovery")
+                        .param("q", "guide")
+                        .param("hostname", "docs.example.com")
+                        .param("tag", "docs")
+                        .param("lifecycle", "all")
+                        .param("sort", "updated_desc")
+                        .param("limit", "1")
+                        .param("cursor", cursor))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].slug").value("alpha-free"))
+                .andExpect(jsonPath("$.hasMore").value(false));
     }
 
     @Test
@@ -367,6 +419,40 @@ class LinkControllerTest {
                 hostname,
                 expiresAt,
                 ownerId);
+        insertDiscoveryProjection(ownerId, slug, originalUrl, createdAt, createdAt, expiresAt, title, tagsJson, hostname, null, expiresAt != null && !expiresAt.isAfter(OffsetDateTime.now()) ? "EXPIRED" : "ACTIVE", 1L);
+    }
+
+    private void insertDiscoveryProjection(
+            long ownerId,
+            String slug,
+            String originalUrl,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt,
+            OffsetDateTime expiresAt,
+            String title,
+            String tagsJson,
+            String hostname,
+            OffsetDateTime deletedAt,
+            String lifecycleState,
+            long version) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_discovery_projection (
+                    slug, owner_id, original_url, title, hostname, tags_json, created_at, updated_at, expires_at, deleted_at, lifecycle_state, version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                slug,
+                ownerId,
+                originalUrl,
+                title,
+                hostname,
+                tagsJson,
+                createdAt,
+                updatedAt,
+                expiresAt,
+                deletedAt,
+                lifecycleState,
+                version);
     }
 
     private MockHttpServletRequestBuilder mutationPost(String apiKey, String path) {

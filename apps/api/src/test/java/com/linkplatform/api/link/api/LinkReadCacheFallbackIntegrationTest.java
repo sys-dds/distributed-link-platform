@@ -78,6 +78,10 @@ class LinkReadCacheFallbackIntegrationTest {
 
         mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/links/discovery").header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].slug").value("cached-link"));
     }
 
     private void insertOwnedLink(
@@ -117,6 +121,22 @@ class LinkReadCacheFallbackIntegrationTest {
                 hostname,
                 expiresAt,
                 ownerId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_discovery_projection (
+                    slug, owner_id, original_url, title, hostname, tags_json, created_at, updated_at, expires_at, deleted_at, lifecycle_state, version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1)
+                """,
+                slug,
+                ownerId,
+                originalUrl,
+                title,
+                hostname,
+                tagsJson,
+                createdAt,
+                createdAt,
+                expiresAt,
+                expiresAt != null && !expiresAt.isAfter(OffsetDateTime.now()) ? "EXPIRED" : "ACTIVE");
         jdbcTemplate.update(
                 """
                 INSERT INTO link_activity_events (

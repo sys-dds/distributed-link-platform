@@ -8,7 +8,9 @@ import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -197,8 +199,31 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public void projectDiscoveryEvent(LinkLifecycleEvent linkLifecycleEvent) {
+        String tagsJson = serializeTags(linkLifecycleEvent.tags());
+        String lifecycleState = determineLifecycleState(linkLifecycleEvent, OffsetDateTime.now());
+        switch (linkLifecycleEvent.eventType()) {
+            case CREATED, UPDATED, EXPIRATION_UPDATED -> upsertDiscoveryProjection(
+                    linkLifecycleEvent,
+                    tagsJson,
+                    null,
+                    lifecycleState);
+            case DELETED -> upsertDiscoveryProjection(
+                    linkLifecycleEvent,
+                    tagsJson,
+                    linkLifecycleEvent.occurredAt(),
+                    LinkDiscoveryLifecycleState.DELETED.name());
+        }
+    }
+
+    @Override
     public void resetCatalogProjection() {
         jdbcTemplate.update("DELETE FROM link_catalog_projection");
+    }
+
+    @Override
+    public void resetDiscoveryProjection() {
+        jdbcTemplate.update("DELETE FROM link_discovery_projection");
     }
 
     @Override
@@ -438,6 +463,59 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long ownerId, LinkDiscoveryQuery query) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT slug,
+                       original_url,
+                       title,
+                       hostname,
+                       tags_json,
+                       created_at,
+                       updated_at,
+                       expires_at,
+                       deleted_at,
+                       version
+                FROM link_discovery_projection
+                WHERE owner_id = ?
+                """);
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(ownerId);
+
+        appendDiscoverySearchClause(sql, parameters, query.searchText());
+        appendDiscoveryHostnameClause(sql, parameters, query.hostname());
+        appendDiscoveryTagClause(sql, parameters, query.tag());
+        appendDiscoveryLifecycleClause(sql, parameters, now, query.lifecycle());
+        appendDiscoveryExpirationClause(sql, parameters, now, query.expiration());
+        appendDiscoveryCursorClause(sql, parameters, query.sort(), query.cursor());
+        sql.append(" ORDER BY ").append(discoveryOrderBy(query.sort())).append(" LIMIT ?");
+        parameters.add(query.limit() + 1);
+
+        List<LinkDiscoveryItem> fetchedItems = jdbcTemplate.query(
+                sql.toString(),
+                (resultSet, rowNum) -> new LinkDiscoveryItem(
+                        resultSet.getString("slug"),
+                        resultSet.getString("original_url"),
+                        resultSet.getString("title"),
+                        resultSet.getString("hostname"),
+                        deserializeTags(resultSet.getString("tags_json")),
+                        mapLifecycleState(
+                                resultSet.getObject("deleted_at", OffsetDateTime.class),
+                                resultSet.getObject("expires_at", OffsetDateTime.class),
+                                now),
+                        resultSet.getObject("created_at", OffsetDateTime.class),
+                        resultSet.getObject("updated_at", OffsetDateTime.class),
+                        resultSet.getObject("expires_at", OffsetDateTime.class),
+                        resultSet.getObject("deleted_at", OffsetDateTime.class),
+                        resultSet.getLong("version")),
+                parameters.toArray());
+
+        boolean hasMore = fetchedItems.size() > query.limit();
+        List<LinkDiscoveryItem> pageItems = hasMore ? fetchedItems.subList(0, query.limit()) : fetchedItems;
+        String nextCursor = hasMore && !pageItems.isEmpty() ? encodeCursor(query.sort(), pageItems.getLast()) : null;
+        return new LinkDiscoveryPage(List.copyOf(pageItems), nextCursor, hasMore);
+    }
+
+    @Override
     public List<LinkActivityEvent> findRecentActivity(int limit, long ownerId) {
         return jdbcTemplate.query(
                 """
@@ -586,6 +664,159 @@ public class PostgresLinkStore implements LinkStore {
         parameters.add(pattern);
     }
 
+    private void appendDiscoverySearchClause(StringBuilder sql, List<Object> parameters, String query) {
+        if (query == null || query.isBlank()) {
+            return;
+        }
+        sql.append("""
+                
+                  AND (
+                    LOWER(slug) LIKE ?
+                    OR LOWER(original_url) LIKE ?
+                    OR LOWER(COALESCE(title, '')) LIKE ?
+                    OR LOWER(COALESCE(tags_json, '')) LIKE ?
+                    OR LOWER(COALESCE(hostname, '')) LIKE ?
+                  )
+                """);
+        String pattern = "%" + query.toLowerCase(Locale.ROOT).trim() + "%";
+        parameters.add(pattern);
+        parameters.add(pattern);
+        parameters.add(pattern);
+        parameters.add(pattern);
+        parameters.add(pattern);
+    }
+
+    private void appendDiscoveryHostnameClause(StringBuilder sql, List<Object> parameters, String hostname) {
+        if (hostname == null || hostname.isBlank()) {
+            return;
+        }
+        sql.append("""
+                
+                  AND LOWER(hostname) = ?
+                """);
+        parameters.add(hostname.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private void appendDiscoveryTagClause(StringBuilder sql, List<Object> parameters, String tag) {
+        if (tag == null || tag.isBlank()) {
+            return;
+        }
+        sql.append("""
+                
+                  AND LOWER(COALESCE(tags_json, '')) LIKE ?
+                """);
+        parameters.add("%\"" + tag.trim().toLowerCase(Locale.ROOT) + "\"%");
+    }
+
+    private void appendDiscoveryLifecycleClause(
+            StringBuilder sql,
+            List<Object> parameters,
+            OffsetDateTime now,
+            LinkDiscoveryLifecycleFilter lifecycle) {
+        switch (lifecycle) {
+            case ACTIVE -> {
+                sql.append("""
+                        
+                          AND deleted_at IS NULL
+                          AND (expires_at IS NULL OR expires_at > ?)
+                        """);
+                parameters.add(now);
+            }
+            case EXPIRED -> {
+                sql.append("""
+                        
+                          AND deleted_at IS NULL
+                          AND expires_at IS NOT NULL
+                          AND expires_at <= ?
+                        """);
+                parameters.add(now);
+            }
+            case DELETED -> sql.append("""
+                        
+                          AND deleted_at IS NOT NULL
+                        """);
+            case ALL -> {
+                // no-op
+            }
+        }
+    }
+
+    private void appendDiscoveryExpirationClause(
+            StringBuilder sql,
+            List<Object> parameters,
+            OffsetDateTime now,
+            LinkDiscoveryExpirationFilter expiration) {
+        switch (expiration) {
+            case ANY -> {
+                // no-op
+            }
+            case SCHEDULED -> sql.append("""
+                        
+                          AND expires_at IS NOT NULL
+                        """);
+            case NONE -> sql.append("""
+                        
+                          AND expires_at IS NULL
+                        """);
+            case EXPIRED -> {
+                sql.append("""
+                        
+                          AND expires_at IS NOT NULL
+                          AND expires_at <= ?
+                        """);
+                parameters.add(now);
+            }
+        }
+    }
+
+    private void appendDiscoveryCursorClause(
+            StringBuilder sql,
+            List<Object> parameters,
+            LinkDiscoverySort sort,
+            String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return;
+        }
+        DecodedCursor decodedCursor = decodeCursor(cursor);
+        switch (sort) {
+            case UPDATED_DESC -> {
+                OffsetDateTime updatedAt = parseCursorTimestamp(decodedCursor.primaryValue());
+                sql.append("""
+                        
+                          AND (updated_at < ? OR (updated_at = ? AND slug > ?))
+                        """);
+                parameters.add(updatedAt);
+                parameters.add(updatedAt);
+                parameters.add(decodedCursor.slug());
+            }
+            case CREATED_DESC -> {
+                OffsetDateTime createdAt = parseCursorTimestamp(decodedCursor.primaryValue());
+                sql.append("""
+                        
+                          AND (created_at < ? OR (created_at = ? AND slug > ?))
+                        """);
+                parameters.add(createdAt);
+                parameters.add(createdAt);
+                parameters.add(decodedCursor.slug());
+            }
+            case SLUG_ASC -> {
+                sql.append("""
+                        
+                          AND slug > ?
+                        """);
+                parameters.add(decodedCursor.slug());
+            }
+        }
+    }
+
+    private String discoveryOrderBy(LinkDiscoverySort sort) {
+        return switch (sort) {
+            case UPDATED_DESC -> "updated_at DESC, slug ASC";
+            case CREATED_DESC -> "created_at DESC, slug ASC";
+            case SLUG_ASC -> "slug ASC";
+        };
+    }
+
     private void incrementDailyRollup(String slug, LocalDate rollupDate) {
         int updated = jdbcTemplate.update(
                 """
@@ -731,6 +962,94 @@ public class PostgresLinkStore implements LinkStore {
                     linkLifecycleEvent.expiresAt(),
                     deletedAt,
                     linkLifecycleEvent.ownerId(),
+                    linkLifecycleEvent.version(),
+                    linkLifecycleEvent.slug(),
+                    linkLifecycleEvent.version());
+        }
+    }
+
+    private void upsertDiscoveryProjection(
+            LinkLifecycleEvent linkLifecycleEvent,
+            String tagsJson,
+            OffsetDateTime deletedAt,
+            String lifecycleState) {
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE link_discovery_projection
+                SET owner_id = ?,
+                    original_url = ?,
+                    title = ?,
+                    hostname = ?,
+                    tags_json = ?,
+                    updated_at = ?,
+                    expires_at = ?,
+                    deleted_at = ?,
+                    lifecycle_state = ?,
+                    version = ?
+                WHERE slug = ?
+                  AND version < ?
+                """,
+                linkLifecycleEvent.ownerId(),
+                linkLifecycleEvent.originalUrl(),
+                linkLifecycleEvent.title(),
+                linkLifecycleEvent.hostname(),
+                tagsJson,
+                linkLifecycleEvent.occurredAt(),
+                linkLifecycleEvent.expiresAt(),
+                deletedAt,
+                lifecycleState,
+                linkLifecycleEvent.version(),
+                linkLifecycleEvent.slug(),
+                linkLifecycleEvent.version());
+        if (updated == 1) {
+            return;
+        }
+
+        try {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO link_discovery_projection (
+                        slug, owner_id, original_url, title, hostname, tags_json, created_at, updated_at, expires_at, deleted_at, lifecycle_state, version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    linkLifecycleEvent.slug(),
+                    linkLifecycleEvent.ownerId(),
+                    linkLifecycleEvent.originalUrl(),
+                    linkLifecycleEvent.title(),
+                    linkLifecycleEvent.hostname(),
+                    tagsJson,
+                    linkLifecycleEvent.occurredAt(),
+                    linkLifecycleEvent.occurredAt(),
+                    linkLifecycleEvent.expiresAt(),
+                    deletedAt,
+                    lifecycleState,
+                    linkLifecycleEvent.version());
+        } catch (DuplicateKeyException exception) {
+            jdbcTemplate.update(
+                    """
+                    UPDATE link_discovery_projection
+                    SET owner_id = ?,
+                        original_url = ?,
+                        title = ?,
+                        hostname = ?,
+                        tags_json = ?,
+                        updated_at = ?,
+                        expires_at = ?,
+                        deleted_at = ?,
+                        lifecycle_state = ?,
+                        version = ?
+                    WHERE slug = ?
+                      AND version < ?
+                    """,
+                    linkLifecycleEvent.ownerId(),
+                    linkLifecycleEvent.originalUrl(),
+                    linkLifecycleEvent.title(),
+                    linkLifecycleEvent.hostname(),
+                    tagsJson,
+                    linkLifecycleEvent.occurredAt(),
+                    linkLifecycleEvent.expiresAt(),
+                    deletedAt,
+                    lifecycleState,
                     linkLifecycleEvent.version(),
                     linkLifecycleEvent.slug(),
                     linkLifecycleEvent.version());
@@ -899,5 +1218,62 @@ public class PostgresLinkStore implements LinkStore {
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Tags could not be deserialized", exception);
         }
+    }
+
+    private LinkDiscoveryLifecycleState mapLifecycleState(
+            OffsetDateTime deletedAt,
+            OffsetDateTime expiresAt,
+            OffsetDateTime now) {
+        if (deletedAt != null) {
+            return LinkDiscoveryLifecycleState.DELETED;
+        }
+        if (expiresAt != null && !expiresAt.isAfter(now)) {
+            return LinkDiscoveryLifecycleState.EXPIRED;
+        }
+        return LinkDiscoveryLifecycleState.ACTIVE;
+    }
+
+    private String determineLifecycleState(LinkLifecycleEvent event, OffsetDateTime now) {
+        return switch (mapLifecycleState(
+                event.eventType() == LinkLifecycleEventType.DELETED ? event.occurredAt() : null,
+                event.expiresAt(),
+                now)) {
+            case ACTIVE -> LinkDiscoveryLifecycleState.ACTIVE.name();
+            case EXPIRED -> LinkDiscoveryLifecycleState.EXPIRED.name();
+            case DELETED -> LinkDiscoveryLifecycleState.DELETED.name();
+        };
+    }
+
+    private String encodeCursor(LinkDiscoverySort sort, LinkDiscoveryItem item) {
+        String value = switch (sort) {
+            case UPDATED_DESC -> item.updatedAt() + "|" + item.slug();
+            case CREATED_DESC -> item.createdAt() + "|" + item.slug();
+            case SLUG_ASC -> item.slug();
+        };
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private DecodedCursor decodeCursor(String cursor) {
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8);
+            int delimiterIndex = decoded.indexOf('|');
+            if (delimiterIndex == -1) {
+                return new DecodedCursor(decoded, decoded);
+            }
+            return new DecodedCursor(decoded.substring(0, delimiterIndex), decoded.substring(delimiterIndex + 1));
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Cursor is invalid");
+        }
+    }
+
+    private OffsetDateTime parseCursorTimestamp(String value) {
+        try {
+            return OffsetDateTime.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException("Cursor is invalid");
+        }
+    }
+
+    private record DecodedCursor(String primaryValue, String slug) {
     }
 }
