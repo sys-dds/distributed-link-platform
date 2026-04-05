@@ -1,97 +1,120 @@
 
+### 🚀 TICKET-031
+
 #### title[]
 
-Build ownership, hashed API keys, plans, and create-mutation quota enforcement
+Secure the owner-facing control plane with owner-scoped reads, projection ownership, API-key hygiene, and plan-aware rate limiting / abuse controls
 
 #### technical_detail[]
 
-The next best move is to add the first real **commercial/control boundary** to the platform.
+TICKET-030 established authenticated ownership for mutations, but the control plane is still inconsistent:
 
-Bundle these capabilities into one coherent slice:
+* writes are owner-authenticated
+* reads are still mostly global/public
+* the catalog projection is not yet clearly owner-shaped for UI use
+* API-key hygiene still needs stronger proof and redaction
+* rate limiting / abuse controls have not been added yet
 
-* introduce a small internal **owner/account model**
-* require **API key authentication** for control-plane mutation endpoints
-* store API keys in **hashed form only**
-* associate each link with an **owner**
-* add a small **plan model** with explicit limits
-* enforce **quota checks** for link creation and active-link ownership limits
-* surface plan/quota failures as clean RFC 7807 responses
-* scope idempotency records to the authenticated owner so future tenant collisions are impossible
-* keep redirect public and unauthenticated
-* keep read/query endpoints simple unless they need ownership filtering for correctness
+This ticket should close that gap in one coherent slice.
 
-Use a practical in-repo model, not a full auth platform:
+Bundle all of this together:
 
-* local owner records
-* seeded dev owner + API key support
-* explicit JDBC repositories
-* request authentication from `X-API-Key` header for protected control-plane mutations
+* require authenticated owner context for **control-plane reads and writes**
+* keep **public redirect** behavior unchanged
+* add `owner_id` to the lifecycle projection path where needed so owner-scoped catalog reads are first-class
+* make the main control-plane read endpoints owner-scoped:
 
-Do **not** build user signup, OAuth, JWT infrastructure, or a generic IAM framework.
+    * get one link
+    * list links
+    * search/filter links
+    * suggestions/autocomplete
+    * owner-relevant analytics/detail reads where practical
+* add a frontend-friendly **`/api/v1/me`** or equivalent owner summary endpoint with:
+
+    * owner key / display info
+    * plan
+    * active link count
+    * active link limit
+* redact `X-API-Key` from request logging and add explicit proof that raw keys do not appear in logs or DB persistence
+* add pragmatic **plan-aware control-plane rate limiting**
+
+    * separate read and mutation limits
+    * scope by authenticated owner
+    * optionally also rate-limit repeated invalid API-key attempts by remote source
+* add durable **security / abuse event logging** for:
+
+    * invalid API key attempts
+    * rate-limit rejections
+    * quota rejections
+* return clean RFC 7807 responses for auth/rate-limit/abuse outcomes
+* keep implementation explicit and JDBC-based; do not introduce Redis yet
+
+This is the right next ticket because it finishes the real ownership boundary and makes the backend much more usable for the future Next.js control-plane UI.
 
 #### feature_delivered_by_end[]
 
-The platform has a real ownership boundary:
+The platform has a **real private owner-facing control plane**:
 
-* links belong to owners
-* control-plane writes are authenticated by API key
-* API keys are stored safely
-* plans and quotas are enforced on create flows
-* idempotency is owner-scoped instead of global
+* owner-authenticated reads and writes
+* owner-shaped catalog/read behavior
+* frontend-friendly owner summary endpoint
+* safe API-key handling with redaction proof
+* plan-aware rate limiting and basic abuse/security event capture
 
 #### how_this_unlocks_next_feature[]
 
-This unlocks the next protection/performance slices cleanly:
+This unlocks the next big slices cleanly:
 
-* rate limiting and abuse controls
-* owner-aware search/reporting
-* cached quota reads
-* safer operator/admin controls
-* future service/runtime separation without anonymous write access
+* Redis caching + invalidation
+* richer search/index projection
+* cleaner frontend integration
+* stronger admin/operator controls
+* safer runtime separation later without awkward anonymous control-plane behavior
 
 #### acceptance_criteria[]
 
-* mutation endpoints require a valid `X-API-Key`
-* invalid or missing API key returns RFC 7807 problem details with `401` or `403` semantics chosen consistently
-* create/update/delete flows record and use the authenticated owner
-* new links persist `owner_id`
-* API keys are never stored in plaintext; only hash + metadata are stored
-* at least two plans exist, such as `FREE` and `PRO`, with explicit limits
-* create-link quota is enforced from plan rules
-* active owned-link limit is enforced from plan rules
-* quota violations return clean `409` or `403` style problem details consistently
-* idempotency storage is owner-scoped
-* existing redirect behavior remains public and unchanged
-* existing async lifecycle/analytics behavior still works
-* no repo ticket-tracking/doc churn
+* `GET /api/v1/links/{slug}` is owner-authenticated and only returns the caller’s link
+* `GET /api/v1/links` is owner-authenticated and only lists the caller’s links
+* suggestions/search are owner-authenticated and owner-scoped
+* public redirect remains anonymous and unchanged
+* lifecycle/projection path carries enough ownership data for owner-scoped catalog reads
+* projection rebuild still converges correctly with ownership present
+* `X-API-Key` is not logged in plaintext
+* tests prove raw API keys are not persisted in plaintext
+* a frontend-friendly owner summary endpoint returns plan + quota info
+* read and mutation rate limits are enforced by owner/plan
+* repeated invalid API-key attempts are captured as abuse/security events
+* rate-limit failures return RFC 7807 with `429`
+* no repo churn in `docs/tickets.md`, README, or Postman
 
 #### code_target[]
 
-* link mutation controller/auth entry points
-* link application service mutation paths
-* owner/account repository + model
-* API key repository + hashing logic
-* plan/quota model + enforcement logic
-* `links` schema for `owner_id`
-* idempotency schema/store updated to include owner scope
-* Flyway migrations
-* mutation integration tests
-* do **not** touch `docs/tickets.md`, README, or Postman files
+* `LinkController`
+* control-plane read/query paths in `LinkApplicationService` / `DefaultLinkApplicationService`
+* `link_catalog_projection` schema + projection write/rebuild path
+* lifecycle event payload/model if owner data is missing
+* owner/auth components
+* request logging / redaction path
+* rate-limit store/service (JDBC-backed)
+* abuse/security event store
+* integration/controller/projection tests
+* **do not touch** repo ticket-tracking/docs files
 
 #### proof[]
 
-* integration test: create link with valid API key succeeds and stores owner
-* integration test: missing API key fails cleanly
-* integration test: invalid API key fails cleanly
-* integration test: free-plan owner hits active link quota and gets problem-details failure
-* integration test: pro-plan owner can exceed free-plan limit
-* integration test: idempotency key reuse is isolated per owner
-* integration test: redirect endpoint remains public
-* test evidence that raw API keys are not persisted
+* targeted tests proving owner-scoped get/list/search/suggestions
+* targeted tests proving cross-owner reads do not leak data
+* targeted tests proving redirect stays public
+* targeted tests proving rate limits fire correctly for free vs pro plans
+* targeted tests proving invalid API-key abuse events are recorded
+* targeted tests proving `X-API-Key` is redacted from logs
+* targeted tests proving only key hashes are stored in DB
+* targeted projection/rebuild tests proving owner-aware projection convergence
+* actual test command output with passing results
 
 #### delivery_note[]
 
-Keep this as one commercial/control slice.
-Do not split ownership, API keys, and quotas into separate mini-tickets.
-Do not add rate limiting yet.
-Do not build a generic auth framework.
+This is intentionally a **large protection slice**.
+
+It must finish the missing TICKET-030 hardening **and** add the next coherent capability.
+Do not split owner-scoped reads, secret hygiene, and rate limiting into separate mini-tickets.
