@@ -6,6 +6,8 @@ import com.linkplatform.api.link.application.LinkTrafficSummary;
 import com.linkplatform.api.link.application.LinkTrafficWindow;
 import com.linkplatform.api.link.application.TrendingLink;
 import com.linkplatform.api.link.application.TopLinkTraffic;
+import com.linkplatform.api.owner.application.OwnerAccessService;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,28 +24,56 @@ public class LinkAnalyticsController {
     private static final int MAX_LIMIT = 100;
 
     private final LinkApplicationService linkApplicationService;
+    private final OwnerAccessService ownerAccessService;
 
-    public LinkAnalyticsController(LinkApplicationService linkApplicationService) {
+    public LinkAnalyticsController(LinkApplicationService linkApplicationService, OwnerAccessService ownerAccessService) {
         this.linkApplicationService = linkApplicationService;
+        this.ownerAccessService = ownerAccessService;
     }
 
     @GetMapping("/{slug}/traffic-summary")
-    public LinkTrafficSummaryResponse getTrafficSummary(@PathVariable String slug) {
-        return toResponse(linkApplicationService.getTrafficSummary(slug));
+    public LinkTrafficSummaryResponse getTrafficSummary(
+            @PathVariable String slug,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        return toResponse(linkApplicationService.getTrafficSummary(
+                ownerAccessService.authorizeRead(
+                        apiKey,
+                        httpServletRequest.getMethod(),
+                        httpServletRequest.getRequestURI(),
+                        httpServletRequest.getRemoteAddr()),
+                slug));
     }
 
     @GetMapping("/traffic/top")
-    public List<TopLinkTrafficResponse> getTopLinks(@RequestParam(defaultValue = "7d") String window) {
-        return linkApplicationService.getTopLinks(parseWindow(window)).stream()
+    public List<TopLinkTrafficResponse> getTopLinks(
+            @RequestParam(defaultValue = "7d") String window,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        return linkApplicationService.getTopLinks(
+                        ownerAccessService.authorizeRead(
+                                apiKey,
+                                httpServletRequest.getMethod(),
+                                httpServletRequest.getRequestURI(),
+                                httpServletRequest.getRemoteAddr()),
+                        parseWindow(window)).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     @GetMapping("/activity")
     public List<LinkActivityEventResponse> getRecentActivity(
-            @RequestParam(defaultValue = "" + DEFAULT_ACTIVITY_LIMIT) int limit) {
+            @RequestParam(defaultValue = "" + DEFAULT_ACTIVITY_LIMIT) int limit,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
         validateLimit(limit);
-        return linkApplicationService.getRecentActivity(limit).stream()
+        return linkApplicationService.getRecentActivity(
+                        ownerAccessService.authorizeRead(
+                                apiKey,
+                                httpServletRequest.getMethod(),
+                                httpServletRequest.getRequestURI(),
+                                httpServletRequest.getRemoteAddr()),
+                        limit).stream()
                 .map(this::toResponse)
                 .toList();
     }
@@ -51,9 +81,18 @@ public class LinkAnalyticsController {
     @GetMapping("/traffic/trending")
     public List<TrendingLinkResponse> getTrendingLinks(
             @RequestParam(defaultValue = "7d") String window,
-            @RequestParam(defaultValue = "" + DEFAULT_TRENDING_LIMIT) int limit) {
+            @RequestParam(defaultValue = "" + DEFAULT_TRENDING_LIMIT) int limit,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
         validateLimit(limit);
-        return linkApplicationService.getTrendingLinks(parseWindow(window), limit).stream()
+        return linkApplicationService.getTrendingLinks(
+                        ownerAccessService.authorizeRead(
+                                apiKey,
+                                httpServletRequest.getMethod(),
+                                httpServletRequest.getRequestURI(),
+                                httpServletRequest.getRemoteAddr()),
+                        parseWindow(window),
+                        limit).stream()
                 .map(this::toResponse)
                 .toList();
     }

@@ -6,10 +6,14 @@ import com.linkplatform.api.link.application.LinkClickHistoryRecord;
 import com.linkplatform.api.link.application.LinkLifecycleEvent;
 import com.linkplatform.api.link.application.LinkLifecycleHistoryRecord;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
+import com.linkplatform.api.link.application.LinkReadCache;
 import com.linkplatform.api.link.application.LinkStore;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +24,7 @@ public class ProjectionJobService {
     private final ProjectionJobStore projectionJobStore;
     private final LinkLifecycleOutboxStore linkLifecycleOutboxStore;
     private final LinkStore linkStore;
+    private final LinkReadCache linkReadCache;
     private final Clock clock;
     private final int chunkSize;
 
@@ -27,10 +32,12 @@ public class ProjectionJobService {
             ProjectionJobStore projectionJobStore,
             LinkLifecycleOutboxStore linkLifecycleOutboxStore,
             LinkStore linkStore,
+            LinkReadCache linkReadCache,
             @Value("${link-platform.projection-jobs.chunk-size}") int chunkSize) {
         this.projectionJobStore = projectionJobStore;
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
         this.linkStore = linkStore;
+        this.linkReadCache = linkReadCache;
         this.clock = Clock.systemUTC();
         this.chunkSize = chunkSize;
     }
@@ -59,10 +66,13 @@ public class ProjectionJobService {
         List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(afterId, chunkSize + 1);
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
+        Set<Long> ownerIds = new HashSet<>();
         for (LinkLifecycleHistoryRecord historyRecord : historyChunk) {
             LinkLifecycleEvent lifecycleEvent = historyRecord.event();
             linkStore.recordActivityIfAbsent(lifecycleEvent.eventId(), toActivityEvent(lifecycleEvent));
+            ownerIds.add(lifecycleEvent.ownerId());
         }
+        ownerIds.forEach(linkReadCache::invalidateOwnerAnalytics);
         return new ProjectionJobChunkResult(
                 completed,
                 historyChunk.size(),
@@ -78,6 +88,12 @@ public class ProjectionJobService {
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkClickHistoryRecord> clickHistoryChunk = limitToChunk(fetchedChunk);
         long processedCount = linkStore.applyClickHistoryChunkToDailyRollups(clickHistoryChunk);
+        clickHistoryChunk.stream()
+                .map(LinkClickHistoryRecord::slug)
+                .distinct()
+                .map(linkStore::findOwnerIdBySlug)
+                .flatMap(Optional::stream)
+                .forEach(linkReadCache::invalidateOwnerAnalytics);
         return new ProjectionJobChunkResult(
                 completed,
                 processedCount,
@@ -92,9 +108,12 @@ public class ProjectionJobService {
         List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(afterId, chunkSize + 1);
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
+        Set<Long> ownerIds = new HashSet<>();
         for (LinkLifecycleHistoryRecord historyRecord : historyChunk) {
             linkStore.projectCatalogEvent(historyRecord.event());
+            ownerIds.add(historyRecord.event().ownerId());
         }
+        ownerIds.forEach(linkReadCache::invalidateOwnerControlPlane);
         return new ProjectionJobChunkResult(
                 completed,
                 historyChunk.size(),
@@ -115,6 +134,7 @@ public class ProjectionJobService {
             case DELETED -> LinkActivityType.DELETED;
         };
         return new LinkActivityEvent(
+                lifecycleEvent.ownerId(),
                 type,
                 lifecycleEvent.slug(),
                 lifecycleEvent.originalUrl(),

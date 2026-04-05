@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 public record LinkActivityEvent(
+        long ownerId,
         LinkActivityType type,
         String slug,
         String originalUrl,

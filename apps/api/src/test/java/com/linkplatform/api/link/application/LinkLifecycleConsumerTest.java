@@ -1,6 +1,7 @@
 package com.linkplatform.api.link.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,6 +12,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
@@ -22,6 +24,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class LinkLifecycleConsumerTest {
+
+    private static final String FREE_API_KEY = "free-owner-api-key";
 
     @Autowired
     private LinkLifecycleConsumer consumer;
@@ -37,6 +41,9 @@ class LinkLifecycleConsumerTest {
 
     @Autowired
     private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
+    @SpyBean
+    private LinkReadCache linkReadCache;
 
     @Test
     void consumerProjectsLifecycleEventIntoExistingActivityFeed() throws Exception {
@@ -55,7 +62,7 @@ class LinkLifecycleConsumerTest {
 
         consumer.consume(objectMapper.writeValueAsString(event));
 
-        mockMvc.perform(get("/api/v1/links/activity"))
+        mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("created"))
                 .andExpect(jsonPath("$[0].slug").value("launch-page"))
@@ -65,6 +72,8 @@ class LinkLifecycleConsumerTest {
                 jdbcTemplate.queryForObject(
                         "SELECT original_url FROM link_catalog_projection WHERE slug = 'launch-page'",
                         String.class));
+        verify(linkReadCache).invalidateOwnerControlPlane(1L);
+        verify(linkReadCache).invalidateOwnerAnalytics(1L);
         assertEquals(1.0, meterRegistry.get("link.lifecycle.consumer.processed").counter().count());
     }
 
@@ -112,7 +121,7 @@ class LinkLifecycleConsumerTest {
 
         consumer.consume(objectMapper.writeValueAsString(event));
 
-        mockMvc.perform(get("/api/v1/links/activity"))
+        mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("deleted"))
                 .andExpect(jsonPath("$[0].slug").value("gone-link"))
@@ -142,7 +151,7 @@ class LinkLifecycleConsumerTest {
 
         consumer.consume(objectMapper.writeValueAsString(event));
 
-        mockMvc.perform(get("/api/v1/links/activity"))
+        mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("updated"))
                 .andExpect(jsonPath("$[0].expiresAt").value("2030-04-01T08:00:00Z"));

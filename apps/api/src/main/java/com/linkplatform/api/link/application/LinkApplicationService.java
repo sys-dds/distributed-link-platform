@@ -32,11 +32,11 @@ public interface LinkApplicationService {
 
     long countActiveLinks(AuthenticatedOwner owner);
 
-    List<LinkActivityEvent> getRecentActivity(int limit);
+    List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit);
 
-    LinkTrafficSummary getTrafficSummary(String slug);
+    LinkTrafficSummary getTrafficSummary(AuthenticatedOwner owner, String slug);
 
-    List<TopLinkTraffic> getTopLinks(LinkTrafficWindow window);
+    List<TopLinkTraffic> getTopLinks(AuthenticatedOwner owner, LinkTrafficWindow window);
 
-    List<TrendingLink> getTrendingLinks(LinkTrafficWindow window, int limit);
+    List<TrendingLink> getTrendingLinks(AuthenticatedOwner owner, LinkTrafficWindow window, int limit);
 }
