@@ -1,104 +1,146 @@
-TICKET-032
-title[]
+### 🚀 TICKET-033
 
-Finish the owner-scoped query surface and add Redis-backed read acceleration, invalidation, and graceful degradation
+#### title[]
 
-technical_detail[]
+Build the owner-scoped search/index projection and discovery read model, while finishing analytics cache-coherence hardening and frontend-shaped query flows
 
-TICKET-031 recovered the ownership/auth foundation and secured the main control-plane reads and writes, but the owner-facing query surface is still inconsistent because analytics/query methods remain global-shaped while get/list/suggestions are owner-scoped.
+#### technical_detail[]
 
-TICKET-032 should close that gap and deliver the next major platform slice in one coherent package:
+The current platform has already gained most of the owner-facing control-plane boundary:
 
-finish the owner-facing control plane by making the remaining query/analytics reads owner-aware where they belong
-shape those query responses so they are clean for the future Next.js UI
-add Redis-backed read acceleration for hot paths
-add explicit invalidation rules tied to link mutations and projection updates
-preserve correctness when Redis is unavailable by falling back to the database and recording degradation signals
-keep redirect public and fast
-keep implementation explicit and JDBC/Spring-shaped; do not build a generic caching framework
+* authenticated owner context
+* owner-scoped mutations
+* owner-scoped main reads
+* `/api/v1/me`
+* Redis-backed read acceleration on important paths
+* lifecycle-driven invalidation
+* rate limiting and security events
+
+But there is still unfinished work from the previous slice:
+
+* analytics cache freshness after click/rollup changes is not proven strongly enough
+* the discovery/query side still needs a more intentional owner-scoped read model
+* the future Next.js control-plane UI needs richer, stable query/filter/sort behavior
+
+This ticket should combine both needs into one coherent slice.
+
+### Part 1 — finish the missing hardening from the previous slice
+
+* make analytics cache invalidation deterministic for click-driven and rollup-driven freshness
+* ensure traffic summary, top links, trending links, and recent activity do not serve stale results after click/rollup changes
+* verify async consumers, replay, rebuild, and cache invalidation cooperate correctly
+
+### Part 2 — deliver the next major platform capability
+
+Build a dedicated **owner-scoped search/index projection** and richer discovery read model for the control plane.
 
 Bundle these capabilities together:
 
-owner-scoped query/auth boundary for remaining control-plane analytics/detail reads:
-recent activity
-traffic summary
-top links
-trending links
-any equivalent owner-facing analytics endpoints already present
-extend read-model / query behavior only as needed to support owner-scoped analytics cleanly
-add Redis integration for:
-public redirect resolution cache
-owner-scoped link detail cache
-owner-scoped list/search/suggestions cache where practical
-/api/v1/me summary cache if it is cheap and clearly useful
-owner-scoped analytics/query cache where practical
-add deterministic cache keys that include owner scope where needed
-add mutation-triggered and projection-triggered invalidation:
-create/update/delete invalidates owner-scoped control-plane caches
-lifecycle/catalog projection updates invalidate affected owner-scoped read-model caches
-click/rollup changes invalidate affected analytics caches
-add graceful degradation behavior:
-Redis unavailable must not fail reads or writes
-fallback to DB/query path
-record metrics/logging when cache is unavailable or bypassed
-keep contract responses stable and frontend-friendly
-feature_delivered_by_end[]
+* add a dedicated search/index projection for owner-scoped discovery reads
+* project the fields the UI actually needs, such as:
 
-The backend has a real owner-facing query surface and the first serious read-performance layer:
+    * owner_id
+    * slug
+    * original_url
+    * title
+    * hostname
+    * tags
+    * lifecycle state
+    * created_at
+    * updated_at / deleted_at where useful
+    * expiration timestamp / expiration state
+    * latest activity marker if cheap and useful
+    * click-derived sort helpers if practical
+* move owner-facing discovery/search/filter/sort reads onto that projection where clean
+* support richer query behavior for UI screens:
 
-owner-scoped analytics/query reads
-Redis acceleration for hot read paths
-explicit invalidation tied to mutations and projections
-graceful fallback when Redis is unavailable
-control-plane APIs shaped better for the future Next.js app
-how_this_unlocks_next_feature[]
+    * search text
+    * hostname filter
+    * tag filter
+    * lifecycle filter
+    * expiration filter
+    * sort options
+    * pagination inputs that will work well for a future Next.js UI
+* keep responses stable and frontend-friendly
+* add rebuild support for the new search/index projection
+* add deterministic cache invalidation for the new discovery/query read paths
+* keep everything explicit, JDBC-based, and production-shaped
+* do not introduce Elasticsearch/OpenSearch yet
+* do not split “finish analytics freshness” and “build search projection” into separate tickets
+
+#### feature_delivered_by_end[]
+
+The platform has:
+
+* deterministic analytics cache freshness after click/rollup changes
+* a real owner-scoped search/index projection
+* richer discovery/filter/sort capabilities for the control plane
+* rebuildable discovery read models
+* stable frontend-friendly query surfaces for the future Next.js app
+
+#### how_this_unlocks_next_feature[]
 
 This unlocks the next big slices cleanly:
 
-richer search/index projection
-cleaner frontend integration and faster UI screens
-safer runtime separation later
-better SRE/performance work because cache behavior is now real
-stronger abuse/rate-limit posture because the read side is less DB-heavy
-acceptance_criteria[]
-remaining owner-facing analytics/query endpoints are owner-authenticated and owner-scoped
-cross-owner query reads do not leak data
-public redirect behavior remains anonymous and unchanged
-Redis is used for configured hot read paths with deterministic keys
-owner-scoped cache keys include owner identity where needed
-mutations invalidate the relevant owner-scoped control-plane caches
-projection/catalog updates invalidate the relevant query caches
-click/rollup changes invalidate the relevant analytics caches
-if Redis is unavailable, requests still succeed via DB fallback
-cache degradation is observable via logs/metrics
-owner-facing responses remain stable and frontend-friendly
-no repo churn in docs/tickets.md, README, or Postman
-code_target[]
-current analytics/query controller(s) and owner-facing read endpoints
-LinkApplicationService
-DefaultLinkApplicationService
-LinkStore
-PostgresLinkStore
-owner auth/query boundary wiring
-lifecycle/catalog projection invalidation hooks
-click/rollup invalidation hooks
-Redis configuration + small explicit cache adapter(s)
-integration/controller/projection/cache tests
-do not touch repo ticket-tracking/docs files
-proof[]
-targeted tests proving owner-scoped recent activity / traffic summary / top links / trending links
-targeted tests proving cross-owner analytics/query reads do not leak data
-targeted tests proving redirect remains public with cache hit + miss behavior
-targeted tests proving owner-scoped list/detail/search/suggestions cache keys do not collide across owners
-targeted tests proving create/update/delete invalidate relevant caches
-targeted tests proving projection rebuild/update invalidates affected caches
-targeted tests proving click/rollup changes invalidate analytics caches
-targeted tests proving Redis failure falls back cleanly without breaking responses
-actual compile/test command output with passing results
-delivery_note[]
+* dedicated redirect/runtime boundary extraction
+* worker/projection runtime hardening
+* read scaling and reporting/query isolation
+* faster and cleaner frontend screens
+* stronger performance/SRE packaging because the read side is now intentionally shaped
 
-This is intentionally a large ticket.
+#### acceptance_criteria[]
 
-It must finish the missing owner-scoped query work left by TICKET-031 and land the Redis caching/invalidation/degradation slice in one coherent delivery.
+* analytics caches are invalidated or refreshed deterministically after click/rollup changes
+* owner-scoped traffic summary, top links, trending links, and recent activity do not remain stale after new clicks
+* owner-scoped discovery/search/filter/sort reads are served from a dedicated projection where appropriate
+* cross-owner discovery/query reads do not leak data
+* search supports practical UI-facing filters and sort options
+* query responses support stable pagination behavior suitable for a future Next.js app
+* projection rebuild reconstructs the new search/index read model correctly
+* cache invalidation for discovery reads is deterministic and owner-safe
+* public redirect behavior remains anonymous and unchanged
+* async lifecycle and analytics pipelines continue to work
+* no repo churn in `docs/tickets.md`, README, or Postman
 
-Do not split “finish owner analytics” and “add caching” into separate mini-tickets.
+#### code_target[]
+
+* owner-facing discovery/search controller and query endpoints
+* analytics/query endpoints where cache freshness must be completed
+* `LinkApplicationService`
+* `DefaultLinkApplicationService`
+* `LinkStore`
+* `PostgresLinkStore`
+* lifecycle consumer and analytics/click consumer paths where cache invalidation must be finished
+* new search/index projection schema + projector
+* projection rebuild/job path
+* Redis cache adapter / invalidation hooks
+* focused controller/service/projection/cache tests
+* do **not** touch repo ticket-tracking/docs files
+
+#### proof[]
+
+* targeted tests proving analytics caches refresh or invalidate correctly after click/rollup changes
+* targeted tests proving owner-scoped traffic summary / top / trending / recent activity do not serve stale results after new clicks
+* targeted tests proving owner-scoped search/filter/sort results are correct
+* targeted tests proving cross-owner discovery isolation
+* targeted tests proving projection rebuild reconstructs the search/index read model correctly
+* targeted tests proving cache keys and invalidation do not collide across owners
+* targeted tests proving public redirect behavior remains unchanged
+* actual compile/test command output with passing results
+
+#### delivery_note[]
+
+This is intentionally a **huge** ticket.
+
+It must:
+
+* finish the missing cache-freshness hardening left from the prior slice
+* and deliver the next major owner-scoped discovery/search projection in the same pass
+
+Do **not** split this into:
+
+* analytics freshness cleanup
+* search projection later
+* frontend shaping later
+
+Do it as one coherent read-model evolution step.
