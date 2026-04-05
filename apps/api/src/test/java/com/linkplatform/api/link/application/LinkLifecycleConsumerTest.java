@@ -43,6 +43,7 @@ class LinkLifecycleConsumerTest {
         LinkLifecycleEvent event = new LinkLifecycleEvent(
                 "event-1",
                 LinkLifecycleEventType.CREATED,
+                1L,
                 "launch-page",
                 "https://example.com/launch",
                 "Launch",
@@ -72,6 +73,7 @@ class LinkLifecycleConsumerTest {
         LinkLifecycleEvent event = new LinkLifecycleEvent(
                 "event-2",
                 LinkLifecycleEventType.UPDATED,
+                1L,
                 "launch-page",
                 "https://example.com/launch-v2",
                 "Launch v2",
@@ -98,6 +100,7 @@ class LinkLifecycleConsumerTest {
         LinkLifecycleEvent event = new LinkLifecycleEvent(
                 "event-3",
                 LinkLifecycleEventType.DELETED,
+                1L,
                 "gone-link",
                 "https://example.com/gone",
                 "Gone",
@@ -127,6 +130,7 @@ class LinkLifecycleConsumerTest {
         LinkLifecycleEvent event = new LinkLifecycleEvent(
                 "event-4",
                 LinkLifecycleEventType.EXPIRATION_UPDATED,
+                1L,
                 "expiring-link",
                 "https://example.com/expiring",
                 "Expiring",
@@ -149,6 +153,7 @@ class LinkLifecycleConsumerTest {
         LinkLifecycleEvent newer = new LinkLifecycleEvent(
                 "event-5",
                 LinkLifecycleEventType.UPDATED,
+                1L,
                 "launch-page",
                 "https://example.com/newer",
                 "Newer",
@@ -160,6 +165,7 @@ class LinkLifecycleConsumerTest {
         LinkLifecycleEvent stale = new LinkLifecycleEvent(
                 "event-6",
                 LinkLifecycleEventType.UPDATED,
+                1L,
                 "launch-page",
                 "https://example.com/stale",
                 "Stale",

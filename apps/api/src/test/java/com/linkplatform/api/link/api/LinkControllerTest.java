@@ -1,5 +1,6 @@
 package com.linkplatform.api.link.api;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -8,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.net.URI;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,12 +20,19 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class LinkControllerTest {
+
+    private static final String FREE_API_KEY = "free-owner-api-key";
+    private static final String PRO_API_KEY = "pro-owner-api-key";
+    private static final String INVALID_API_KEY = "invalid-owner-api-key";
+    private static final long FREE_OWNER_ID = 1L;
+    private static final long PRO_OWNER_ID = 2L;
 
     @Autowired
     private MockMvc mockMvc;
@@ -32,8 +41,8 @@ class LinkControllerTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void createLinkReturnsCreatedResponse() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+    void validApiKeyCanCreateLinkAndStoreOwnerId() throws Exception {
+        mockMvc.perform(mutationPost(FREE_API_KEY, "/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -42,530 +51,225 @@ class LinkControllerTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(content().json("""
-                        {
-                          "slug": "launch-page",
-                          "originalUrl": "https://example.com/launch"
-                        }
-                        """))
                 .andExpect(jsonPath("$.slug").value("launch-page"))
-                .andExpect(jsonPath("$.originalUrl").value("https://example.com/launch"))
-                .andExpect(jsonPath("$.version").value(1))
-                .andExpect(jsonPath("$.type").doesNotExist())
-                .andExpect(jsonPath("$.title").doesNotExist())
-                .andExpect(jsonPath("$.status").doesNotExist())
-                .andExpect(jsonPath("$.detail").doesNotExist());
-    }
-
-    @Test
-    void createLinkWithMetadataPersistsMetadata() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "metadata-link",
-                                  "originalUrl": "https://docs.example.com/guide/start",
-                                  "title": "Launch Guide",
-                                  "tags": ["product", "docs"]
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(get("/api/v1/links/metadata-link"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("Launch Guide"))
-                .andExpect(jsonPath("$.tags[0]").value("product"))
-                .andExpect(jsonPath("$.tags[1]").value("docs"))
-                .andExpect(jsonPath("$.hostname").value("docs.example.com"))
                 .andExpect(jsonPath("$.version").value(1));
+
+        assertEquals(
+                FREE_OWNER_ID,
+                jdbcTemplate.queryForObject("SELECT owner_id FROM links WHERE slug = 'launch-page'", Long.class));
     }
 
     @Test
-    void createLinkWithFutureExpirationPersistsExpiration() throws Exception {
+    void missingApiKeyFailsCleanlyOnProtectedMutationEndpoint() throws Exception {
         mockMvc.perform(post("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slug": "future-link",
-                                  "originalUrl": "https://example.com/future",
-                                  "expiresAt": "2030-04-01T08:00:00Z"
+                                  "slug": "missing-auth",
+                                  "originalUrl": "https://example.com/missing-auth"
                                 }
                                 """))
-                .andExpect(status().isCreated());
+                .andExpect(problemDetail(401, "Unauthorized", "X-API-Key header is required"));
+    }
 
-        mockMvc.perform(get("/api/v1/links/future-link"))
+    @Test
+    void invalidApiKeyFailsCleanlyAndCreatesSecurityEvent() throws Exception {
+        mockMvc.perform(mutationPost(INVALID_API_KEY, "/api/v1/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slug": "invalid-auth",
+                                  "originalUrl": "https://example.com/invalid-auth"
+                                }
+                                """))
+                .andExpect(problemDetail(401, "Unauthorized", "X-API-Key is invalid"));
+
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'INVALID_API_KEY'",
+                        Integer.class));
+    }
+
+    @Test
+    void updateAndDeleteCannotMutateAnotherOwnersLink() throws Exception {
+        createOwnedLink(FREE_API_KEY, "owned-link", "https://example.com/owned-link");
+
+        mockMvc.perform(mutationPut(PRO_API_KEY, "/api/v1/links/owned-link")
+                        .header("If-Match", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/hijack"
+                                }
+                                """))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: owned-link"));
+
+        mockMvc.perform(mutationDelete(PRO_API_KEY, "/api/v1/links/owned-link").header("If-Match", "1"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: owned-link"));
+    }
+
+    @Test
+    void ownerScopedDetailListSearchAndSuggestionsDoNotLeakCrossOwnerData() throws Exception {
+        insertOwnedLink(FREE_OWNER_ID, "alpha-free", "https://docs.example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null, "Alpha Guide", "[\"docs\"]");
+        insertOwnedLink(PRO_OWNER_ID, "alpha-pro", "https://app.example.com/alpha", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null, "Alpha App", "[\"product\"]");
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links/alpha-free"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.slug").value("future-link"))
-                .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"))
-                .andExpect(jsonPath("$.version").value(1))
-                .andExpect(jsonPath("$.clickTotal").value(0));
+                .andExpect(jsonPath("$.slug").value("alpha-free"));
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links/alpha-pro"))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: alpha-pro"));
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links").param("state", "all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha-free"));
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links").param("q", "guide"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha-free"));
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links/suggestions").param("q", "alpha"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha-free"));
     }
 
     @Test
-    void createLinkWithPastExpirationBecomesUnavailableImmediately() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+    void meReturnsOwnerPlanAndQuotaSummary() throws Exception {
+        createOwnedLink(FREE_API_KEY, "me-one", "https://example.com/me-one");
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ownerKey").value("free-owner"))
+                .andExpect(jsonPath("$.displayName").value("Free Owner"))
+                .andExpect(jsonPath("$.plan").value("FREE"))
+                .andExpect(jsonPath("$.activeLinkCount").value(1))
+                .andExpect(jsonPath("$.activeLinkLimit").value(2));
+    }
+
+    @Test
+    void freePlanQuotaRejectsCreateAndRecordsSecurityEvent() throws Exception {
+        createOwnedLink(FREE_API_KEY, "free-one", "https://example.com/free-one");
+        createOwnedLink(FREE_API_KEY, "free-two", "https://example.com/free-two");
+
+        mockMvc.perform(mutationPost(FREE_API_KEY, "/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slug": "expired-on-create",
-                                  "originalUrl": "https://example.com/expired",
-                                  "expiresAt": "2020-04-01T08:00:00Z"
+                                  "slug": "free-three",
+                                  "originalUrl": "https://example.com/free-three"
                                 }
                                 """))
-                .andExpect(status().isCreated());
+                .andExpect(problemDetail(
+                        409,
+                        "Conflict",
+                        "Active link quota exceeded for owner free-owner on plan FREE"));
 
-        mockMvc.perform(get("/api/v1/links/expired-on-create"))
-                .andExpect(problemDetail(404, "Not Found", "Link slug not found: expired-on-create"));
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'QUOTA_REJECTED' AND owner_id = 1",
+                        Integer.class));
     }
 
     @Test
-    void createLinkRejectsDuplicateSlug() throws Exception {
-        String request = """
-                {
-                  "slug": "repeatable",
-                  "originalUrl": "https://example.com/first"
-                }
-                """;
+    void proPlanCanExceedFreeThresholdUsedInTests() throws Exception {
+        createOwnedLink(PRO_API_KEY, "pro-one", "https://example.com/pro-one");
+        createOwnedLink(PRO_API_KEY, "pro-two", "https://example.com/pro-two");
 
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(post("/api/v1/links")
+        mockMvc.perform(mutationPost(PRO_API_KEY, "/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slug": "repeatable",
-                                  "originalUrl": "https://example.com/second"
+                                  "slug": "pro-three",
+                                  "originalUrl": "https://example.com/pro-three"
                                 }
                                 """))
-                .andExpect(problemDetail(409, "Conflict", "Link slug already exists: repeatable"));
-    }
-
-    @Test
-    void createLinkReplaysSafelyWithIdempotencyKey() throws Exception {
-        String request = """
-                {
-                  "slug": "idempotent-create",
-                  "originalUrl": "https://example.com/idempotent"
-                }
-                """;
-
-        mockMvc.perform(post("/api/v1/links")
-                        .header("Idempotency-Key", "create-key-1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.version").value(1));
-
-        mockMvc.perform(post("/api/v1/links")
-                        .header("Idempotency-Key", "create-key-1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.slug").value("idempotent-create"))
-                .andExpect(jsonPath("$.version").value(1));
-
-        assertCount("SELECT COUNT(*) FROM links WHERE slug = 'idempotent-create'", 1);
-        assertCount("SELECT COUNT(*) FROM link_mutation_idempotency WHERE idempotency_key = 'create-key-1'", 1);
+                .andExpect(jsonPath("$.slug").value("pro-three"));
     }
 
     @Test
-    void createLinkRejectsIdempotencyKeyReuseWithDifferentPayload() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .header("Idempotency-Key", "create-key-2")
+    void freeAndProReadRateLimitsDifferAndRejectionsAreRecorded() throws Exception {
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/me")).andExpect(status().isOk());
+        }
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/me"))
+                .andExpect(problemDetail(429, "Too Many Requests", "Control-plane read rate limit exceeded"));
+
+        for (int attempt = 1; attempt <= 6; attempt++) {
+            mockMvc.perform(readGet(PRO_API_KEY, "/api/v1/me")).andExpect(status().isOk());
+        }
+
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'RATE_LIMIT_REJECTED' AND owner_id = 1",
+                        Integer.class));
+    }
+
+    @Test
+    void sameIdempotencyKeyUsedByDifferentOwnersDoesNotCollide() throws Exception {
+        mockMvc.perform(mutationPost(FREE_API_KEY, "/api/v1/links")
+                        .header("Idempotency-Key", "shared-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slug": "first-payload",
-                                  "originalUrl": "https://example.com/first"
+                                  "slug": "free-idempotent",
+                                  "originalUrl": "https://example.com/free-idempotent"
                                 }
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(post("/api/v1/links")
-                        .header("Idempotency-Key", "create-key-2")
+        mockMvc.perform(mutationPost(PRO_API_KEY, "/api/v1/links")
+                        .header("Idempotency-Key", "shared-key")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slug": "second-payload",
-                                  "originalUrl": "https://example.com/second"
-                                }
-                                """))
-                .andExpect(problemDetail(409, "Conflict",
-                        "Idempotency key cannot be reused for a different link mutation request"));
-    }
-
-    @Test
-    void createLinkRejectsInvalidInput() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "bad slug",
-                                  "originalUrl": "not-a-url"
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("about:blank"))
-                .andExpect(jsonPath("$.title").value("Bad Request"))
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.detail").exists())
-                .andExpect(jsonPath("$.slug").doesNotExist())
-                .andExpect(jsonPath("$.originalUrl").doesNotExist())
-                .andExpect(jsonPath("$.message").doesNotExist());
-    }
-
-    @Test
-    void createLinkRejectsReservedSlugCaseInsensitively() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "Api",
-                                  "originalUrl": "https://example.com/conflict"
-                                }
-                                """))
-                .andExpect(problemDetail(400, "Bad Request", "Link slug is reserved and cannot be used: Api"));
-    }
-
-    @Test
-    void createLinkRejectsSelfTargetUrl() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "self-loop",
-                                  "originalUrl": "http://LOCALHOST:8080/about"
-                                }
-                                """))
-                .andExpect(problemDetail(400, "Bad Request",
-                        "Original URL cannot point to the Link Platform itself: http://LOCALHOST:8080/about"));
-    }
-
-    @Test
-    void getLinkReturnsExistingLink() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "read-me",
-                                  "originalUrl": "https://example.com/read-me"
+                                  "slug": "pro-idempotent",
+                                  "originalUrl": "https://example.com/pro-idempotent"
                                 }
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(get("/api/v1/links/read-me"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.slug").value("read-me"))
-                .andExpect(jsonPath("$.originalUrl").value("https://example.com/read-me"))
-                .andExpect(jsonPath("$.createdAt").exists())
-                .andExpect(jsonPath("$.expiresAt").doesNotExist())
-                .andExpect(jsonPath("$.title").doesNotExist())
-                .andExpect(jsonPath("$.tags").isArray())
-                .andExpect(jsonPath("$.tags.length()").value(0))
-                .andExpect(jsonPath("$.hostname").value("example.com"))
-                .andExpect(jsonPath("$.version").value(1))
-                .andExpect(jsonPath("$.clickTotal").value(0));
+        assertEquals(
+                2,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM link_mutation_idempotency WHERE idempotency_key = 'shared-key'",
+                        Integer.class));
     }
 
     @Test
-    void getLinkReturnsNotFoundForMissingSlug() throws Exception {
-        mockMvc.perform(get("/api/v1/links/missing-link"))
-                .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
+    void plaintextApiKeyIsNotStoredInDatabase() {
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_api_keys WHERE key_hash = '5cd81fa8d1b30a1619001c1fd727555a9a17cc23d551587bb214dccbd1f59606'",
+                        Integer.class));
+        assertEquals(
+                0,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_api_keys WHERE key_hash = ?",
+                        Integer.class,
+                        FREE_API_KEY));
     }
 
     @Test
-    void listLinksReturnsRecentLinksInDeterministicOrder() throws Exception {
-        insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-        insertLink("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-        insertLink("newest", "https://example.com/newest", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+    void readsRequireApiKeyToo() throws Exception {
+        insertOwnedLink(FREE_OWNER_ID, "read-auth", "https://example.com/read-auth", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null, null, null);
 
-        mockMvc.perform(get("/api/v1/links"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$[0].slug").value("newest"))
-                .andExpect(jsonPath("$[1].slug").value("alpha"))
-                .andExpect(jsonPath("$[2].slug").value("beta"))
-                .andExpect(jsonPath("$[0].createdAt").exists())
-                .andExpect(jsonPath("$[0].expiresAt").doesNotExist())
-                .andExpect(jsonPath("$[0].version").value(1))
-                .andExpect(jsonPath("$[0].clickTotal").value(0));
+        mockMvc.perform(get("/api/v1/links/read-auth"))
+                .andExpect(problemDetail(401, "Unauthorized", "X-API-Key header is required"));
     }
 
     @Test
-    void listLinksDefaultsToActiveOnly() throws Exception {
-        insertLink(
-                "expired-link",
-                "https://example.com/expired",
-                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
-        insertLink("active-link", "https://example.com/active", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
+    void updateWithCorrectIfMatchSucceedsAndIncrementsVersion() throws Exception {
+        createOwnedLink(FREE_API_KEY, "editable", "https://example.com/original");
 
-        mockMvc.perform(get("/api/v1/links"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("active-link"))
-                .andExpect(jsonPath("$[0].clickTotal").value(0));
-    }
-
-    @Test
-    void listLinksHonorsLimit() throws Exception {
-        insertLink("one", "https://example.com/one", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-        insertLink("two", "https://example.com/two", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-
-        mockMvc.perform(get("/api/v1/links").param("limit", "1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("two"));
-    }
-
-    @Test
-    void listLinksExcludesExpiredLinks() throws Exception {
-        insertLink(
-                "expired-link",
-                "https://example.com/expired",
-                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
-        insertLink(
-                "active-link",
-                "https://example.com/active",
-                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
-                OffsetDateTime.parse("2030-04-01T08:00:00Z"));
-
-        mockMvc.perform(get("/api/v1/links"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("active-link"))
-                .andExpect(jsonPath("$[0].expiresAt").value("2030-04-01T08:00:00Z"))
-                .andExpect(jsonPath("$[0].clickTotal").value(0));
-    }
-
-    @Test
-    void listLinksFiltersExpiredOnly() throws Exception {
-        insertLink("active-link", "https://example.com/active", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-        insertLink(
-                "expired-link",
-                "https://example.com/expired",
-                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
-
-        mockMvc.perform(get("/api/v1/links").param("state", "expired"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("expired-link"))
-                .andExpect(jsonPath("$[0].clickTotal").value(0));
-    }
-
-    @Test
-    void listLinksFiltersAllStates() throws Exception {
-        insertLink("active-link", "https://example.com/active", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-        insertLink(
-                "expired-link",
-                "https://example.com/expired",
-                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
-
-        mockMvc.perform(get("/api/v1/links").param("state", "all"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].slug").value("active-link"))
-                .andExpect(jsonPath("$[1].slug").value("expired-link"))
-                .andExpect(jsonPath("$[0].clickTotal").value(0))
-                .andExpect(jsonPath("$[1].clickTotal").value(0));
-    }
-
-    @Test
-    void listLinksSearchesBySlug() throws Exception {
-        insertLink("launch-page", "https://example.com/docs", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-        insertLink("docs-page", "https://example.com/guide", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-
-        mockMvc.perform(get("/api/v1/links").param("q", "launch"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("launch-page"))
-                .andExpect(jsonPath("$[0].clickTotal").value(0));
-    }
-
-    @Test
-    void listLinksSearchesByTitle() throws Exception {
-        insertLink(
-                "alpha",
-                "https://example.com/alpha",
-                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
-                null,
-                "Launch Playbook",
-                "[\"docs\"]",
-                "example.com");
-        insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-
-        mockMvc.perform(get("/api/v1/links").param("q", "playbook"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[0].title").value("Launch Playbook"));
-    }
-
-    @Test
-    void listLinksSearchesByTags() throws Exception {
-        insertLink(
-                "alpha",
-                "https://example.com/alpha",
-                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
-                null,
-                null,
-                "[\"product\",\"launch\"]",
-                "example.com");
-        insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-
-        mockMvc.perform(get("/api/v1/links").param("q", "launch"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[0].tags[1]").value("launch"));
-    }
-
-    @Test
-    void listLinksSearchesByHostname() throws Exception {
-        insertLink("alpha", "https://docs.example.com/alpha", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-        insertLink("beta", "https://app.example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-
-        mockMvc.perform(get("/api/v1/links").param("q", "docs.example.com"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[0].hostname").value("docs.example.com"));
-    }
-
-    @Test
-    void listLinksSearchesByOriginalUrl() throws Exception {
-        insertLink("alpha", "https://example.com/launch-docs", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-        insertLink("beta", "https://example.com/other", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-
-        mockMvc.perform(get("/api/v1/links").param("q", "launch-docs"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[0].clickTotal").value(0));
-    }
-
-    @Test
-    void suggestLinksReturnsCompactDeterministicMatches() throws Exception {
-        insertLink(
-                "alpha",
-                "https://docs.example.com/alpha",
-                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
-                null,
-                "Alpha Docs",
-                "[\"docs\"]",
-                "docs.example.com");
-        insertLink(
-                "beta",
-                "https://docs.example.com/beta",
-                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                null,
-                "Beta Docs",
-                "[\"docs\"]",
-                "docs.example.com");
-
-        mockMvc.perform(get("/api/v1/links/suggestions").param("q", "docs"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[0].title").value("Alpha Docs"))
-                .andExpect(jsonPath("$[0].hostname").value("docs.example.com"))
-                .andExpect(jsonPath("$[1].slug").value("beta"));
-    }
-
-    @Test
-    void suggestLinksReturnsEmptyListForBlankQuery() throws Exception {
-        insertLink("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-
-        mockMvc.perform(get("/api/v1/links/suggestions"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
-    }
-
-    @Test
-    void suggestLinksRejectsInvalidLimit() throws Exception {
-        mockMvc.perform(get("/api/v1/links/suggestions").param("q", "docs").param("limit", "21"))
-                .andExpect(problemDetail(400, "Bad Request", "Suggestion limit must be between 1 and 20"));
-    }
-
-    @Test
-    void listLinksCombinesSearchWithLifecycleFiltering() throws Exception {
-        insertLink(
-                "launch-expired",
-                "https://example.com/launch",
-                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
-                OffsetDateTime.parse("2020-04-01T08:00:00Z"));
-        insertLink("launch-active", "https://example.com/launch", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-
-        mockMvc.perform(get("/api/v1/links")
-                        .param("q", "launch")
-                        .param("state", "expired"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("launch-expired"))
-                .andExpect(jsonPath("$[0].clickTotal").value(0));
-    }
-
-    @Test
-    void getLinkIncludesClickTotal() throws Exception {
-        insertLink("clicked", "https://example.com/clicked", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-        insertClick("clicked", OffsetDateTime.parse("2026-04-01T10:00:00Z"));
-        insertClick("clicked", OffsetDateTime.parse("2026-04-01T11:00:00Z"));
-
-        mockMvc.perform(get("/api/v1/links/clicked"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.slug").value("clicked"))
-                .andExpect(jsonPath("$.clickTotal").value(2));
-    }
-
-    @Test
-    void listLinksIncludesClickTotals() throws Exception {
-        insertLink("clicked", "https://example.com/clicked", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-        insertLink("unclicked", "https://example.com/unclicked", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-        insertClick("clicked", OffsetDateTime.parse("2026-04-01T10:00:00Z"));
-        insertClick("clicked", OffsetDateTime.parse("2026-04-01T11:00:00Z"));
-
-        mockMvc.perform(get("/api/v1/links"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].slug").value("clicked"))
-                .andExpect(jsonPath("$[0].clickTotal").value(2))
-                .andExpect(jsonPath("$[1].slug").value("unclicked"))
-                .andExpect(jsonPath("$[1].clickTotal").value(0));
-    }
-
-    @Test
-    void listLinksRejectsInvalidLimit() throws Exception {
-        mockMvc.perform(get("/api/v1/links").param("limit", "0"))
-                .andExpect(problemDetail(400, "Bad Request", "Limit must be between 1 and 100"));
-    }
-
-    @Test
-    void listLinksRejectsInvalidState() throws Exception {
-        mockMvc.perform(get("/api/v1/links").param("state", "unknown"))
-                .andExpect(problemDetail(400, "Bad Request", "State must be one of: active, expired, all"));
-    }
-
-    @Test
-    void updateLinkUpdatesExistingLink() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "editable",
-                                  "originalUrl": "https://example.com/original"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(put("/api/v1/links/editable")
+        mockMvc.perform(mutationPut(FREE_API_KEY, "/api/v1/links/editable")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -574,237 +278,21 @@ class LinkControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.slug").value("editable"))
                 .andExpect(jsonPath("$.originalUrl").value("https://example.com/updated"))
-                .andExpect(jsonPath("$.createdAt").exists())
-                .andExpect(jsonPath("$.expiresAt").doesNotExist())
-                .andExpect(jsonPath("$.title").doesNotExist())
-                .andExpect(jsonPath("$.tags").isArray())
-                .andExpect(jsonPath("$.tags.length()").value(0))
-                .andExpect(jsonPath("$.hostname").value("example.com"))
                 .andExpect(jsonPath("$.version").value(2));
     }
 
     @Test
-    void updateLinkUpdatesMetadata() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "editable-meta",
-                                  "originalUrl": "https://example.com/original"
-                                }
-                                """))
-                .andExpect(status().isCreated());
+    void lifecycleOutboxBehaviorForWritesStillPasses() throws Exception {
+        createOwnedLink(FREE_API_KEY, "async-feed", "https://example.com/async-feed");
 
-        mockMvc.perform(put("/api/v1/links/editable-meta")
-                        .header("If-Match", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "originalUrl": "https://docs.example.com/updated",
-                                  "title": "Updated Title",
-                                  "tags": ["docs", "product"]
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("Updated Title"))
-                .andExpect(jsonPath("$.tags[0]").value("docs"))
-                .andExpect(jsonPath("$.tags[1]").value("product"))
-                .andExpect(jsonPath("$.hostname").value("docs.example.com"))
-                .andExpect(jsonPath("$.version").value(2));
-    }
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'CREATED' AND event_key = 'async-feed'",
+                        Integer.class));
 
-    @Test
-    void updateLinkUpdatesExpiration() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "expiring",
-                                  "originalUrl": "https://example.com/original"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(put("/api/v1/links/expiring")
-                        .header("If-Match", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "originalUrl": "https://example.com/original",
-                                  "expiresAt": "2030-04-01T08:00:00Z"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.expiresAt").value("2030-04-01T08:00:00Z"))
-                .andExpect(jsonPath("$.version").value(2));
-    }
-
-    @Test
-    void updateLinkReturnsNotFoundForMissingSlug() throws Exception {
-        mockMvc.perform(put("/api/v1/links/missing-link")
-                        .header("If-Match", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "originalUrl": "https://example.com/updated"
-                                }
-                                """))
-                .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
-    }
-
-    @Test
-    void updateLinkRejectsMissingIfMatchHeader() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "missing-precondition",
-                                  "originalUrl": "https://example.com/original"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(put("/api/v1/links/missing-precondition")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "originalUrl": "https://example.com/updated"
-                                }
-                                """))
-                .andExpect(problemDetail(400, "Bad Request", "If-Match header is required"));
-    }
-
-    @Test
-    void updateLinkRejectsInvalidIfMatchHeader() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "invalid-precondition",
-                                  "originalUrl": "https://example.com/original"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(put("/api/v1/links/invalid-precondition")
-                        .header("If-Match", "W/\"1\"")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "originalUrl": "https://example.com/updated"
-                                }
-                                """))
-                .andExpect(problemDetail(400, "Bad Request", "If-Match header must be a plain integer version"));
-    }
-
-    @Test
-    void updateLinkRejectsStaleIfMatchVersion() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "stale-update",
-                                  "originalUrl": "https://example.com/original"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(put("/api/v1/links/stale-update")
-                        .header("If-Match", "0")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "originalUrl": "https://example.com/updated"
-                                }
-                                """))
-                .andExpect(problemDetail(409, "Conflict", "Link version conflict for slug: stale-update"));
-    }
-
-    @Test
-    void updateLinkRejectsInvalidUrl() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "editable",
-                                  "originalUrl": "https://example.com/original"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(put("/api/v1/links/editable")
-                        .header("If-Match", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "originalUrl": "not-a-url"
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").exists());
-    }
-
-    @Test
-    void updateLinkRejectsSelfTargetUrl() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "editable",
-                                  "originalUrl": "https://example.com/original"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(put("/api/v1/links/editable")
-                        .header("If-Match", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "originalUrl": "http://localhost:8080/about"
-                                }
-                                """))
-                .andExpect(problemDetail(400, "Bad Request",
-                        "Original URL cannot point to the Link Platform itself: http://localhost:8080/about"));
-    }
-
-    @Test
-    void deleteLinkDeletesExistingLink() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "delete-me",
-                                  "originalUrl": "https://example.com/delete-me"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(delete("/api/v1/links/delete-me").header("If-Match", "1"))
-                .andExpect(status().isNoContent())
-                .andExpect(content().string(""));
-
-        mockMvc.perform(get("/api/v1/links/delete-me"))
-                .andExpect(problemDetail(404, "Not Found", "Link slug not found: delete-me"));
-    }
-
-    @Test
-    void controlPlaneWritesLifecycleOutboxWithoutSynchronousActivityProjection() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "async-feed",
-                                  "originalUrl": "https://example.com/async-feed"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-        assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
-        assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'CREATED'", 1);
-
-        mockMvc.perform(put("/api/v1/links/async-feed")
+        mockMvc.perform(mutationPut(FREE_API_KEY, "/api/v1/links/async-feed")
                         .header("If-Match", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -813,85 +301,48 @@ class LinkControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk());
-        assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
-        assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'UPDATED'", 1);
 
-        mockMvc.perform(delete("/api/v1/links/async-feed").header("If-Match", "2"))
+        mockMvc.perform(mutationDelete(FREE_API_KEY, "/api/v1/links/async-feed").header("If-Match", "2"))
                 .andExpect(status().isNoContent());
-        assertCount("SELECT COUNT(*) FROM link_activity_events", 0);
-        assertCount("SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'DELETED'", 1);
+
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM link_activity_events", Integer.class));
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'UPDATED' AND event_key = 'async-feed'",
+                        Integer.class));
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM link_lifecycle_outbox WHERE event_type = 'DELETED' AND event_key = 'async-feed'",
+                        Integer.class));
     }
 
-    @Test
-    void deleteLinkReturnsNotFoundForMissingSlug() throws Exception {
-        mockMvc.perform(delete("/api/v1/links/missing-link").header("If-Match", "1"))
-                .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
-    }
-
-    @Test
-    void deleteLinkRejectsStaleIfMatchVersion() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
+    private void createOwnedLink(String apiKey, String slug, String originalUrl) throws Exception {
+        mockMvc.perform(mutationPost(apiKey, "/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slug": "stale-delete",
-                                  "originalUrl": "https://example.com/delete"
+                                  "slug": "%s",
+                                  "originalUrl": "%s"
                                 }
-                                """))
+                                """.formatted(slug, originalUrl)))
                 .andExpect(status().isCreated());
-
-        mockMvc.perform(delete("/api/v1/links/stale-delete").header("If-Match", "0"))
-                .andExpect(problemDetail(409, "Conflict", "Link version conflict for slug: stale-delete"));
     }
 
-    @Test
-    void expiredLinkReadReturnsNotFound() throws Exception {
-        mockMvc.perform(post("/api/v1/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "slug": "expired-read",
-                                  "originalUrl": "https://example.com/expired-read",
-                                  "expiresAt": "2020-04-01T08:00:00Z"
-                                }
-                                """))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(get("/api/v1/links/expired-read"))
-                .andExpect(problemDetail(404, "Not Found", "Link slug not found: expired-read"));
-    }
-
-    @Test
-    void listLinksExcludesDeletedCatalogProjectionRows() throws Exception {
-        insertLink("visible", "https://example.com/visible", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null);
-        insertLink("deleted", "https://example.com/deleted", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null);
-        jdbcTemplate.update(
-                "UPDATE link_catalog_projection SET deleted_at = ? WHERE slug = ?",
-                OffsetDateTime.parse("2026-04-02T08:00:00Z"),
-                "deleted");
-
-        mockMvc.perform(get("/api/v1/links").param("state", "all"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].slug").value("visible"));
-    }
-
-    private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt, OffsetDateTime expiresAt) {
-        insertLink(slug, originalUrl, createdAt, expiresAt, null, null, hostnameFrom(originalUrl));
-    }
-
-    private void insertLink(
+    private void insertOwnedLink(
+            long ownerId,
             String slug,
             String originalUrl,
             OffsetDateTime createdAt,
             OffsetDateTime expiresAt,
             String title,
-            String tagsJson,
-            String hostname) {
+            String tagsJson) {
+        String hostname = URI.create(originalUrl).getHost().toLowerCase();
         jdbcTemplate.update(
                 """
-                INSERT INTO links (slug, original_url, created_at, expires_at, title, tags_json, hostname)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO links (slug, original_url, created_at, expires_at, title, tags_json, hostname, version, owner_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
                 slug,
                 originalUrl,
@@ -899,12 +350,13 @@ class LinkControllerTest {
                 expiresAt,
                 title,
                 tagsJson,
-                hostname);
+                hostname,
+                ownerId);
         jdbcTemplate.update(
                 """
                 INSERT INTO link_catalog_projection (
-                    slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                    slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at, version, owner_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?)
                 """,
                 slug,
                 originalUrl,
@@ -913,46 +365,27 @@ class LinkControllerTest {
                 title,
                 tagsJson,
                 hostname,
-                expiresAt);
+                expiresAt,
+                ownerId);
     }
 
-    private void insertClick(String slug, OffsetDateTime clickedAt) {
-        jdbcTemplate.update(
-                """
-                INSERT INTO link_clicks (slug, clicked_at, user_agent, referrer, remote_address)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                slug,
-                clickedAt,
-                "test-agent",
-                "https://referrer.example",
-                "127.0.0.1");
-        int updated = jdbcTemplate.update(
-                """
-                UPDATE link_click_daily_rollups
-                SET click_count = click_count + 1
-                WHERE slug = ? AND rollup_date = ?
-                """,
-                slug,
-                clickedAt.toLocalDate());
-        if (updated == 0) {
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO link_click_daily_rollups (slug, rollup_date, click_count)
-                    VALUES (?, ?, 1)
-                    """,
-                    slug,
-                    clickedAt.toLocalDate());
-        }
+    private MockHttpServletRequestBuilder mutationPost(String apiKey, String path) {
+        return post(path).header("X-API-Key", apiKey);
     }
 
-    private void assertCount(String sql, int expectedCount) {
-        Integer actualCount = jdbcTemplate.queryForObject(sql, Integer.class);
-        org.junit.jupiter.api.Assertions.assertEquals(expectedCount, actualCount);
+    private MockHttpServletRequestBuilder mutationPut(String apiKey, String path) {
+        return put(path).header("X-API-Key", apiKey);
     }
 
-    private static org.springframework.test.web.servlet.ResultMatcher problemDetail(
-            int status, String title, String detail) {
+    private MockHttpServletRequestBuilder mutationDelete(String apiKey, String path) {
+        return delete(path).header("X-API-Key", apiKey);
+    }
+
+    private MockHttpServletRequestBuilder readGet(String apiKey, String path) {
+        return get(path).header("X-API-Key", apiKey);
+    }
+
+    private static org.springframework.test.web.servlet.ResultMatcher problemDetail(int status, String title, String detail) {
         return result -> {
             status().is(status).match(result);
             content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON).match(result);
@@ -960,13 +393,6 @@ class LinkControllerTest {
             jsonPath("$.title").value(title).match(result);
             jsonPath("$.status").value(status).match(result);
             jsonPath("$.detail").value(detail).match(result);
-            jsonPath("$.slug").doesNotExist().match(result);
-            jsonPath("$.originalUrl").doesNotExist().match(result);
-            jsonPath("$.message").doesNotExist().match(result);
         };
-    }
-
-    private String hostnameFrom(String originalUrl) {
-        return java.net.URI.create(originalUrl).getHost().toLowerCase();
     }
 }

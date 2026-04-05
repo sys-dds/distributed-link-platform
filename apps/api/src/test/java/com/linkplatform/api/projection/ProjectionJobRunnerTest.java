@@ -21,6 +21,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class ProjectionJobRunnerTest {
 
+    private static final String FREE_API_KEY = "free-owner-api-key";
+
     @Autowired
     private ProjectionJobService projectionJobService;
 
@@ -38,9 +40,9 @@ class ProjectionJobRunnerTest {
 
     @Test
     void activityFeedReplayProcessesInChunksAndCompletesIdempotently() throws Exception {
-        insertLifecycleHistory("event-1", "CREATED", "alpha", "https://example.com/alpha", "Alpha", "[\"docs\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
-        insertLifecycleHistory("event-2", "UPDATED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, 2L, OffsetDateTime.parse("2026-04-04T09:05:00Z"));
-        insertLifecycleHistory("event-3", "DELETED", "gone", "https://example.com/gone", "Gone", "[\"archived\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:10:00Z"));
+        insertLifecycleHistory(1L, "event-1", "CREATED", "alpha", "https://example.com/alpha", "Alpha", "[\"docs\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
+        insertLifecycleHistory(1L, "event-2", "UPDATED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, 2L, OffsetDateTime.parse("2026-04-04T09:05:00Z"));
+        insertLifecycleHistory(1L, "event-3", "DELETED", "gone", "https://example.com/gone", "Gone", "[\"archived\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:10:00Z"));
 
         ProjectionJob firstJob = projectionJobService.createJob(ProjectionJobType.ACTIVITY_FEED_REPLAY);
 
@@ -100,17 +102,19 @@ class ProjectionJobRunnerTest {
 
     @Test
     void linkCatalogRebuildReplaysLifecycleHistoryIntoControlPlaneProjection() throws Exception {
-        insertLifecycleHistory("event-1", "CREATED", "launch-page", "https://docs.example.com/launch", "Launch", "[\"docs\"]", "docs.example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
-        insertLifecycleHistory("event-2", "UPDATED", "launch-page", "https://docs.example.com/launch-v2", "Launch v2", "[\"docs\",\"product\"]", "docs.example.com", OffsetDateTime.parse("2030-04-01T08:00:00Z"), 2L, OffsetDateTime.parse("2026-04-04T09:05:00Z"));
-        insertLifecycleHistory("event-3", "CREATED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:06:00Z"));
-        insertLifecycleHistory("event-4", "DELETED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, 2L, OffsetDateTime.parse("2026-04-04T09:07:00Z"));
+        insertLifecycleHistory(1L, "event-1", "CREATED", "launch-page", "https://docs.example.com/launch", "Launch", "[\"docs\"]", "docs.example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
+        insertLifecycleHistory(1L, "event-2", "UPDATED", "launch-page", "https://docs.example.com/launch-v2", "Launch v2", "[\"docs\",\"product\"]", "docs.example.com", OffsetDateTime.parse("2030-04-01T08:00:00Z"), 2L, OffsetDateTime.parse("2026-04-04T09:05:00Z"));
+        insertLifecycleHistory(2L, "event-3", "CREATED", "other-owner", "https://example.com/other", "Other", "[\"other\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:06:00Z"));
+        insertLifecycleHistory(1L, "event-4", "CREATED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:07:00Z"));
+        insertLifecycleHistory(1L, "event-5", "DELETED", "delete-me", "https://example.com/delete", "Delete", "[\"archived\"]", "example.com", null, 2L, OffsetDateTime.parse("2026-04-04T09:08:00Z"));
 
         ProjectionJob job = projectionJobService.createJob(ProjectionJobType.LINK_CATALOG_REBUILD);
         projectionJobRunner.runPendingJobs();
         projectionJobRunner.runPendingJobs();
+        projectionJobRunner.runPendingJobs();
 
-        assertJob(job.id(), ProjectionJobStatus.COMPLETED, 4L, 4L);
-        mockMvc.perform(get("/api/v1/links").param("state", "all"))
+        assertJob(job.id(), ProjectionJobStatus.COMPLETED, 5L, 5L);
+        mockMvc.perform(get("/api/v1/links").param("state", "all").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].slug").value("launch-page"))
@@ -118,6 +122,20 @@ class ProjectionJobRunnerTest {
                 .andExpect(jsonPath("$[0].title").value("Launch v2"))
                 .andExpect(jsonPath("$[0].version").value(2))
                 .andExpect(jsonPath("$[0].tags[1]").value("product"));
+    }
+
+    @Test
+    void linkCatalogRebuildPreservesOwnerScopedProjectionResults() throws Exception {
+        insertLifecycleHistory(1L, "event-a", "CREATED", "free-only", "https://example.com/free", "Free", "[\"docs\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T10:00:00Z"));
+        insertLifecycleHistory(2L, "event-b", "CREATED", "pro-only", "https://example.com/pro", "Pro", "[\"product\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T10:01:00Z"));
+
+        ProjectionJob job = projectionJobService.createJob(ProjectionJobType.LINK_CATALOG_REBUILD);
+        projectionJobRunner.runPendingJobs();
+
+        mockMvc.perform(get("/api/v1/links").header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("free-only"));
     }
 
     private void assertJob(long jobId, ProjectionJobStatus status, long processedCount, Long checkpointId) {
@@ -147,6 +165,7 @@ class ProjectionJobRunnerTest {
     }
 
     private void insertLifecycleHistory(
+            long ownerId,
             String eventId,
             String eventType,
             String slug,
@@ -166,10 +185,11 @@ class ProjectionJobRunnerTest {
                 eventType,
                 slug,
                 """
-                {"eventId":"%s","eventType":"%s","slug":"%s","originalUrl":"%s","title":%s,"tags":%s,"hostname":"%s","expiresAt":%s,"version":%d,"occurredAt":"%s"}
+                {"eventId":"%s","eventType":"%s","ownerId":%d,"slug":"%s","originalUrl":"%s","title":%s,"tags":%s,"hostname":"%s","expiresAt":%s,"version":%d,"occurredAt":"%s"}
                 """.formatted(
                         eventId,
                         eventType,
+                        ownerId,
                         slug,
                         originalUrl,
                         title == null ? "null" : "\"" + title + "\"",

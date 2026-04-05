@@ -7,7 +7,14 @@ import java.util.Optional;
 
 public interface LinkStore {
 
-    boolean save(Link link, OffsetDateTime expiresAt, String title, List<String> tags, String hostname, long version);
+    boolean save(
+            Link link,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags,
+            String hostname,
+            long version,
+            long ownerId);
 
     boolean update(
             String slug,
@@ -17,9 +24,12 @@ public interface LinkStore {
             List<String> tags,
             String hostname,
             long expectedVersion,
-            long nextVersion);
+            long nextVersion,
+            long ownerId);
 
-    boolean deleteBySlug(String slug, long expectedVersion);
+    boolean deleteBySlug(String slug, long expectedVersion, long ownerId);
+
+    long countActiveLinksByOwner(long ownerId);
 
     boolean recordClickIfAbsent(LinkClick linkClick);
 
@@ -39,13 +49,15 @@ public interface LinkStore {
 
     Optional<Link> findBySlug(String slug, OffsetDateTime now);
 
-    Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now);
+    Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now, long ownerId);
 
     Optional<LinkDetails> findStoredDetailsBySlug(String slug);
 
-    List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state);
+    Optional<LinkDetails> findStoredDetailsBySlug(String slug, long ownerId);
 
-    List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query);
+    List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long ownerId);
+
+    List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId);
 
     List<LinkActivityEvent> findRecentActivity(int limit);
 

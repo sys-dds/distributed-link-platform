@@ -14,6 +14,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class HttpRequestLoggingFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(HttpRequestLoggingFilter.class);
+    private static final String API_KEY_HEADER = "X-API-Key";
 
     @Override
     protected void doFilterInternal(
@@ -27,11 +28,16 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         } finally {
             long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
             log.info(
-                    "http_request method={} path={} status={} duration_ms={}",
+                    "http_request method={} path={} status={} duration_ms={} api_key={}",
                     request.getMethod(),
                     request.getRequestURI(),
                     response.getStatus(),
-                    durationMillis);
+                    durationMillis,
+                    redactApiKey(request.getHeader(API_KEY_HEADER)));
         }
+    }
+
+    private String redactApiKey(String apiKeyHeader) {
+        return apiKeyHeader == null || apiKeyHeader.isBlank() ? "absent" : "[REDACTED]";
     }
 }

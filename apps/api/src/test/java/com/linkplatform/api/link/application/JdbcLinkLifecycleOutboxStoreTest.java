@@ -33,6 +33,7 @@ class JdbcLinkLifecycleOutboxStoreTest {
         store.saveLinkLifecycleEvent(new LinkLifecycleEvent(
                 "event-1",
                 LinkLifecycleEventType.CREATED,
+                1L,
                 "launch-page",
                 "https://example.com/launch",
                 "Launch",
@@ -46,6 +47,7 @@ class JdbcLinkLifecycleOutboxStoreTest {
 
         assertEquals("launch-page", stored.eventKey());
         assertEquals("CREATED", stored.eventType());
+        org.junit.jupiter.api.Assertions.assertTrue(stored.payloadJson().contains("\"ownerId\":1"));
         org.junit.jupiter.api.Assertions.assertTrue(stored.payloadJson().contains("\"version\":1"));
         assertEquals(1.0, meterRegistry.get("link.lifecycle.outbox.unpublished").gauge().value());
         assertEquals(1.0, meterRegistry.get("link.lifecycle.outbox.eligible").gauge().value());
@@ -56,6 +58,7 @@ class JdbcLinkLifecycleOutboxStoreTest {
         store.saveLinkLifecycleEvent(new LinkLifecycleEvent(
                 "event-2",
                 LinkLifecycleEventType.UPDATED,
+                1L,
                 "launch-page",
                 "https://example.com/launch",
                 "Launch",
@@ -93,6 +96,7 @@ class JdbcLinkLifecycleOutboxStoreTest {
         store.saveLinkLifecycleEvent(new LinkLifecycleEvent(
                 "event-3",
                 LinkLifecycleEventType.DELETED,
+                1L,
                 "launch-page",
                 "https://example.com/launch",
                 "Launch",

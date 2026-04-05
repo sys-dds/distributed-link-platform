@@ -24,12 +24,15 @@ import org.springframework.test.web.servlet.MockMvc;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class HttpRequestLoggingFilterTest {
 
+    private static final String FREE_API_KEY = "free-owner-api-key";
+
     @Autowired
     private MockMvc mockMvc;
 
     @Test
     void createLinkLogsStructuredRequestLine(CapturedOutput output) throws Exception {
         mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", FREE_API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -40,11 +43,14 @@ class HttpRequestLoggingFilterTest {
                 .andExpect(status().isCreated());
 
         assertThat(output.getOut()).contains("http_request method=POST path=/api/v1/links status=201 duration_ms=");
+        assertThat(output.getOut()).contains("api_key=[REDACTED]");
+        assertThat(output.getOut()).doesNotContain(FREE_API_KEY);
     }
 
     @Test
     void redirectLogsStructuredRequestLine(CapturedOutput output) throws Exception {
         mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", FREE_API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
