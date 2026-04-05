@@ -2,14 +2,34 @@
 
 - Read `AGENTS.md` before any implementation work.
 - Start with the smallest high-signal inspection set:
-    - controller / API entrypoint
-    - application service
-    - store / repository
-    - migrations
-    - focused tests for the ticket slice
+  - controller / API entrypoint
+  - application service
+  - store / repository
+  - migrations
+  - focused tests for the ticket slice
 - Do not read the whole repo unless the first pass proves it is necessary.
-- Do not broaden the ticket on your own. Finish the requested slice cleanly.
+- Do not broaden the ticket casually or for nice-to-have work.
+- If the repo is missing prerequisite foundation required to deliver the requested ticket correctly, it is allowed to broaden scope **only by the smallest coherent amount needed** to complete the intended end-state.
+- When broadening scope for missing prerequisites:
+  - keep the implementation on the same architectural theme
+  - do not branch into unrelated features
+  - state clearly what prerequisite was missing
+  - include that prerequisite work in the same delivery
+- Do not stop at “blocked by missing prior ticket state” unless the repository is fundamentally unusable or the missing work would require a clearly separate major architectural slice.
 - Do not claim a behavior changed unless you inspected the code path that actually enforces it.
+
+## Dependency recovery rule
+
+- If the current workspace is behind the expected ticket sequence, do not stop by default.
+- Inspect the actual repo state and compare it to the requested ticket.
+- If the missing gap is prerequisite groundwork for the same requested outcome, backfill it and continue in one coherent slice.
+- Only report `blocked` when:
+  - the repo is fundamentally inconsistent or unusable, or
+  - the missing prerequisite would require a separate major architectural slice that would make the requested ticket misleading.
+- When recovery broadening happens, state exactly:
+  - what was missing
+  - what prerequisite was backfilled
+  - what requested outcome was completed
 
 ## Build and cache discipline
 
@@ -46,9 +66,9 @@
 ## Recovery steps for local verification issues
 
 - If Maven/Java verification fails because of Windows file-lock or cache access issues, try in this order:
-    1. fresh module build output cleanup
-    2. forked compiler
-    3. rerun the same targeted command
+  1. fresh module build output cleanup
+  2. forked compiler
+  3. rerun the same targeted command
 - Do not switch repository layout, invent new cache locations, or do broad cleanup unless the blocker specifically requires it.
 
 ## Ticket completion contract
