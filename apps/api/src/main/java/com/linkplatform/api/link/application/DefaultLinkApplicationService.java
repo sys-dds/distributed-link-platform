@@ -204,6 +204,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Link resolveLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
         return linkReadCache.getPublicRedirect(linkSlug.value())
@@ -228,6 +229,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public LinkDetails getLink(AuthenticatedOwner owner, String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
         return linkReadCache.getOwnerLinkDetails(owner.id(), linkSlug.value())
@@ -240,6 +242,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<LinkDetails> listRecentLinks(AuthenticatedOwner owner, int limit, String query, LinkLifecycleState state) {
         return linkReadCache.getOwnerRecentLinks(owner.id(), limit, query, state)
                 .orElseGet(() -> {
@@ -250,6 +253,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<LinkSuggestion> suggestLinks(AuthenticatedOwner owner, String query, int limit) {
         if (query == null || query.isBlank()) {
             return List.of();
@@ -263,6 +267,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public LinkDiscoveryPage searchLinks(AuthenticatedOwner owner, LinkDiscoveryQuery query) {
         return linkReadCache.getOwnerDiscoveryPage(owner.id(), query)
                 .orElseGet(() -> {
@@ -273,11 +278,13 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public long countActiveLinks(AuthenticatedOwner owner) {
         return linkStore.countActiveLinksByOwner(owner.id());
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit) {
         return linkReadCache.getOwnerRecentActivity(owner.id(), limit)
                 .orElseGet(() -> {
@@ -288,6 +295,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public LinkTrafficSummary getTrafficSummary(AuthenticatedOwner owner, String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
@@ -317,6 +325,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<TopLinkTraffic> getTopLinks(AuthenticatedOwner owner, LinkTrafficWindow window) {
         return linkReadCache.getOwnerTopLinks(owner.id(), window)
                 .orElseGet(() -> {
@@ -327,6 +336,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<TrendingLink> getTrendingLinks(AuthenticatedOwner owner, LinkTrafficWindow window, int limit) {
         return linkReadCache.getOwnerTrendingLinks(owner.id(), window, limit)
                 .orElseGet(() -> {

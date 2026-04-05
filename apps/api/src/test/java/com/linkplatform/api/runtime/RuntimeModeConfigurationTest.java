@@ -3,16 +3,27 @@ package com.linkplatform.api.runtime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.linkplatform.api.link.api.AnalyticsPipelineController;
+import com.linkplatform.api.link.api.LifecyclePipelineController;
+import com.linkplatform.api.link.api.LinkAnalyticsController;
+import com.linkplatform.api.link.api.LinkController;
+import com.linkplatform.api.link.api.LinkRedirectController;
 import com.linkplatform.api.link.application.AnalyticsOutboxRelay;
 import com.linkplatform.api.link.application.AnalyticsOutboxStore;
+import com.linkplatform.api.link.application.LinkApplicationService;
+import com.linkplatform.api.link.application.LinkReadCache;
 import com.linkplatform.api.link.application.LinkLifecycleConsumer;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxRelay;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
 import com.linkplatform.api.link.application.LinkStore;
 import com.linkplatform.api.link.application.RedirectClickAnalyticsConsumer;
+import com.linkplatform.api.owner.api.MeController;
+import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.projection.ProjectionJobRunner;
+import com.linkplatform.api.projection.ProjectionJobsController;
 import com.linkplatform.api.projection.ProjectionJobService;
 import com.linkplatform.api.projection.ProjectionJobStore;
+import com.linkplatform.api.system.api.SystemPingController;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -56,6 +67,14 @@ class RuntimeModeConfigurationTest {
                     "link-platform.projection-jobs.chunk-size=100")
             .withUserConfiguration(
                     TestConfiguration.class,
+                    LinkRedirectController.class,
+                    LinkController.class,
+                    LinkAnalyticsController.class,
+                    MeController.class,
+                    SystemPingController.class,
+                    AnalyticsPipelineController.class,
+                    LifecyclePipelineController.class,
+                    ProjectionJobsController.class,
                     AnalyticsOutboxRelay.class,
                     RedirectClickAnalyticsConsumer.class,
                     LinkLifecycleOutboxRelay.class,
@@ -66,6 +85,14 @@ class RuntimeModeConfigurationTest {
     @Test
     void defaultCombinedModeKeepsAsyncComponentsEnabled() {
         contextRunner.run(context -> {
+            assertThat(context).hasSingleBean(LinkRedirectController.class);
+            assertThat(context).hasSingleBean(LinkController.class);
+            assertThat(context).hasSingleBean(LinkAnalyticsController.class);
+            assertThat(context).hasSingleBean(MeController.class);
+            assertThat(context).hasSingleBean(SystemPingController.class);
+            assertThat(context).hasSingleBean(AnalyticsPipelineController.class);
+            assertThat(context).hasSingleBean(LifecyclePipelineController.class);
+            assertThat(context).hasSingleBean(ProjectionJobsController.class);
             assertThat(context).hasSingleBean(AnalyticsOutboxRelay.class);
             assertThat(context).hasSingleBean(RedirectClickAnalyticsConsumer.class);
             assertThat(context).hasSingleBean(LinkLifecycleOutboxRelay.class);
@@ -73,15 +100,23 @@ class RuntimeModeConfigurationTest {
             assertThat(context).hasSingleBean(ProjectionJobRunner.class);
 
             TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
-            context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
+            context.getBean("runtimeModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
             assertThat(factory.getPort()).isEqualTo(8080);
         });
     }
 
     @Test
-    void apiModeDisablesAsyncComponents() {
-        contextRunner.withPropertyValues("link-platform.runtime.mode=api")
+    void controlPlaneApiModeKeepsOwnerSurfaceAndDisablesWorkerComponents() {
+        contextRunner.withPropertyValues("link-platform.runtime.mode=control-plane-api")
                 .run(context -> {
+                    assertThat(context).doesNotHaveBean(LinkRedirectController.class);
+                    assertThat(context).hasSingleBean(LinkController.class);
+                    assertThat(context).hasSingleBean(LinkAnalyticsController.class);
+                    assertThat(context).hasSingleBean(MeController.class);
+                    assertThat(context).hasSingleBean(SystemPingController.class);
+                    assertThat(context).hasSingleBean(AnalyticsPipelineController.class);
+                    assertThat(context).hasSingleBean(LifecyclePipelineController.class);
+                    assertThat(context).hasSingleBean(ProjectionJobsController.class);
                     assertThat(context).doesNotHaveBean(AnalyticsOutboxRelay.class);
                     assertThat(context).doesNotHaveBean(RedirectClickAnalyticsConsumer.class);
                     assertThat(context).doesNotHaveBean(LinkLifecycleOutboxRelay.class);
@@ -89,7 +124,31 @@ class RuntimeModeConfigurationTest {
                     assertThat(context).doesNotHaveBean(ProjectionJobRunner.class);
 
                     TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
-                    context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
+                    context.getBean("runtimeModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
+                    assertThat(factory.getPort()).isEqualTo(8080);
+                });
+    }
+
+    @Test
+    void redirectModeServesOnlyPublicRedirectSurface() {
+        contextRunner.withPropertyValues("link-platform.runtime.mode=redirect")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(LinkRedirectController.class);
+                    assertThat(context).doesNotHaveBean(LinkController.class);
+                    assertThat(context).doesNotHaveBean(LinkAnalyticsController.class);
+                    assertThat(context).doesNotHaveBean(MeController.class);
+                    assertThat(context).doesNotHaveBean(SystemPingController.class);
+                    assertThat(context).doesNotHaveBean(AnalyticsPipelineController.class);
+                    assertThat(context).doesNotHaveBean(LifecyclePipelineController.class);
+                    assertThat(context).doesNotHaveBean(ProjectionJobsController.class);
+                    assertThat(context).doesNotHaveBean(AnalyticsOutboxRelay.class);
+                    assertThat(context).doesNotHaveBean(RedirectClickAnalyticsConsumer.class);
+                    assertThat(context).doesNotHaveBean(LinkLifecycleOutboxRelay.class);
+                    assertThat(context).doesNotHaveBean(LinkLifecycleConsumer.class);
+                    assertThat(context).doesNotHaveBean(ProjectionJobRunner.class);
+
+                    TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
+                    context.getBean("runtimeModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
                     assertThat(factory.getPort()).isEqualTo(8080);
                 });
     }
@@ -98,6 +157,14 @@ class RuntimeModeConfigurationTest {
     void workerModeEnablesAsyncComponentsAndDisablesPublicConnector() {
         contextRunner.withPropertyValues("link-platform.runtime.mode=worker")
                 .run(context -> {
+                    assertThat(context).doesNotHaveBean(LinkRedirectController.class);
+                    assertThat(context).doesNotHaveBean(LinkController.class);
+                    assertThat(context).doesNotHaveBean(LinkAnalyticsController.class);
+                    assertThat(context).doesNotHaveBean(MeController.class);
+                    assertThat(context).doesNotHaveBean(SystemPingController.class);
+                    assertThat(context).doesNotHaveBean(AnalyticsPipelineController.class);
+                    assertThat(context).doesNotHaveBean(LifecyclePipelineController.class);
+                    assertThat(context).doesNotHaveBean(ProjectionJobsController.class);
                     assertThat(context).hasSingleBean(AnalyticsOutboxRelay.class);
                     assertThat(context).hasSingleBean(RedirectClickAnalyticsConsumer.class);
                     assertThat(context).hasSingleBean(LinkLifecycleOutboxRelay.class);
@@ -105,7 +172,7 @@ class RuntimeModeConfigurationTest {
                     assertThat(context).hasSingleBean(ProjectionJobRunner.class);
 
                     TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
-                    context.getBean("workerModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
+                    context.getBean("runtimeModeWebServerCustomizer", WebServerFactoryCustomizer.class).customize(factory);
                     assertThat(factory.getPort()).isEqualTo(-1);
                 });
     }
@@ -248,6 +315,21 @@ class RuntimeModeConfigurationTest {
         @Bean
         LinkStore linkStore() {
             return Mockito.mock(LinkStore.class);
+        }
+
+        @Bean
+        LinkReadCache linkReadCache() {
+            return Mockito.mock(LinkReadCache.class);
+        }
+
+        @Bean
+        LinkApplicationService linkApplicationService() {
+            return Mockito.mock(LinkApplicationService.class);
+        }
+
+        @Bean
+        OwnerAccessService ownerAccessService() {
+            return Mockito.mock(OwnerAccessService.class);
         }
 
         @Bean

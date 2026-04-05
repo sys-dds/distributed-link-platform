@@ -1,5 +1,7 @@
 package com.linkplatform.api.projection;
 
+import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
+import com.linkplatform.api.runtime.RuntimeMode;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +15,7 @@ import org.springframework.http.HttpStatus;
 
 @RestController
 @RequestMapping("/api/v1/projection-jobs")
+@ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.CONTROL_PLANE_API})
 public class ProjectionJobsController {
 
     private static final int DEFAULT_LIMIT = 20;

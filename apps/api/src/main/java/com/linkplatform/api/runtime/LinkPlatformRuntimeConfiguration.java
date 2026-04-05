@@ -11,10 +11,10 @@ import org.springframework.context.annotation.Configuration;
 public class LinkPlatformRuntimeConfiguration {
 
     @Bean
-    WebServerFactoryCustomizer<ConfigurableServletWebServerFactory> workerModeWebServerCustomizer(
+    WebServerFactoryCustomizer<ConfigurableServletWebServerFactory> runtimeModeWebServerCustomizer(
             LinkPlatformRuntimeProperties runtimeProperties) {
         return factory -> {
-            if (runtimeProperties.getMode() == RuntimeMode.WORKER) {
+            if (!runtimeProperties.getMode().webServerEnabled()) {
                 factory.setPort(-1);
             }
         };

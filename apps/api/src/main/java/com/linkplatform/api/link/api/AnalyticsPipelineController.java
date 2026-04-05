@@ -2,6 +2,8 @@ package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.AnalyticsOutboxRecord;
 import com.linkplatform.api.link.application.AnalyticsOutboxStore;
+import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
+import com.linkplatform.api.runtime.RuntimeMode;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -17,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/v1/analytics/pipeline")
+@ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.CONTROL_PLANE_API})
 public class AnalyticsPipelineController {
 
     private static final int DEFAULT_LIMIT = 20;

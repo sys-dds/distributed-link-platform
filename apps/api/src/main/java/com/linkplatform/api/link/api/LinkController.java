@@ -13,6 +13,8 @@ import com.linkplatform.api.link.application.LinkMutationResult;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
 import com.linkplatform.api.link.application.LinkSuggestion;
 import com.linkplatform.api.owner.application.OwnerAccessService;
+import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
+import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Locale;
@@ -31,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/links")
+@ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.CONTROL_PLANE_API})
 public class LinkController {
 
     private static final int DEFAULT_LIMIT = 20;

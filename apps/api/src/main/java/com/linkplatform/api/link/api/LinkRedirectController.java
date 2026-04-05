@@ -2,6 +2,8 @@ package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.LinkApplicationService;
 import com.linkplatform.api.link.domain.Link;
+import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
+import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -11,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.REDIRECT})
 public class LinkRedirectController {
 
     private final LinkApplicationService linkApplicationService;
