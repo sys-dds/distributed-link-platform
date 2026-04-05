@@ -30,6 +30,8 @@ public interface LinkApplicationService {
 
     List<LinkSuggestion> suggestLinks(AuthenticatedOwner owner, String query, int limit);
 
+    LinkDiscoveryPage searchLinks(AuthenticatedOwner owner, LinkDiscoveryQuery query);
+
     long countActiveLinks(AuthenticatedOwner owner);
 
     List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit);

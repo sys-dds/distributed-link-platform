@@ -147,6 +147,30 @@ class ProjectionJobRunnerTest {
                 .andExpect(jsonPath("$[0].slug").value("free-only"));
     }
 
+    @Test
+    void linkDiscoveryRebuildReconstructsOwnerScopedDiscoveryProjection() throws Exception {
+        insertLifecycleHistory(1L, "event-d1", "CREATED", "docs-link", "https://docs.example.com/link", "Docs", "[\"docs\"]", "docs.example.com", null, 1L, OffsetDateTime.parse("2026-04-04T11:00:00Z"));
+        insertLifecycleHistory(1L, "event-d2", "UPDATED", "docs-link", "https://docs.example.com/link-v2", "Docs v2", "[\"docs\",\"beta\"]", "docs.example.com", null, 2L, OffsetDateTime.parse("2026-04-04T12:00:00Z"));
+        insertLifecycleHistory(2L, "event-d3", "CREATED", "other-owner", "https://app.example.com/other", "Other", "[\"product\"]", "app.example.com", null, 1L, OffsetDateTime.parse("2026-04-04T12:05:00Z"));
+
+        ProjectionJob job = projectionJobService.createJob(ProjectionJobType.LINK_DISCOVERY_REBUILD);
+        projectionJobRunner.runPendingJobs();
+        projectionJobRunner.runPendingJobs();
+
+        assertJob(job.id(), ProjectionJobStatus.COMPLETED, 3L, 3L);
+        mockMvc.perform(get("/api/v1/links/discovery")
+                        .param("hostname", "docs.example.com")
+                        .param("tag", "docs")
+                        .header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].slug").value("docs-link"))
+                .andExpect(jsonPath("$.items[0].originalUrl").value("https://docs.example.com/link-v2"))
+                .andExpect(jsonPath("$.items[0].version").value(2))
+                .andExpect(jsonPath("$.items[0].tags[1]").value("beta"));
+        verify(linkReadCache, atLeastOnce()).invalidateOwnerControlPlane(1L);
+    }
+
     private void assertJob(long jobId, ProjectionJobStatus status, long processedCount, Long checkpointId) {
         ProjectionJob job = jdbcTemplate.queryForObject(
                 """

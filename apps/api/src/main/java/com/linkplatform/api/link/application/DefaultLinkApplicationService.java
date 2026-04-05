@@ -263,6 +263,16 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
+    public LinkDiscoveryPage searchLinks(AuthenticatedOwner owner, LinkDiscoveryQuery query) {
+        return linkReadCache.getOwnerDiscoveryPage(owner.id(), query)
+                .orElseGet(() -> {
+                    LinkDiscoveryPage discoveryPage = linkStore.searchDiscovery(now(), owner.id(), query);
+                    linkReadCache.putOwnerDiscoveryPage(owner.id(), query, discoveryPage);
+                    return discoveryPage;
+                });
+    }
+
+    @Override
     public long countActiveLinks(AuthenticatedOwner owner) {
         return linkStore.countActiveLinksByOwner(owner.id());
     }

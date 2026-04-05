@@ -41,7 +41,11 @@ public interface LinkStore {
 
     void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent);
 
+    void projectDiscoveryEvent(LinkLifecycleEvent linkLifecycleEvent);
+
     void resetCatalogProjection();
+
+    void resetDiscoveryProjection();
 
     List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit);
 
@@ -60,6 +64,8 @@ public interface LinkStore {
     List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long ownerId);
 
     List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId);
+
+    LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long ownerId, LinkDiscoveryQuery query);
 
     List<LinkActivityEvent> findRecentActivity(int limit, long ownerId);
 

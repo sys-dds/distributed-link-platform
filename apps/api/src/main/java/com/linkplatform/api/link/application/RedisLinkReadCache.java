@@ -23,6 +23,7 @@ public class RedisLinkReadCache implements LinkReadCache {
     private static final Logger log = LoggerFactory.getLogger(RedisLinkReadCache.class);
     private static final TypeReference<List<LinkDetails>> LINK_DETAILS_LIST = new TypeReference<>() {};
     private static final TypeReference<List<LinkSuggestion>> LINK_SUGGESTION_LIST = new TypeReference<>() {};
+    private static final TypeReference<LinkDiscoveryPage> DISCOVERY_PAGE = new TypeReference<>() {};
     private static final TypeReference<List<LinkActivityEvent>> ACTIVITY_LIST = new TypeReference<>() {};
     private static final TypeReference<List<TopLinkTraffic>> TOP_LINK_LIST = new TypeReference<>() {};
     private static final TypeReference<List<TrendingLink>> TRENDING_LIST = new TypeReference<>() {};
@@ -92,6 +93,16 @@ public class RedisLinkReadCache implements LinkReadCache {
     @Override
     public void putOwnerSuggestions(long ownerId, String query, int limit, List<LinkSuggestion> suggestions) {
         writeValue("suggestions", ownerControlPlaneKey(ownerId, "suggestions", sha256(limit + "|" + normalize(query))), suggestions, ownerReadTtl);
+    }
+
+    @Override
+    public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query) {
+        return readValue("discovery", ownerControlPlaneKey(ownerId, "discovery", discoveryHash(query)), DISCOVERY_PAGE);
+    }
+
+    @Override
+    public void putOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query, LinkDiscoveryPage page) {
+        writeValue("discovery", ownerControlPlaneKey(ownerId, "discovery", discoveryHash(query)), page, ownerReadTtl);
     }
 
     @Override
@@ -251,5 +262,16 @@ public class RedisLinkReadCache implements LinkReadCache {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 not available", exception);
         }
+    }
+
+    private String discoveryHash(LinkDiscoveryQuery query) {
+        return sha256(normalize(query.searchText())
+                + "|" + normalize(query.hostname())
+                + "|" + normalize(query.tag())
+                + "|" + query.lifecycle().name()
+                + "|" + query.expiration().name()
+                + "|" + query.sort().name()
+                + "|" + query.limit()
+                + "|" + normalize(query.cursor()));
     }
 }

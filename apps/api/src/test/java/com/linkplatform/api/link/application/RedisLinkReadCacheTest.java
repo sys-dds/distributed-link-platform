@@ -65,9 +65,20 @@ class RedisLinkReadCacheTest {
         cache.putOwnerRecentLinks(2L, 20, "same", LinkLifecycleState.ALL, List.of());
         cache.putOwnerSuggestions(1L, "same", 10, List.of());
         cache.putOwnerSuggestions(2L, "same", 10, List.of());
+        LinkDiscoveryQuery discoveryQuery = new LinkDiscoveryQuery(
+                "same",
+                "example.com",
+                "docs",
+                LinkDiscoveryLifecycleFilter.ACTIVE,
+                LinkDiscoveryExpirationFilter.ANY,
+                LinkDiscoverySort.UPDATED_DESC,
+                10,
+                null);
+        cache.putOwnerDiscoveryPage(1L, discoveryQuery, new LinkDiscoveryPage(List.of(), null, false));
+        cache.putOwnerDiscoveryPage(2L, discoveryQuery, new LinkDiscoveryPage(List.of(), null, false));
 
         ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(valueOperations, org.mockito.Mockito.atLeast(6)).set(keyCaptor.capture(), any(String.class), any(Duration.class));
+        verify(valueOperations, org.mockito.Mockito.atLeast(8)).set(keyCaptor.capture(), any(String.class), any(Duration.class));
         List<String> keys = keyCaptor.getAllValues();
 
         assertTrue(keys.stream().anyMatch(key -> key.contains("link:owner:1:cp:v0:detail:same-slug")));
@@ -76,6 +87,8 @@ class RedisLinkReadCacheTest {
         assertTrue(keys.stream().anyMatch(key -> key.contains("link:owner:2:cp:v0:list:")));
         assertTrue(keys.stream().anyMatch(key -> key.contains("link:owner:1:cp:v0:suggestions:")));
         assertTrue(keys.stream().anyMatch(key -> key.contains("link:owner:2:cp:v0:suggestions:")));
+        assertTrue(keys.stream().anyMatch(key -> key.contains("link:owner:1:cp:v0:discovery:")));
+        assertTrue(keys.stream().anyMatch(key -> key.contains("link:owner:2:cp:v0:discovery:")));
     }
 
     @Test

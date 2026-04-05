@@ -2,6 +2,11 @@ package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.CreateLinkCommand;
 import com.linkplatform.api.link.application.LinkApplicationService;
+import com.linkplatform.api.link.application.LinkDiscoveryExpirationFilter;
+import com.linkplatform.api.link.application.LinkDiscoveryLifecycleFilter;
+import com.linkplatform.api.link.application.LinkDiscoveryPage;
+import com.linkplatform.api.link.application.LinkDiscoveryQuery;
+import com.linkplatform.api.link.application.LinkDiscoverySort;
 import com.linkplatform.api.link.application.LinkDetails;
 import com.linkplatform.api.link.application.LinkLifecycleState;
 import com.linkplatform.api.link.application.LinkMutationResult;
@@ -32,6 +37,8 @@ public class LinkController {
     private static final int MAX_LIMIT = 100;
     private static final int DEFAULT_SUGGESTION_LIMIT = 10;
     private static final int MAX_SUGGESTION_LIMIT = 20;
+    private static final int DEFAULT_DISCOVERY_LIMIT = 20;
+    private static final int MAX_DISCOVERY_LIMIT = 50;
 
     private final LinkApplicationService linkApplicationService;
     private final OwnerAccessService ownerAccessService;
@@ -141,6 +148,53 @@ public class LinkController {
                 .toList();
     }
 
+    @GetMapping("/discovery")
+    public LinkDiscoveryPageResponse discoverLinks(
+            @RequestParam(required = false, name = "q") String searchText,
+            @RequestParam(required = false) String hostname,
+            @RequestParam(required = false) String tag,
+            @RequestParam(defaultValue = "active") String lifecycle,
+            @RequestParam(defaultValue = "any") String expiration,
+            @RequestParam(defaultValue = "updated_desc") String sort,
+            @RequestParam(defaultValue = "" + DEFAULT_DISCOVERY_LIMIT) int limit,
+            @RequestParam(required = false) String cursor,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        validateDiscoveryLimit(limit);
+        LinkDiscoveryPage page = linkApplicationService.searchLinks(
+                ownerAccessService.authorizeRead(
+                        apiKey,
+                        httpServletRequest.getMethod(),
+                        httpServletRequest.getRequestURI(),
+                        httpServletRequest.getRemoteAddr()),
+                new LinkDiscoveryQuery(
+                        searchText,
+                        hostname,
+                        tag,
+                        parseDiscoveryLifecycle(lifecycle),
+                        parseExpiration(expiration),
+                        parseSort(sort),
+                        limit,
+                        cursor));
+        return new LinkDiscoveryPageResponse(
+                page.items().stream()
+                        .map(item -> new LinkDiscoveryItemResponse(
+                                item.slug(),
+                                item.originalUrl(),
+                                item.title(),
+                                item.hostname(),
+                                item.tags(),
+                                item.lifecycleState().name().toLowerCase(Locale.ROOT),
+                                item.createdAt(),
+                                item.updatedAt(),
+                                item.expiresAt(),
+                                item.deletedAt(),
+                                item.version()))
+                        .toList(),
+                page.nextCursor(),
+                page.hasMore());
+    }
+
     @DeleteMapping("/{slug}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteLink(
@@ -172,12 +226,45 @@ public class LinkController {
         }
     }
 
+    private void validateDiscoveryLimit(int limit) {
+        if (limit < 1 || limit > MAX_DISCOVERY_LIMIT) {
+            throw new IllegalArgumentException("Discovery limit must be between 1 and " + MAX_DISCOVERY_LIMIT);
+        }
+    }
+
     private LinkLifecycleState parseState(String state) {
         try {
             return LinkLifecycleState.valueOf(state.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("State must be one of: active, expired, all");
         }
+    }
+
+    private LinkDiscoveryLifecycleFilter parseDiscoveryLifecycle(String lifecycle) {
+        try {
+            return LinkDiscoveryLifecycleFilter.valueOf(lifecycle.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Lifecycle must be one of: active, expired, deleted, all");
+        }
+    }
+
+    private LinkDiscoveryExpirationFilter parseExpiration(String expiration) {
+        return switch (expiration.toLowerCase(Locale.ROOT)) {
+            case "any" -> LinkDiscoveryExpirationFilter.ANY;
+            case "scheduled" -> LinkDiscoveryExpirationFilter.SCHEDULED;
+            case "none" -> LinkDiscoveryExpirationFilter.NONE;
+            case "expired" -> LinkDiscoveryExpirationFilter.EXPIRED;
+            default -> throw new IllegalArgumentException("Expiration must be one of: any, scheduled, none, expired");
+        };
+    }
+
+    private LinkDiscoverySort parseSort(String sort) {
+        return switch (sort.toLowerCase(Locale.ROOT)) {
+            case "updated_desc" -> LinkDiscoverySort.UPDATED_DESC;
+            case "created_desc" -> LinkDiscoverySort.CREATED_DESC;
+            case "slug_asc" -> LinkDiscoverySort.SLUG_ASC;
+            default -> throw new IllegalArgumentException("Sort must be one of: updated_desc, created_desc, slug_asc");
+        };
     }
 
     private long parseIfMatch(String ifMatch) {

@@ -44,6 +44,7 @@ public class LinkLifecycleConsumer {
                 toActivityEvent(linkLifecycleEvent));
         if (persisted) {
             linkStore.projectCatalogEvent(linkLifecycleEvent);
+            linkStore.projectDiscoveryEvent(linkLifecycleEvent);
             linkReadCache.invalidateOwnerControlPlane(linkLifecycleEvent.ownerId());
             linkReadCache.invalidateOwnerAnalytics(linkLifecycleEvent.ownerId());
             processedCounter.increment();

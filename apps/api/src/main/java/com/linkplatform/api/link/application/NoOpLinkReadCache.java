@@ -19,6 +19,8 @@ public class NoOpLinkReadCache implements LinkReadCache {
     @Override public void putOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) { }
     @Override public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, String query, int limit) { return Optional.empty(); }
     @Override public void putOwnerSuggestions(long ownerId, String query, int limit, List<LinkSuggestion> suggestions) { }
+    @Override public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query) { return Optional.empty(); }
+    @Override public void putOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query, LinkDiscoveryPage page) { }
     @Override public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, int limit) { return Optional.empty(); }
     @Override public void putOwnerRecentActivity(long ownerId, int limit, List<LinkActivityEvent> activityEvents) { }
     @Override public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, String slug) { return Optional.empty(); }

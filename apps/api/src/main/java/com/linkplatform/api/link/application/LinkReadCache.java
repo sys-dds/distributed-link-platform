@@ -24,6 +24,10 @@ public interface LinkReadCache {
 
     void putOwnerSuggestions(long ownerId, String query, int limit, List<LinkSuggestion> suggestions);
 
+    Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query);
+
+    void putOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query, LinkDiscoveryPage page);
+
     Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, int limit);
 
     void putOwnerRecentActivity(long ownerId, int limit, List<LinkActivityEvent> activityEvents);
