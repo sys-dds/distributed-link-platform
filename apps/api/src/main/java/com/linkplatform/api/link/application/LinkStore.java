@@ -35,6 +35,8 @@ public interface LinkStore {
 
     boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent);
 
+    Optional<Long> findOwnerIdBySlug(String slug);
+
     long rebuildClickDailyRollups();
 
     void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent);
@@ -59,16 +61,17 @@ public interface LinkStore {
 
     List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId);
 
-    List<LinkActivityEvent> findRecentActivity(int limit);
+    List<LinkActivityEvent> findRecentActivity(int limit, long ownerId);
 
     Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
             String slug,
             OffsetDateTime last24HoursSince,
-            java.time.LocalDate last7DaysStartDate);
+            java.time.LocalDate last7DaysStartDate,
+            long ownerId);
 
-    List<DailyClickBucket> findRecentDailyClickBuckets(String slug, java.time.LocalDate startDate);
+    List<DailyClickBucket> findRecentDailyClickBuckets(String slug, java.time.LocalDate startDate, long ownerId);
 
-    List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now);
+    List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now, long ownerId);
 
-    List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit);
+    List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId);
 }

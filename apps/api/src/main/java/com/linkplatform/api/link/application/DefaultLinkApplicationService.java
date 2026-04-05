@@ -39,6 +39,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private final LinkMutationIdempotencyStore linkMutationIdempotencyStore;
     private final OwnerStore ownerStore;
     private final SecurityEventStore securityEventStore;
+    private final LinkReadCache linkReadCache;
     private final URI publicBaseUri;
     private final Clock clock;
 
@@ -49,6 +50,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             LinkMutationIdempotencyStore linkMutationIdempotencyStore,
             OwnerStore ownerStore,
             SecurityEventStore securityEventStore,
+            LinkReadCache linkReadCache,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
         this.linkStore = linkStore;
         this.analyticsOutboxStore = analyticsOutboxStore;
@@ -56,6 +58,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         this.linkMutationIdempotencyStore = linkMutationIdempotencyStore;
         this.ownerStore = ownerStore;
         this.securityEventStore = securityEventStore;
+        this.linkReadCache = linkReadCache;
         this.publicBaseUri = URI.create(publicBaseUrl);
         this.clock = Clock.systemUTC();
     }
@@ -98,6 +101,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 now));
         LinkMutationResult result = LinkMutationResult.fromDetails(storedDetails);
         saveIdempotentResult(owner.id(), idempotencyKey, CREATE_OPERATION, requestHash, result, now);
+        invalidateWriteCaches(owner.id(), link.slug().value());
         return result;
     }
 
@@ -158,6 +162,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         LinkMutationResult result = LinkMutationResult.fromDetails(visibleDetails);
         saveIdempotentResult(owner.id(), idempotencyKey, UPDATE_OPERATION, requestHash, result, now);
+        invalidateWriteCaches(owner.id(), linkSlug.value());
         return result;
     }
 
@@ -194,14 +199,19 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 result,
                 now));
         saveIdempotentResult(owner.id(), idempotencyKey, DELETE_OPERATION, requestHash, result, now);
+        invalidateWriteCaches(owner.id(), linkSlug.value());
         return result;
     }
 
     @Override
     public Link resolveLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
-
-        return linkStore.findBySlug(linkSlug.value(), now())
+        return linkReadCache.getPublicRedirect(linkSlug.value())
+                .or(() -> linkStore.findBySlug(linkSlug.value(), now())
+                        .map(link -> {
+                            linkReadCache.putPublicRedirect(linkSlug.value(), link);
+                            return link;
+                        }))
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
     }
 
@@ -220,14 +230,23 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     public LinkDetails getLink(AuthenticatedOwner owner, String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
-
-        return linkStore.findDetailsBySlug(linkSlug.value(), now(), owner.id())
+        return linkReadCache.getOwnerLinkDetails(owner.id(), linkSlug.value())
+                .or(() -> linkStore.findDetailsBySlug(linkSlug.value(), now(), owner.id())
+                        .map(linkDetails -> {
+                            linkReadCache.putOwnerLinkDetails(owner.id(), linkSlug.value(), linkDetails);
+                            return linkDetails;
+                        }))
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
     }
 
     @Override
     public List<LinkDetails> listRecentLinks(AuthenticatedOwner owner, int limit, String query, LinkLifecycleState state) {
-        return linkStore.findRecent(limit, now(), query, state, owner.id());
+        return linkReadCache.getOwnerRecentLinks(owner.id(), limit, query, state)
+                .orElseGet(() -> {
+                    List<LinkDetails> linkDetails = linkStore.findRecent(limit, now(), query, state, owner.id());
+                    linkReadCache.putOwnerRecentLinks(owner.id(), limit, query, state, linkDetails);
+                    return linkDetails;
+                });
     }
 
     @Override
@@ -235,7 +254,12 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         if (query == null || query.isBlank()) {
             return List.of();
         }
-        return linkStore.findSuggestions(limit, now(), query, owner.id());
+        return linkReadCache.getOwnerSuggestions(owner.id(), query, limit)
+                .orElseGet(() -> {
+                    List<LinkSuggestion> suggestions = linkStore.findSuggestions(limit, now(), query, owner.id());
+                    linkReadCache.putOwnerSuggestions(owner.id(), query, limit, suggestions);
+                    return suggestions;
+                });
     }
 
     @Override
@@ -244,39 +268,62 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     @Override
-    public List<LinkActivityEvent> getRecentActivity(int limit) {
-        return linkStore.findRecentActivity(limit);
+    public List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit) {
+        return linkReadCache.getOwnerRecentActivity(owner.id(), limit)
+                .orElseGet(() -> {
+                    List<LinkActivityEvent> activityEvents = linkStore.findRecentActivity(limit, owner.id());
+                    linkReadCache.putOwnerRecentActivity(owner.id(), limit, activityEvents);
+                    return activityEvents;
+                });
     }
 
     @Override
-    public LinkTrafficSummary getTrafficSummary(String slug) {
+    public LinkTrafficSummary getTrafficSummary(AuthenticatedOwner owner, String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
         LocalDate startDate = now.toLocalDate().minusDays(6);
 
+        return linkReadCache.getOwnerTrafficSummary(owner.id(), linkSlug.value())
+                .orElseGet(() -> buildTrafficSummary(owner.id(), linkSlug, now, startDate));
+    }
+
+    private LinkTrafficSummary buildTrafficSummary(long ownerId, LinkSlug linkSlug, OffsetDateTime now, LocalDate startDate) {
         LinkTrafficSummaryTotals totals = linkStore.findTrafficSummaryTotals(
                         linkSlug.value(),
                         now.minusHours(24),
-                        startDate)
+                        startDate,
+                        ownerId)
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
 
-        return new LinkTrafficSummary(
+        LinkTrafficSummary summary = new LinkTrafficSummary(
                 totals.slug(),
                 totals.originalUrl(),
                 totals.totalClicks(),
                 totals.clicksLast24Hours(),
                 totals.clicksLast7Days(),
-                fillDailyBuckets(startDate, linkStore.findRecentDailyClickBuckets(linkSlug.value(), startDate)));
+                fillDailyBuckets(startDate, linkStore.findRecentDailyClickBuckets(linkSlug.value(), startDate, ownerId)));
+        linkReadCache.putOwnerTrafficSummary(ownerId, linkSlug.value(), summary);
+        return summary;
     }
 
     @Override
-    public List<TopLinkTraffic> getTopLinks(LinkTrafficWindow window) {
-        return linkStore.findTopLinks(window, now());
+    public List<TopLinkTraffic> getTopLinks(AuthenticatedOwner owner, LinkTrafficWindow window) {
+        return linkReadCache.getOwnerTopLinks(owner.id(), window)
+                .orElseGet(() -> {
+                    List<TopLinkTraffic> topLinks = linkStore.findTopLinks(window, now(), owner.id());
+                    linkReadCache.putOwnerTopLinks(owner.id(), window, topLinks);
+                    return topLinks;
+                });
     }
 
     @Override
-    public List<TrendingLink> getTrendingLinks(LinkTrafficWindow window, int limit) {
-        return linkStore.findTrendingLinks(window, now(), limit);
+    public List<TrendingLink> getTrendingLinks(AuthenticatedOwner owner, LinkTrafficWindow window, int limit) {
+        return linkReadCache.getOwnerTrendingLinks(owner.id(), window, limit)
+                .orElseGet(() -> {
+                    List<TrendingLink> trendingLinks = linkStore.findTrendingLinks(window, now(), limit, owner.id());
+                    linkReadCache.putOwnerTrendingLinks(owner.id(), window, limit, trendingLinks);
+                    return trendingLinks;
+                });
     }
 
     private void rejectReservedSlug(LinkSlug slug) {
@@ -484,5 +531,10 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 not available", exception);
         }
+    }
+
+    private void invalidateWriteCaches(long ownerId, String slug) {
+        linkReadCache.invalidatePublicRedirect(slug);
+        linkReadCache.invalidateOwnerControlPlane(ownerId);
     }
 }

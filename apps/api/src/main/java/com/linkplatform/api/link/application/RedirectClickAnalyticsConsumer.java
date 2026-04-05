@@ -14,12 +14,18 @@ public class RedirectClickAnalyticsConsumer {
 
     private final ObjectMapper objectMapper;
     private final LinkStore linkStore;
+    private final LinkReadCache linkReadCache;
     private final Counter processedCounter;
     private final Counter duplicateCounter;
 
-    public RedirectClickAnalyticsConsumer(ObjectMapper objectMapper, LinkStore linkStore, MeterRegistry meterRegistry) {
+    public RedirectClickAnalyticsConsumer(
+            ObjectMapper objectMapper,
+            LinkStore linkStore,
+            LinkReadCache linkReadCache,
+            MeterRegistry meterRegistry) {
         this.objectMapper = objectMapper;
         this.linkStore = linkStore;
+        this.linkReadCache = linkReadCache;
         this.processedCounter = Counter.builder("link.analytics.consumer.processed")
                 .description("Number of redirect analytics events processed")
                 .register(meterRegistry);
@@ -39,6 +45,8 @@ public class RedirectClickAnalyticsConsumer {
                 redirectClickAnalyticsEvent.referrer(),
                 redirectClickAnalyticsEvent.remoteAddress()));
         if (persisted) {
+            linkStore.findOwnerIdBySlug(redirectClickAnalyticsEvent.slug())
+                    .ifPresent(linkReadCache::invalidateOwnerAnalytics);
             processedCounter.increment();
             return;
         }

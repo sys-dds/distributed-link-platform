@@ -43,6 +43,18 @@ services:
       timeout: 10s
       retries: 10
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: link-platform-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: ../..
@@ -54,11 +66,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/link_platform
       DB_USERNAME: link_platform
       DB_PASSWORD: link_platform
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8080
       LINK_PLATFORM_RUNTIME_MODE: api
       LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
@@ -76,11 +92,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/link_platform
       DB_USERNAME: link_platform
       DB_PASSWORD: link_platform
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8080
       LINK_PLATFORM_RUNTIME_MODE: worker
       LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events

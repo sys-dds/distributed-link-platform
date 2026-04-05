@@ -15,12 +15,18 @@ public class LinkLifecycleConsumer {
 
     private final ObjectMapper objectMapper;
     private final LinkStore linkStore;
+    private final LinkReadCache linkReadCache;
     private final Counter processedCounter;
     private final Counter duplicateCounter;
 
-    public LinkLifecycleConsumer(ObjectMapper objectMapper, LinkStore linkStore, MeterRegistry meterRegistry) {
+    public LinkLifecycleConsumer(
+            ObjectMapper objectMapper,
+            LinkStore linkStore,
+            LinkReadCache linkReadCache,
+            MeterRegistry meterRegistry) {
         this.objectMapper = objectMapper;
         this.linkStore = linkStore;
+        this.linkReadCache = linkReadCache;
         this.processedCounter = Counter.builder("link.lifecycle.consumer.processed")
                 .description("Number of lifecycle events processed")
                 .register(meterRegistry);
@@ -38,6 +44,8 @@ public class LinkLifecycleConsumer {
                 toActivityEvent(linkLifecycleEvent));
         if (persisted) {
             linkStore.projectCatalogEvent(linkLifecycleEvent);
+            linkReadCache.invalidateOwnerControlPlane(linkLifecycleEvent.ownerId());
+            linkReadCache.invalidateOwnerAnalytics(linkLifecycleEvent.ownerId());
             processedCounter.increment();
             return;
         }
@@ -51,6 +59,7 @@ public class LinkLifecycleConsumer {
             case DELETED -> LinkActivityType.DELETED;
         };
         return new LinkActivityEvent(
+                linkLifecycleEvent.ownerId(),
                 activityType,
                 linkLifecycleEvent.slug(),
                 linkLifecycleEvent.originalUrl(),

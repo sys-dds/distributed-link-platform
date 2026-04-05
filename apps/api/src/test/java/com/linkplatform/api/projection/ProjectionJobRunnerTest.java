@@ -1,6 +1,8 @@
 package com.linkplatform.api.projection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -9,6 +11,7 @@ import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
@@ -38,6 +41,9 @@ class ProjectionJobRunnerTest {
     @Autowired
     private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
+    @SpyBean
+    private com.linkplatform.api.link.application.LinkReadCache linkReadCache;
+
     @Test
     void activityFeedReplayProcessesInChunksAndCompletesIdempotently() throws Exception {
         insertLifecycleHistory(1L, "event-1", "CREATED", "alpha", "https://example.com/alpha", "Alpha", "[\"docs\"]", "example.com", null, 1L, OffsetDateTime.parse("2026-04-04T09:00:00Z"));
@@ -60,11 +66,12 @@ class ProjectionJobRunnerTest {
 
         assertCount("SELECT COUNT(*) FROM link_activity_events", 3);
         assertJob(secondJob.id(), ProjectionJobStatus.COMPLETED, 3L, 3L);
-        mockMvc.perform(get("/api/v1/links/activity"))
+        mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("deleted"))
                 .andExpect(jsonPath("$[0].slug").value("gone"))
                 .andExpect(jsonPath("$[0].originalUrl").value("https://example.com/gone"));
+        verify(linkReadCache, atLeastOnce()).invalidateOwnerAnalytics(1L);
         assertEquals(2.0, meterRegistry.get("link.projection.jobs.completed").counter().count());
     }
 
@@ -90,14 +97,15 @@ class ProjectionJobRunnerTest {
         projectionJobRunner.runPendingJobs();
 
         assertJob(job.id(), ProjectionJobStatus.COMPLETED, 3L, 3L);
-        mockMvc.perform(get("/api/v1/links/alpha/traffic-summary"))
+        mockMvc.perform(get("/api/v1/links/alpha/traffic-summary").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalClicks").value(2))
                 .andExpect(jsonPath("$.clicksLast7Days").value(2));
-        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "24h"))
+        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "24h").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].slug").value("alpha"))
                 .andExpect(jsonPath("$[0].clickTotal").value(2));
+        verify(linkReadCache, atLeastOnce()).invalidateOwnerAnalytics(1L);
     }
 
     @Test
@@ -122,6 +130,7 @@ class ProjectionJobRunnerTest {
                 .andExpect(jsonPath("$[0].title").value("Launch v2"))
                 .andExpect(jsonPath("$[0].version").value(2))
                 .andExpect(jsonPath("$[0].tags[1]").value("product"));
+        verify(linkReadCache, atLeastOnce()).invalidateOwnerControlPlane(1L);
     }
 
     @Test

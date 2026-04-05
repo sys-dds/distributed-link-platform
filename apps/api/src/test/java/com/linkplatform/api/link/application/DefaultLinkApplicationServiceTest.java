@@ -35,6 +35,7 @@ class DefaultLinkApplicationServiceTest {
     private final TestLinkMutationIdempotencyStore idempotencyStore = new TestLinkMutationIdempotencyStore();
     private final TestOwnerStore ownerStore = new TestOwnerStore();
     private final TestSecurityEventStore securityEventStore = new TestSecurityEventStore();
+    private final TestLinkReadCache linkReadCache = new TestLinkReadCache();
     private final DefaultLinkApplicationService service = new DefaultLinkApplicationService(
             linkStore,
             analyticsOutboxStore,
@@ -42,6 +43,7 @@ class DefaultLinkApplicationServiceTest {
             idempotencyStore,
             ownerStore,
             securityEventStore,
+            linkReadCache,
             "http://localhost:80");
 
     @Test
@@ -134,7 +136,27 @@ class DefaultLinkApplicationServiceTest {
         service.recordRedirectClick("docs", "test-agent", "https://referrer.example", "127.0.0.1");
 
         assertEquals(1, analyticsOutboxStore.events().size());
-        assertEquals(0, service.getRecentActivity(10).size());
+        assertEquals(0, service.getRecentActivity(FREE_OWNER, 10).size());
+    }
+
+    @Test
+    void resolveLinkUsesRedirectCacheAfterFirstLookup() {
+        service.createLink(FREE_OWNER, new CreateLinkCommand("cached-redirect", "https://example.com/cached", null, null, null), null);
+
+        service.resolveLink("cached-redirect");
+        service.resolveLink("cached-redirect");
+
+        assertEquals(1, linkStore.resolveLookups.getOrDefault("cached-redirect", 0));
+    }
+
+    @Test
+    void mutationsInvalidateRedirectAndOwnerControlPlaneCaches() {
+        service.createLink(FREE_OWNER, new CreateLinkCommand("cached-link", "https://example.com/cached", null, null, null), null);
+        service.updateLink(FREE_OWNER, "cached-link", "https://example.com/updated", null, null, null, 1L, null);
+        service.deleteLink(FREE_OWNER, "cached-link", 2L, null);
+
+        assertTrue(linkReadCache.invalidatedRedirects.contains("cached-link"));
+        assertTrue(linkReadCache.invalidatedControlPlaneOwners.contains(FREE_OWNER.id()));
     }
 
     private static final class TestLinkStore implements LinkStore {
@@ -144,6 +166,7 @@ class DefaultLinkApplicationServiceTest {
         private final Map<String, Long> versionBySlug = new ConcurrentHashMap<>();
         private final Map<String, Long> ownerIdBySlug = new ConcurrentHashMap<>();
         private final Map<String, LinkMetadata> metadataBySlug = new ConcurrentHashMap<>();
+        private final Map<String, Integer> resolveLookups = new ConcurrentHashMap<>();
 
         @Override
         public boolean save(
@@ -229,6 +252,11 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public Optional<Long> findOwnerIdBySlug(String slug) {
+            return Optional.ofNullable(ownerIdBySlug.get(slug));
+        }
+
+        @Override
         public long rebuildClickDailyRollups() {
             return 0;
         }
@@ -257,6 +285,7 @@ class DefaultLinkApplicationServiceTest {
 
         @Override
         public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
+            resolveLookups.merge(slug, 1, Integer::sum);
             if (isExpired(slug, now)) {
                 return Optional.empty();
             }
@@ -337,7 +366,7 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
-        public List<LinkActivityEvent> findRecentActivity(int limit) {
+        public List<LinkActivityEvent> findRecentActivity(int limit, long ownerId) {
             return List.of();
         }
 
@@ -345,26 +374,27 @@ class DefaultLinkApplicationServiceTest {
         public Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
                 String slug,
                 OffsetDateTime last24HoursSince,
-                LocalDate last7DaysStartDate) {
+                LocalDate last7DaysStartDate,
+                long ownerId) {
             Link link = linksBySlug.get(slug);
-            if (link == null) {
+            if (link == null || !java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId)) {
                 return Optional.empty();
             }
             return Optional.of(new LinkTrafficSummaryTotals(slug, link.originalUrl().value(), 0L, 0L, 0L));
         }
 
         @Override
-        public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate) {
+        public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate, long ownerId) {
             return List.of(new DailyClickBucket(startDate, 0L));
         }
 
         @Override
-        public List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now) {
+        public List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now, long ownerId) {
             return List.of();
         }
 
         @Override
-        public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit) {
+        public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId) {
             return List.of();
         }
 
@@ -503,5 +533,51 @@ class DefaultLinkApplicationServiceTest {
     }
 
     private record SecurityEventRecord(SecurityEventType eventType, Long ownerId, String detailSummary) {
+    }
+
+    private static final class TestLinkReadCache implements LinkReadCache {
+        private final Map<String, Link> redirectCache = new ConcurrentHashMap<>();
+        private final List<String> invalidatedRedirects = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final List<Long> invalidatedControlPlaneOwners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public Optional<Link> getPublicRedirect(String slug) {
+            return Optional.ofNullable(redirectCache.get(slug));
+        }
+
+        @Override
+        public void putPublicRedirect(String slug, Link link) {
+            redirectCache.put(slug, link);
+        }
+
+        @Override
+        public void invalidatePublicRedirect(String slug) {
+            invalidatedRedirects.add(slug);
+            redirectCache.remove(slug);
+        }
+
+        @Override public Optional<LinkDetails> getOwnerLinkDetails(long ownerId, String slug) { return Optional.empty(); }
+        @Override public void putOwnerLinkDetails(long ownerId, String slug, LinkDetails linkDetails) { }
+        @Override public Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state) { return Optional.empty(); }
+        @Override public void putOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) { }
+        @Override public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, String query, int limit) { return Optional.empty(); }
+        @Override public void putOwnerSuggestions(long ownerId, String query, int limit, List<LinkSuggestion> suggestions) { }
+        @Override public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, int limit) { return Optional.empty(); }
+        @Override public void putOwnerRecentActivity(long ownerId, int limit, List<LinkActivityEvent> activityEvents) { }
+        @Override public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, String slug) { return Optional.empty(); }
+        @Override public void putOwnerTrafficSummary(long ownerId, String slug, LinkTrafficSummary summary) { }
+        @Override public Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, LinkTrafficWindow window) { return Optional.empty(); }
+        @Override public void putOwnerTopLinks(long ownerId, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) { }
+        @Override public Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit) { return Optional.empty(); }
+        @Override public void putOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) { }
+
+        @Override
+        public void invalidateOwnerControlPlane(long ownerId) {
+            invalidatedControlPlaneOwners.add(ownerId);
+        }
+
+        @Override
+        public void invalidateOwnerAnalytics(long ownerId) {
+        }
     }
 }

@@ -140,10 +140,11 @@ public class PostgresLinkStore implements LinkStore {
             jdbcTemplate.update(
                     """
                     INSERT INTO link_activity_events (
-                        event_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        event_id, owner_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     eventId,
+                    linkActivityEvent.ownerId(),
                     linkActivityEvent.type().name(),
                     linkActivityEvent.slug(),
                     linkActivityEvent.originalUrl(),
@@ -156,6 +157,16 @@ public class PostgresLinkStore implements LinkStore {
         } catch (DuplicateKeyException exception) {
             return false;
         }
+    }
+
+    @Override
+    public Optional<Long> findOwnerIdBySlug(String slug) {
+        return jdbcTemplate.query(
+                        "SELECT owner_id FROM links WHERE slug = ?",
+                        (resultSet, rowNum) -> resultSet.getLong("owner_id"),
+                        slug)
+                .stream()
+                .findFirst();
     }
 
     @Override
@@ -427,15 +438,17 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public List<LinkActivityEvent> findRecentActivity(int limit) {
+    public List<LinkActivityEvent> findRecentActivity(int limit, long ownerId) {
         return jdbcTemplate.query(
                 """
-                SELECT event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                SELECT owner_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
                 FROM link_activity_events
+                WHERE owner_id = ?
                 ORDER BY occurred_at DESC, id DESC
                 LIMIT ?
                 """,
                 (resultSet, rowNum) -> new LinkActivityEvent(
+                        resultSet.getLong("owner_id"),
                         LinkActivityType.valueOf(resultSet.getString("event_type")),
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
@@ -444,6 +457,7 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("hostname"),
                         resultSet.getObject("expires_at", OffsetDateTime.class),
                         resultSet.getObject("occurred_at", OffsetDateTime.class)),
+                ownerId,
                 limit);
     }
 
@@ -451,7 +465,8 @@ public class PostgresLinkStore implements LinkStore {
     public Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
             String slug,
             OffsetDateTime last24HoursSince,
-            LocalDate last7DaysStartDate) {
+            LocalDate last7DaysStartDate,
+            long ownerId) {
         return jdbcTemplate.query(
                         """
                         SELECT l.slug,
@@ -469,6 +484,7 @@ public class PostgresLinkStore implements LinkStore {
                                            AND r.rollup_date >= ?), 0) AS clicks_last_7_days
                         FROM links l
                         WHERE l.slug = ?
+                          AND l.owner_id = ?
                         """,
                         (resultSet, rowNum) -> new LinkTrafficSummaryTotals(
                                 resultSet.getString("slug"),
@@ -478,18 +494,21 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getLong("clicks_last_7_days")),
                         last24HoursSince,
                         last7DaysStartDate,
-                        slug)
+                        slug,
+                        ownerId)
                 .stream()
                 .findFirst();
     }
 
     @Override
-    public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate) {
+    public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate, long ownerId) {
         return jdbcTemplate.query(
                 """
-                SELECT rollup_date, click_count
-                FROM link_click_daily_rollups
-                WHERE slug = ?
+                SELECT r.rollup_date, r.click_count
+                FROM link_click_daily_rollups r
+                JOIN links l ON l.slug = r.slug
+                WHERE r.slug = ?
+                  AND l.owner_id = ?
                   AND rollup_date >= ?
                 ORDER BY rollup_date ASC
                 """,
@@ -497,22 +516,23 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getObject("rollup_date", LocalDate.class),
                         resultSet.getLong("click_count")),
                 slug,
+                ownerId,
                 startDate);
     }
 
     @Override
-    public List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now) {
+    public List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now, long ownerId) {
         return switch (window) {
-            case LAST_24_HOURS -> findTopLinksLast24Hours(now.minusHours(24));
-            case LAST_7_DAYS -> findTopLinksLast7Days(now.toLocalDate().minusDays(6));
+            case LAST_24_HOURS -> findTopLinksLast24Hours(now.minusHours(24), ownerId);
+            case LAST_7_DAYS -> findTopLinksLast7Days(now.toLocalDate().minusDays(6), ownerId);
         };
     }
 
     @Override
-    public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit) {
+    public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId) {
         return switch (window) {
-            case LAST_24_HOURS -> findTrendingLinksLast24Hours(now, limit);
-            case LAST_7_DAYS -> findTrendingLinksLast7Days(now.toLocalDate(), limit);
+            case LAST_24_HOURS -> findTrendingLinksLast24Hours(now, limit, ownerId);
+            case LAST_7_DAYS -> findTrendingLinksLast7Days(now.toLocalDate(), limit, ownerId);
         };
     }
 
@@ -717,13 +737,14 @@ public class PostgresLinkStore implements LinkStore {
         }
     }
 
-    private List<TopLinkTraffic> findTopLinksLast24Hours(OffsetDateTime since) {
+    private List<TopLinkTraffic> findTopLinksLast24Hours(OffsetDateTime since, long ownerId) {
         return jdbcTemplate.query(
                 """
                 SELECT l.slug, l.original_url, COUNT(*) AS click_total
                 FROM links l
                 JOIN link_clicks c ON c.slug = l.slug
                 WHERE c.clicked_at >= ?
+                  AND l.owner_id = ?
                 GROUP BY l.slug, l.original_url
                 ORDER BY click_total DESC, l.slug ASC
                 """,
@@ -731,10 +752,11 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
                         resultSet.getLong("click_total")),
-                since);
+                since,
+                ownerId);
     }
 
-    private List<TrendingLink> findTrendingLinksLast24Hours(OffsetDateTime now, int limit) {
+    private List<TrendingLink> findTrendingLinksLast24Hours(OffsetDateTime now, int limit, long ownerId) {
         OffsetDateTime currentStart = now.minusHours(24);
         OffsetDateTime previousStart = now.minusHours(48);
 
@@ -759,6 +781,7 @@ public class PostgresLinkStore implements LinkStore {
                     GROUP BY slug
                 ) previous_window ON previous_window.slug = l.slug
                 WHERE COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) > 0
+                  AND l.owner_id = ?
                 ORDER BY click_growth DESC, current_window_clicks DESC, l.slug ASC
                 LIMIT ?
                 """,
@@ -772,16 +795,18 @@ public class PostgresLinkStore implements LinkStore {
                 now,
                 previousStart,
                 currentStart,
+                ownerId,
                 limit);
     }
 
-    private List<TopLinkTraffic> findTopLinksLast7Days(LocalDate startDate) {
+    private List<TopLinkTraffic> findTopLinksLast7Days(LocalDate startDate, long ownerId) {
         return jdbcTemplate.query(
                 """
                 SELECT l.slug, l.original_url, SUM(r.click_count) AS click_total
                 FROM links l
                 JOIN link_click_daily_rollups r ON r.slug = l.slug
                 WHERE r.rollup_date >= ?
+                  AND l.owner_id = ?
                 GROUP BY l.slug, l.original_url
                 ORDER BY click_total DESC, l.slug ASC
                 """,
@@ -789,10 +814,11 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
                         resultSet.getLong("click_total")),
-                startDate);
+                startDate,
+                ownerId);
     }
 
-    private List<TrendingLink> findTrendingLinksLast7Days(LocalDate today, int limit) {
+    private List<TrendingLink> findTrendingLinksLast7Days(LocalDate today, int limit, long ownerId) {
         LocalDate currentStart = today.minusDays(6);
         LocalDate previousStart = currentStart.minusDays(7);
 
@@ -817,6 +843,7 @@ public class PostgresLinkStore implements LinkStore {
                     GROUP BY slug
                 ) previous_window ON previous_window.slug = l.slug
                 WHERE COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) > 0
+                  AND l.owner_id = ?
                 ORDER BY click_growth DESC, current_window_clicks DESC, l.slug ASC
                 LIMIT ?
                 """,
@@ -829,6 +856,7 @@ public class PostgresLinkStore implements LinkStore {
                 currentStart,
                 previousStart,
                 currentStart,
+                ownerId,
                 limit);
     }
 

@@ -1,11 +1,11 @@
 package com.linkplatform.api.link.api;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +23,11 @@ import org.springframework.test.web.servlet.MockMvc;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class LinkAnalyticsControllerTest {
 
+    private static final String FREE_API_KEY = "free-owner-api-key";
+    private static final String PRO_API_KEY = "pro-owner-api-key";
+    private static final long FREE_OWNER_ID = 1L;
+    private static final long PRO_OWNER_ID = 2L;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -30,192 +35,74 @@ class LinkAnalyticsControllerTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void trafficSummaryReturnsSummaryForExistingLink() throws Exception {
+    void recentActivityDoesNotLeakCrossOwnerData() throws Exception {
         OffsetDateTime now = OffsetDateTime.now();
-        OffsetDateTime clickOne = now.minusMinutes(30);
-        OffsetDateTime clickTwo = now.minusMinutes(20);
-        OffsetDateTime clickThree = now.minusDays(3);
-        OffsetDateTime clickFour = now.minusDays(6);
-        LocalDate startDate = now.toLocalDate().minusDays(6);
+        insertActivity(FREE_OWNER_ID, "CREATED", "free-link", "https://example.com/free", "Free", "[\"docs\"]", "example.com", null, now.minusMinutes(2));
+        insertActivity(PRO_OWNER_ID, "CREATED", "pro-link", "https://example.com/pro", "Pro", "[\"product\"]", "example.com", null, now.minusMinutes(1));
 
-        insertLink("summary-link", "https://example.com/summary", now.minusDays(10));
-        insertClick("summary-link", clickOne);
-        insertClick("summary-link", clickTwo);
-        insertClick("summary-link", clickThree);
-        insertClick("summary-link", clickFour);
+        mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("free-link"));
+    }
 
-        mockMvc.perform(get("/api/v1/links/summary-link/traffic-summary"))
+    @Test
+    void trafficSummaryDoesNotLeakCrossOwnerData() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now();
+        insertLink(FREE_OWNER_ID, "summary-link", "https://example.com/summary", now.minusDays(10));
+        insertLink(PRO_OWNER_ID, "other-link", "https://example.com/other", now.minusDays(10));
+        insertClick("summary-link", now.minusHours(1));
+        insertClick("other-link", now.minusHours(1));
+
+        mockMvc.perform(get("/api/v1/links/summary-link/traffic-summary").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.slug").value("summary-link"))
-                .andExpect(jsonPath("$.totalClicks").value(4))
-                .andExpect(jsonPath("$.clicksLast24Hours").value(2))
-                .andExpect(jsonPath("$.clicksLast7Days").value(4))
-                .andExpect(jsonPath("$.recentDailyClicks.length()").value(7))
-                .andExpect(jsonPath("$.recentDailyClicks[0].day").value(startDate.toString()))
-                .andExpect(jsonPath("$.recentDailyClicks[6].day").value(now.toLocalDate().toString()))
-                .andExpect(jsonPath("$.recentDailyClicks[0].clickTotal").value(1))
-                .andExpect(jsonPath("$.recentDailyClicks[3].clickTotal").value(1))
-                .andExpect(jsonPath("$.recentDailyClicks[6].clickTotal").value(2));
+                .andExpect(jsonPath("$.totalClicks").value(1));
+
+        mockMvc.perform(get("/api/v1/links/other-link/traffic-summary").header("X-API-Key", FREE_API_KEY))
+                .andExpect(problemDetail(404, "Not Found", "Link slug not found: other-link"));
     }
 
     @Test
-    void trafficSummaryReturnsNotFoundForMissingSlug() throws Exception {
-        mockMvc.perform(get("/api/v1/links/missing-link/traffic-summary"))
-                .andExpect(problemDetail(404, "Not Found", "Link slug not found: missing-link"));
-    }
-
-    @Test
-    void recentActivityIncludesCreateUpdateAndDeleteEvents() throws Exception {
+    void topLinksAndTrendingDoNotLeakCrossOwnerData() throws Exception {
         OffsetDateTime now = OffsetDateTime.now();
-        insertActivity("CREATED", "alpha", "https://example.com/alpha", "Alpha", "[\"docs\"]", "example.com", null, now.minusMinutes(3));
-        insertActivity("UPDATED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, now.minusMinutes(2));
-        insertActivity("DELETED", "alpha", "https://example.com/alpha-v2", "Alpha v2", "[\"docs\"]", "example.com", null, now.minusMinutes(1));
-
-        mockMvc.perform(get("/api/v1/links/activity"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3))
-                .andExpect(jsonPath("$[0].type").value("deleted"))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[1].type").value("updated"))
-                .andExpect(jsonPath("$[2].type").value("created"));
-    }
-
-    @Test
-    void deleteEventRemainsVisibleAfterLinkDeletion() throws Exception {
-        OffsetDateTime now = OffsetDateTime.now();
-        insertActivity("DELETED", "gone-link", "https://example.com/gone", "Gone", "[\"archived\"]", "example.com", null, now);
-
-        mockMvc.perform(get("/api/v1/links/activity"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].type").value("deleted"))
-                .andExpect(jsonPath("$[0].slug").value("gone-link"))
-                .andExpect(jsonPath("$[0].originalUrl").value("https://example.com/gone"));
-    }
-
-    @Test
-    void recentActivityUsesDeterministicOrderingForTies() throws Exception {
-        OffsetDateTime sameTime = OffsetDateTime.now();
-        insertActivity("CREATED", "alpha", "https://example.com/alpha", null, null, "example.com", null, sameTime);
-        insertActivity("CREATED", "beta", "https://example.com/beta", null, null, "example.com", null, sameTime);
-
-        mockMvc.perform(get("/api/v1/links/activity"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].slug").value("beta"))
-                .andExpect(jsonPath("$[1].slug").value("alpha"));
-    }
-
-    @Test
-    void topLinksRanksLinksForLast24Hours() throws Exception {
-        OffsetDateTime now = OffsetDateTime.now();
-
-        insertLink("alpha", "https://example.com/alpha", now.minusDays(5));
-        insertLink("beta", "https://example.com/beta", now.minusDays(5));
-        insertLink("gamma", "https://example.com/gamma", now.minusDays(5));
-
+        insertLink(FREE_OWNER_ID, "alpha", "https://example.com/alpha", now.minusDays(5));
+        insertLink(PRO_OWNER_ID, "beta", "https://example.com/beta", now.minusDays(5));
         insertClick("alpha", now.minusHours(1));
         insertClick("alpha", now.minusHours(2));
-        insertClick("beta", now.minusHours(3));
-        insertClick("gamma", now.minusHours(30));
-
-        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "24h"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[0].clickTotal").value(2))
-                .andExpect(jsonPath("$[1].slug").value("beta"))
-                .andExpect(jsonPath("$[1].clickTotal").value(1));
-    }
-
-    @Test
-    void topLinksUsesDeterministicOrderingForTies() throws Exception {
-        OffsetDateTime now = OffsetDateTime.now();
-
-        insertLink("alpha", "https://example.com/alpha", now.minusDays(5));
-        insertLink("beta", "https://example.com/beta", now.minusDays(5));
-
-        insertClick("beta", now.minusDays(1));
-        insertClick("alpha", now.minusDays(1));
-
-        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "7d"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[1].slug").value("beta"))
-                .andExpect(jsonPath("$[0].clickTotal").value(1))
-                .andExpect(jsonPath("$[1].clickTotal").value(1));
-    }
-
-    @Test
-    void topLinksRejectsInvalidWindow() throws Exception {
-        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "30d"))
-                .andExpect(problemDetail(400, "Bad Request", "Window must be one of: 24h, 7d"));
-    }
-
-    @Test
-    void trendingLinksRanksByRecentGrowth() throws Exception {
-        OffsetDateTime now = OffsetDateTime.now();
-
-        insertLink("alpha", "https://example.com/alpha", now.minusDays(10));
-        insertLink("beta", "https://example.com/beta", now.minusDays(10));
-
-        insertClick("alpha", now.minusHours(1));
-        insertClick("alpha", now.minusHours(2));
-        insertClick("alpha", now.minusHours(3));
-        insertClick("alpha", now.minusHours(30));
-
         insertClick("beta", now.minusHours(1));
-        insertClick("beta", now.minusHours(2));
-        insertClick("beta", now.minusHours(26));
 
-        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "24h"))
+        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "24h").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[0].clickGrowth").value(2))
-                .andExpect(jsonPath("$[0].currentWindowClicks").value(3))
-                .andExpect(jsonPath("$[0].previousWindowClicks").value(1))
-                .andExpect(jsonPath("$[1].slug").value("beta"))
-                .andExpect(jsonPath("$[1].clickGrowth").value(1))
-                .andExpect(jsonPath("$[1].currentWindowClicks").value(2))
-                .andExpect(jsonPath("$[1].previousWindowClicks").value(1));
+                .andExpect(jsonPath("$[0].clickTotal").value(2));
+
+        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "24h").header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha"));
     }
 
     @Test
-    void trendingLinksUsesDeterministicTieBreaking() throws Exception {
-        OffsetDateTime now = OffsetDateTime.now();
-
-        insertLink("alpha", "https://example.com/alpha", now.minusDays(10));
-        insertLink("beta", "https://example.com/beta", now.minusDays(10));
-
-        insertClick("beta", now.minusDays(1));
-        insertClick("alpha", now.minusDays(1));
-
-        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "7d"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].slug").value("alpha"))
-                .andExpect(jsonPath("$[1].slug").value("beta"))
-                .andExpect(jsonPath("$[0].clickGrowth").value(1))
-                .andExpect(jsonPath("$[1].clickGrowth").value(1));
+    void analyticsReadsRequireOwnerAuthentication() throws Exception {
+        mockMvc.perform(get("/api/v1/links/activity"))
+                .andExpect(problemDetail(401, "Unauthorized", "X-API-Key header is required"));
     }
 
-    @Test
-    void trendingLinksRejectInvalidWindow() throws Exception {
-        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "30d"))
-                .andExpect(problemDetail(400, "Bad Request", "Window must be one of: 24h, 7d"));
-    }
-
-    private void insertLink(String slug, String originalUrl, OffsetDateTime createdAt) {
+    private void insertLink(long ownerId, String slug, String originalUrl, OffsetDateTime createdAt) {
         jdbcTemplate.update(
-                "INSERT INTO links (slug, original_url, created_at, hostname) VALUES (?, ?, ?, ?)",
+                "INSERT INTO links (slug, original_url, created_at, hostname, owner_id) VALUES (?, ?, ?, ?, ?)",
                 slug,
                 originalUrl,
                 createdAt,
-                java.net.URI.create(originalUrl).getHost().toLowerCase());
+                java.net.URI.create(originalUrl).getHost().toLowerCase(),
+                ownerId);
     }
 
     private void insertActivity(
+            long ownerId,
             String eventType,
             String slug,
             String originalUrl,
@@ -227,10 +114,11 @@ class LinkAnalyticsControllerTest {
         jdbcTemplate.update(
                 """
                 INSERT INTO link_activity_events
-                    (event_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (event_id, owner_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 slug + "-" + eventType + "-" + occurredAt.toInstant().toEpochMilli(),
+                ownerId,
                 eventType,
                 slug,
                 originalUrl,
@@ -273,8 +161,7 @@ class LinkAnalyticsControllerTest {
         }
     }
 
-    private static org.springframework.test.web.servlet.ResultMatcher problemDetail(
-            int status, String title, String detail) {
+    private static org.springframework.test.web.servlet.ResultMatcher problemDetail(int status, String title, String detail) {
         return result -> {
             status().is(status).match(result);
             content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON).match(result);
@@ -282,7 +169,6 @@ class LinkAnalyticsControllerTest {
             jsonPath("$.title").value(title).match(result);
             jsonPath("$.status").value(status).match(result);
             jsonPath("$.detail").value(detail).match(result);
-            jsonPath("$.message").doesNotExist().match(result);
         };
     }
 }

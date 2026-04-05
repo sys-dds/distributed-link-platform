@@ -9,6 +9,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   jackson:
     default-property-inclusion: non_null
   kafka:
@@ -50,6 +54,11 @@ link-platform:
     runner-delay: ${LINK_PLATFORM_PROJECTION_JOBS_RUNNER_DELAY:5000}
     lease-duration: ${LINK_PLATFORM_PROJECTION_JOBS_LEASE_DURATION:PT30S}
     chunk-size: ${LINK_PLATFORM_PROJECTION_JOBS_CHUNK_SIZE:100}
+  cache:
+    enabled: ${LINK_PLATFORM_CACHE_ENABLED:true}
+    redirect-ttl: ${LINK_PLATFORM_CACHE_REDIRECT_TTL:PT5M}
+    owner-read-ttl: ${LINK_PLATFORM_CACHE_OWNER_READ_TTL:PT30S}
+    analytics-ttl: ${LINK_PLATFORM_CACHE_ANALYTICS_TTL:PT15S}
 
 management:
   endpoints:
