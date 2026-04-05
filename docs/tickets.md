@@ -1,146 +1,151 @@
-### 🚀 TICKET-033
+🚀 TICKET-034
+title[]
 
-#### title[]
+Extract the redirect runtime, harden worker/projection execution, and isolate owner query reads with replica-aware posture
 
-Build the owner-scoped search/index projection and discovery read model, while finishing analytics cache-coherence hardening and frontend-shaped query flows
+technical_detail[]
 
-#### technical_detail[]
+From TICKET-034 onward, tickets should be larger and more destination-oriented.
 
-The current platform has already gained most of the owner-facing control-plane boundary:
+This ticket intentionally combines the old “dedicated redirect runtime,” “worker/projection hardening,” and “read/query isolation” trajectory into one major platform jump.
 
-* authenticated owner context
-* owner-scoped mutations
-* owner-scoped main reads
-* `/api/v1/me`
-* Redis-backed read acceleration on important paths
-* lifecycle-driven invalidation
-* rate limiting and security events
+The platform now has:
 
-But there is still unfinished work from the previous slice:
+safe writes
+async relays/projections
+owner-authenticated control-plane APIs
+owner discovery/search read models
+Redis read caching
+rate limiting/security events
 
-* analytics cache freshness after click/rollup changes is not proven strongly enough
-* the discovery/query side still needs a more intentional owner-scoped read model
-* the future Next.js control-plane UI needs richer, stable query/filter/sort behavior
+The next best move is to turn this into a more production-shaped multi-runtime architecture inside one codebase.
 
-This ticket should combine both needs into one coherent slice.
+Bundle all of this together:
 
-### Part 1 — finish the missing hardening from the previous slice
+Part 1 — dedicated redirect runtime boundary
 
-* make analytics cache invalidation deterministic for click-driven and rollup-driven freshness
-* ensure traffic summary, top links, trending links, and recent activity do not serve stale results after click/rollup changes
-* verify async consumers, replay, rebuild, and cache invalidation cooperate correctly
+Create a true redirect runtime role that serves only the hot public redirect path and its minimal supporting concerns.
 
-### Part 2 — deliver the next major platform capability
+It should:
 
-Build a dedicated **owner-scoped search/index projection** and richer discovery read model for the control plane.
+expose public redirect endpoints
+resolve slug -> destination quickly
+record click intent / analytics event emission as already designed
+expose minimal health/metrics needed for the redirect service
+exclude owner control-plane endpoints, rebuild APIs, heavy query APIs, and worker duties
 
-Bundle these capabilities together:
+Keep this in the same repository/application codebase, but with a clean runtime boundary and startup role.
 
-* add a dedicated search/index projection for owner-scoped discovery reads
-* project the fields the UI actually needs, such as:
+Part 2 — stronger runtime separation
 
-    * owner_id
-    * slug
-    * original_url
-    * title
-    * hostname
-    * tags
-    * lifecycle state
-    * created_at
-    * updated_at / deleted_at where useful
-    * expiration timestamp / expiration state
-    * latest activity marker if cheap and useful
-    * click-derived sort helpers if practical
-* move owner-facing discovery/search/filter/sort reads onto that projection where clean
-* support richer query behavior for UI screens:
+Formalize runtime roles so the code can run cleanly as:
 
-    * search text
-    * hostname filter
-    * tag filter
-    * lifecycle filter
-    * expiration filter
-    * sort options
-    * pagination inputs that will work well for a future Next.js UI
-* keep responses stable and frontend-friendly
-* add rebuild support for the new search/index projection
-* add deterministic cache invalidation for the new discovery/query read paths
-* keep everything explicit, JDBC-based, and production-shaped
-* do not introduce Elasticsearch/OpenSearch yet
-* do not split “finish analytics freshness” and “build search projection” into separate tickets
+all
+control-plane-api
+redirect
+worker
 
-#### feature_delivered_by_end[]
+Make sure:
 
-The platform has:
+scheduled outbox relay / projection rebuild / background work runs only where it should
+control-plane API hosts owner-authenticated CRUD/discovery/query endpoints
+redirect runtime remains slim
+worker runtime owns async relays, consumers, projection rebuilds, and background jobs
+Part 3 — worker/projection hardening
 
-* deterministic analytics cache freshness after click/rollup changes
-* a real owner-scoped search/index projection
-* richer discovery/filter/sort capabilities for the control plane
-* rebuildable discovery read models
-* stable frontend-friendly query surfaces for the future Next.js app
+Strengthen the worker runtime so it looks production-shaped:
 
-#### how_this_unlocks_next_feature[]
+role-aware startup validation
+clearer ownership of scheduled jobs
+stronger projection/rebuild diagnostics
+lag/lease/failure metrics for relay/projection paths
+clearer degraded/parked/retry visibility
+guardrails so redirect/control-plane roles do not accidentally run worker logic
+Part 4 — query/read isolation with replica-aware posture
 
-This unlocks the next big slices cleanly:
+Split the owner-facing query workload more intentionally from the write path.
 
-* dedicated redirect/runtime boundary extraction
-* worker/projection runtime hardening
-* read scaling and reporting/query isolation
-* faster and cleaner frontend screens
-* stronger performance/SRE packaging because the read side is now intentionally shaped
+Add a practical read-isolation layer for:
 
-#### acceptance_criteria[]
+owner discovery queries
+owner analytics queries
+owner detail/list reads where sensible
 
-* analytics caches are invalidated or refreshed deterministically after click/rollup changes
-* owner-scoped traffic summary, top links, trending links, and recent activity do not remain stale after new clicks
-* owner-scoped discovery/search/filter/sort reads are served from a dedicated projection where appropriate
-* cross-owner discovery/query reads do not leak data
-* search supports practical UI-facing filters and sort options
-* query responses support stable pagination behavior suitable for a future Next.js app
-* projection rebuild reconstructs the new search/index read model correctly
-* cache invalidation for discovery reads is deterministic and owner-safe
-* public redirect behavior remains anonymous and unchanged
-* async lifecycle and analytics pipelines continue to work
-* no repo churn in `docs/tickets.md`, README, or Postman
+This does not need real infra-level replicas yet, but it should:
 
-#### code_target[]
+introduce a clear query/read datasource posture that can target primary now
+support a future read-replica route cleanly
+separate heavy query code paths from mutation code paths
+allow role-aware routing for query workloads
 
-* owner-facing discovery/search controller and query endpoints
-* analytics/query endpoints where cache freshness must be completed
-* `LinkApplicationService`
-* `DefaultLinkApplicationService`
-* `LinkStore`
-* `PostgresLinkStore`
-* lifecycle consumer and analytics/click consumer paths where cache invalidation must be finished
-* new search/index projection schema + projector
-* projection rebuild/job path
-* Redis cache adapter / invalidation hooks
-* focused controller/service/projection/cache tests
-* do **not** touch repo ticket-tracking/docs files
+If the existing app already has multiple datasource wiring patterns, extend them cleanly. Do not invent a giant abstraction.
 
-#### proof[]
+Part 5 — carry forward the unfinished 033 hardening
 
-* targeted tests proving analytics caches refresh or invalidate correctly after click/rollup changes
-* targeted tests proving owner-scoped traffic summary / top / trending / recent activity do not serve stale results after new clicks
-* targeted tests proving owner-scoped search/filter/sort results are correct
-* targeted tests proving cross-owner discovery isolation
-* targeted tests proving projection rebuild reconstructs the search/index read model correctly
-* targeted tests proving cache keys and invalidation do not collide across owners
-* targeted tests proving public redirect behavior remains unchanged
-* actual compile/test command output with passing results
+Also finish the still-under-proven parts from the previous slice:
 
-#### delivery_note[]
+deterministic analytics cache freshness after click/rollup changes
+clear rebuild/proof for discovery projection recovery
+ensure cache invalidation and rebuild behavior remain correct after runtime separation
+feature_delivered_by_end[]
 
-This is intentionally a **huge** ticket.
+The platform runs with a much more serious production shape:
 
-It must:
+dedicated redirect runtime for the hot path
+clean control-plane vs worker vs redirect runtime boundaries
+stronger worker/projection execution posture
+query/read isolation shaped for future replica use
+carried-forward cache/rebuild hardening from the prior slice
+how_this_unlocks_next_feature[]
 
-* finish the missing cache-freshness hardening left from the prior slice
-* and deliver the next major owner-scoped discovery/search projection in the same pass
+This unlocks the remaining big destination slices faster:
 
-Do **not** split this into:
+backup/restore + retention + recovery drills
+multi-region redirect architecture
+performance/observability/SRE packaging
+stronger deployment/release posture
+final portfolio/staff-level packaging
+acceptance_criteria[]
+runtime roles exist and are intentionally shaped: all, control-plane-api, redirect, worker
+redirect runtime exposes the public redirect path and excludes control-plane/worker-only surfaces
+control-plane runtime exposes owner APIs and excludes worker-only jobs
+worker runtime owns background jobs, relays, consumers, and projection rebuild execution
+startup/runtime guards prevent the wrong jobs/endpoints from running in the wrong role
+owner discovery/analytics query paths run through a clearly isolated query/read path
+query/read isolation is designed so a future replica can be introduced without redesign
+analytics caches are invalidated or refreshed deterministically after click/rollup changes
+discovery projection rebuild/recovery is proven
+public redirect behavior remains correct and fast
+no repo churn in docs/tickets.md, README, or Postman
+code_target[]
+runtime role configuration / boot wiring
+redirect controller/runtime composition
+control-plane API runtime wiring
+worker scheduling / consumer / relay wiring
+projection job / relay diagnostics
+query/read datasource or repository routing layer
+analytics click/rollup invalidation path
+discovery rebuild/projection job path
+focused runtime integration tests
+do not touch repo ticket-tracking/docs files
+proof[]
+targeted tests proving redirect runtime serves public redirect and excludes owner control-plane endpoints
+targeted tests proving control-plane runtime excludes worker jobs
+targeted tests proving worker runtime excludes public/control-plane endpoint surface where appropriate
+targeted tests proving query/read isolation paths behave correctly
+targeted tests proving analytics cache freshness after click/rollup changes
+targeted tests proving discovery projection rebuild converges correctly
+targeted tests proving public redirect behavior remains unchanged
+actual compile/test command output with passing results
+delivery_note[]
 
-* analytics freshness cleanup
-* search projection later
-* frontend shaping later
+This is intentionally a very large ticket.
 
-Do it as one coherent read-model evolution step.
+It folds the old 034 + 035 + much of 036 direction into one coherent slice:
+
+redirect runtime boundary
+worker/projection hardening
+query/read isolation
+carried-forward missing hardening from 033
+
+Do not split this into several mini-tickets unless the repo forces a truly separate architectural cut.
