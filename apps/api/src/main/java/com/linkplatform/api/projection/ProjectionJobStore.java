@@ -27,11 +27,23 @@ public interface ProjectionJobStore {
         return Optional.empty();
     }
 
-    void markProgress(long id, long processedCountIncrement, Long checkpointId);
+    default void markProgress(long id, OffsetDateTime occurredAt, long processedCountIncrement, Long checkpointId) {
+        markProgress(id, processedCountIncrement, checkpointId);
+    }
+
+    default void markProgress(long id, long processedCountIncrement, Long checkpointId) {
+        markProgress(id, OffsetDateTime.now(java.time.Clock.systemUTC()), processedCountIncrement, checkpointId);
+    }
 
     void markCompleted(long id, OffsetDateTime completedAt, long processedCountIncrement, Long checkpointId);
 
-    void markFailed(long id, OffsetDateTime completedAt, String errorSummary);
+    default void markFailed(long id, OffsetDateTime completedAt, long failedItemsIncrement, String errorSummary) {
+        markFailed(id, completedAt, errorSummary);
+    }
+
+    default void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
+        markFailed(id, completedAt, 1L, errorSummary);
+    }
 
     default long countQueued() {
         return 0L;

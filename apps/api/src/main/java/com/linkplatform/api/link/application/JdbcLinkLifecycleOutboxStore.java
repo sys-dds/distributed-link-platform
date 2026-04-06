@@ -36,7 +36,7 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
         Gauge.builder("link.lifecycle.outbox.unpublished", this, JdbcLinkLifecycleOutboxStore::countUnpublished)
                 .description("Number of unpublished lifecycle outbox records")
                 .register(meterRegistry);
-        Gauge.builder("link.lifecycle.outbox.eligible", this, store -> store.countEligible(OffsetDateTime.now(clock)))
+        Gauge.builder("link.lifecycle.outbox.eligible", this, JdbcLinkLifecycleOutboxStore::countEligible)
                 .description("Number of eligible lifecycle outbox records awaiting delivery")
                 .register(meterRegistry);
         Gauge.builder("link.lifecycle.outbox.parked", this, JdbcLinkLifecycleOutboxStore::countParked)
@@ -44,8 +44,8 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
                 .register(meterRegistry);
         Gauge.builder("link.lifecycle.outbox.oldest.eligible.age.seconds", this,
                         store -> {
-                            Double ageSeconds = store.findOldestEligibleAgeSeconds(OffsetDateTime.now(clock));
-                            return ageSeconds == null ? 0.0 : ageSeconds;
+                            OffsetDateTime oldest = store.findOldestEligibleAt();
+                            return oldest == null ? 0.0 : (double) Duration.between(oldest, OffsetDateTime.now(clock)).toSeconds();
                         })
                 .description("Age in seconds of the oldest eligible lifecycle outbox record")
                 .register(meterRegistry);
@@ -73,7 +73,8 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
     }
 
     @Override
-    public long countEligible(OffsetDateTime now) {
+    public long countEligible() {
+        OffsetDateTime now = OffsetDateTime.now(clock);
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
@@ -98,8 +99,9 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
     }
 
     @Override
-    public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
-        OffsetDateTime oldest = jdbcTemplate.query(
+    public OffsetDateTime findOldestEligibleAt() {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        return jdbcTemplate.query(
                         """
                         SELECT created_at
                         FROM link_lifecycle_outbox
@@ -116,15 +118,11 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
                 .stream()
                 .findFirst()
                 .orElse(null);
-        if (oldest == null) {
-            return null;
-        }
-        return (double) Duration.between(oldest, now).toSeconds();
     }
 
     @Override
-    public Double findOldestParkedAgeSeconds(OffsetDateTime now) {
-        OffsetDateTime oldest = jdbcTemplate.query(
+    public OffsetDateTime findOldestParkedAt() {
+        return jdbcTemplate.query(
                         """
                         SELECT parked_at
                         FROM link_lifecycle_outbox
@@ -137,10 +135,6 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
                 .stream()
                 .findFirst()
                 .orElse(null);
-        if (oldest == null) {
-            return null;
-        }
-        return (double) Duration.between(oldest, now).toSeconds();
     }
 
     @Override
@@ -341,7 +335,7 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
     }
 
     @Override
-    public int requeueAllParked(int limit, OffsetDateTime nextAttemptAt) {
+    public int requeueAllParked(int limit) {
         List<Long> ids = jdbcTemplate.query(
                 """
                 SELECT id
@@ -353,7 +347,7 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
                 """,
                 (resultSet, rowNum) -> resultSet.getLong("id"),
                 limit);
-        return requeueParkedBatch(ids, nextAttemptAt);
+        return requeueParkedBatch(ids, OffsetDateTime.now(clock));
     }
 
     private LinkLifecycleOutboxRecord mapRecord(ResultSet resultSet) throws SQLException {

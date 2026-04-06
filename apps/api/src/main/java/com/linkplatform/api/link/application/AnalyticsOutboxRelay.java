@@ -18,8 +18,10 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.WORKER})
 public class AnalyticsOutboxRelay {
+    public static final String PIPELINE_NAME = "analytics";
 
     private final AnalyticsOutboxStore analyticsOutboxStore;
+    private final PipelineControlStore pipelineControlStore;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final Clock clock;
     private final String clickTopic;
@@ -37,6 +39,7 @@ public class AnalyticsOutboxRelay {
     @Autowired
     public AnalyticsOutboxRelay(
             AnalyticsOutboxStore analyticsOutboxStore,
+            PipelineControlStore pipelineControlStore,
             KafkaTemplate<String, String> kafkaTemplate,
             MeterRegistry meterRegistry,
             @Value("${link-platform.analytics.click-topic}") String clickTopic,
@@ -47,6 +50,7 @@ public class AnalyticsOutboxRelay {
             @Value("${link-platform.analytics.outbox-relay-max-attempts}") int maxAttempts) {
         this(
                 analyticsOutboxStore,
+                pipelineControlStore,
                 kafkaTemplate,
                 meterRegistry,
                 clickTopic,
@@ -61,6 +65,7 @@ public class AnalyticsOutboxRelay {
 
     AnalyticsOutboxRelay(
             AnalyticsOutboxStore analyticsOutboxStore,
+            PipelineControlStore pipelineControlStore,
             KafkaTemplate<String, String> kafkaTemplate,
             MeterRegistry meterRegistry,
             String clickTopic,
@@ -72,6 +77,7 @@ public class AnalyticsOutboxRelay {
             Clock clock,
             String workerId) {
         this.analyticsOutboxStore = analyticsOutboxStore;
+        this.pipelineControlStore = pipelineControlStore;
         this.kafkaTemplate = kafkaTemplate;
         this.clickTopic = clickTopic;
         this.batchSize = batchSize;
@@ -97,29 +103,47 @@ public class AnalyticsOutboxRelay {
 
     @Scheduled(fixedDelayString = "${link-platform.analytics.outbox-relay-delay}")
     public void relayPendingEvents() {
+        relayOnce();
+    }
+
+    public RelayIterationResult relayOnce() {
         OffsetDateTime now = OffsetDateTime.now(clock);
+        PipelineControl control = pipelineControlStore.get(PIPELINE_NAME);
+        if (control.paused()) {
+            return new RelayIterationResult(control.pipelineName(), true, 0, 0);
+        }
         OffsetDateTime claimUntil = now.plus(leaseDuration);
         List<AnalyticsOutboxRecord> unpublishedRecords = analyticsOutboxStore.claimBatch(workerId, now, claimUntil, batchSize);
+        int processedCount = 0;
+        int parkedCount = 0;
 
         for (AnalyticsOutboxRecord unpublishedRecord : unpublishedRecords) {
             try {
                 kafkaTemplate.send(clickTopic, unpublishedRecord.eventKey(), unpublishedRecord.payloadJson()).join();
                 analyticsOutboxStore.markPublished(unpublishedRecord.id(), OffsetDateTime.now(clock));
                 publishSuccessCounter.increment();
+                processedCount++;
             } catch (RuntimeException exception) {
                 publishFailureCounter.increment();
-                handlePublishFailure(unpublishedRecord, now, exception);
+                boolean parked = handlePublishFailure(unpublishedRecord, now, exception);
+                if (parked) {
+                    parkedCount++;
+                }
+                pipelineControlStore.recordRelayFailure(PIPELINE_NAME, OffsetDateTime.now(clock), compactErrorSummary(exception));
+                throw exception;
             }
         }
+        pipelineControlStore.recordRelaySuccess(PIPELINE_NAME, OffsetDateTime.now(clock));
+        return new RelayIterationResult(PIPELINE_NAME, false, processedCount, parkedCount);
     }
 
-    private void handlePublishFailure(AnalyticsOutboxRecord unpublishedRecord, OffsetDateTime now, RuntimeException exception) {
+    private boolean handlePublishFailure(AnalyticsOutboxRecord unpublishedRecord, OffsetDateTime now, RuntimeException exception) {
         int attemptCount = unpublishedRecord.attemptCount() + 1;
         String errorSummary = compactErrorSummary(exception);
         if (attemptCount >= maxAttempts) {
             analyticsOutboxStore.recordPublishFailure(unpublishedRecord.id(), attemptCount, null, errorSummary, now);
             parkedCounter.increment();
-            return;
+            return true;
         }
 
         analyticsOutboxStore.recordPublishFailure(
@@ -129,6 +153,7 @@ public class AnalyticsOutboxRelay {
                 errorSummary,
                 null);
         retryCounter.increment();
+        return false;
     }
 
     private Duration backoffForAttempt(int attemptCount) {
@@ -145,5 +170,8 @@ public class AnalyticsOutboxRelay {
         String message = root.getMessage();
         String summary = root.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
         return summary.length() <= 255 ? summary : summary.substring(0, 255);
+    }
+
+    public record RelayIterationResult(String pipelineName, boolean paused, int processedCount, int parkedCount) {
     }
 }

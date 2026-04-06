@@ -37,7 +37,7 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
         Gauge.builder("link.analytics.outbox.unpublished", this, JdbcAnalyticsOutboxStore::countUnpublished)
                 .description("Number of unpublished analytics outbox records")
                 .register(meterRegistry);
-        Gauge.builder("link.analytics.outbox.eligible", this, store -> store.countEligible(OffsetDateTime.now(clock)))
+        Gauge.builder("link.analytics.outbox.eligible", this, JdbcAnalyticsOutboxStore::countEligible)
                 .description("Number of eligible analytics outbox records awaiting delivery")
                 .register(meterRegistry);
         Gauge.builder("link.analytics.outbox.parked", this, JdbcAnalyticsOutboxStore::countParked)
@@ -45,8 +45,8 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 .register(meterRegistry);
         Gauge.builder("link.analytics.outbox.oldest.eligible.age.seconds", this,
                         store -> {
-                            Double ageSeconds = store.findOldestEligibleAgeSeconds(OffsetDateTime.now(clock));
-                            return ageSeconds == null ? 0.0 : ageSeconds;
+                            OffsetDateTime oldest = store.findOldestEligibleAt();
+                            return oldest == null ? 0.0 : (double) java.time.Duration.between(oldest, OffsetDateTime.now(clock)).toSeconds();
                         })
                 .description("Age in seconds of the oldest eligible analytics outbox record")
                 .register(meterRegistry);
@@ -124,7 +124,8 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
     }
 
     @Override
-    public long countEligible(OffsetDateTime now) {
+    public long countEligible() {
+        OffsetDateTime now = OffsetDateTime.now(clock);
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
@@ -149,8 +150,9 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
     }
 
     @Override
-    public Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
-        OffsetDateTime oldest = jdbcTemplate.query(
+    public OffsetDateTime findOldestEligibleAt() {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        return jdbcTemplate.query(
                         """
                         SELECT created_at
                         FROM analytics_outbox
@@ -167,15 +169,11 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 .stream()
                 .findFirst()
                 .orElse(null);
-        if (oldest == null) {
-            return null;
-        }
-        return (double) java.time.Duration.between(oldest, now).toSeconds();
     }
 
     @Override
-    public Double findOldestParkedAgeSeconds(OffsetDateTime now) {
-        OffsetDateTime oldest = jdbcTemplate.query(
+    public OffsetDateTime findOldestParkedAt() {
+        return jdbcTemplate.query(
                         """
                         SELECT parked_at
                         FROM analytics_outbox
@@ -188,10 +186,6 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 .stream()
                 .findFirst()
                 .orElse(null);
-        if (oldest == null) {
-            return null;
-        }
-        return (double) java.time.Duration.between(oldest, now).toSeconds();
     }
 
     @Override
@@ -297,7 +291,7 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
     }
 
     @Override
-    public int requeueAllParked(int limit, OffsetDateTime nextAttemptAt) {
+    public int requeueAllParked(int limit) {
         List<Long> ids = jdbcTemplate.query(
                 """
                 SELECT id
@@ -309,7 +303,7 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 """,
                 (resultSet, rowNum) -> resultSet.getLong("id"),
                 limit);
-        return requeueParkedBatch(ids, nextAttemptAt);
+        return requeueParkedBatch(ids, OffsetDateTime.now(clock));
     }
 
     @Override

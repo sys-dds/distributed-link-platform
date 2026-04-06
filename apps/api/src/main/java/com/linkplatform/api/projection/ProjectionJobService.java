@@ -70,7 +70,7 @@ public class ProjectionJobService {
         if (result.completed()) {
             projectionJobStore.markCompleted(job.id(), OffsetDateTime.now(clock), result.processedCount(), result.checkpointId());
         } else {
-            projectionJobStore.markProgress(job.id(), result.processedCount(), result.checkpointId());
+            projectionJobStore.markProgress(job.id(), OffsetDateTime.now(clock), result.processedCount(), result.checkpointId());
         }
         return result;
     }

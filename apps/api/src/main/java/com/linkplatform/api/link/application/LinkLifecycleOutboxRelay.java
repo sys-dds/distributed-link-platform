@@ -18,8 +18,10 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.WORKER})
 public class LinkLifecycleOutboxRelay {
+    public static final String PIPELINE_NAME = "lifecycle";
 
     private final LinkLifecycleOutboxStore linkLifecycleOutboxStore;
+    private final PipelineControlStore pipelineControlStore;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final Clock clock;
     private final String topic;
@@ -37,6 +39,7 @@ public class LinkLifecycleOutboxRelay {
     @Autowired
     public LinkLifecycleOutboxRelay(
             LinkLifecycleOutboxStore linkLifecycleOutboxStore,
+            PipelineControlStore pipelineControlStore,
             KafkaTemplate<String, String> kafkaTemplate,
             MeterRegistry meterRegistry,
             @Value("${link-platform.lifecycle.topic}") String topic,
@@ -47,6 +50,7 @@ public class LinkLifecycleOutboxRelay {
             @Value("${link-platform.lifecycle.outbox-relay-max-attempts}") int maxAttempts) {
         this(
                 linkLifecycleOutboxStore,
+                pipelineControlStore,
                 kafkaTemplate,
                 meterRegistry,
                 topic,
@@ -61,6 +65,7 @@ public class LinkLifecycleOutboxRelay {
 
     LinkLifecycleOutboxRelay(
             LinkLifecycleOutboxStore linkLifecycleOutboxStore,
+            PipelineControlStore pipelineControlStore,
             KafkaTemplate<String, String> kafkaTemplate,
             MeterRegistry meterRegistry,
             String topic,
@@ -72,6 +77,7 @@ public class LinkLifecycleOutboxRelay {
             Clock clock,
             String workerId) {
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
+        this.pipelineControlStore = pipelineControlStore;
         this.kafkaTemplate = kafkaTemplate;
         this.topic = topic;
         this.batchSize = batchSize;
@@ -97,24 +103,42 @@ public class LinkLifecycleOutboxRelay {
 
     @Scheduled(fixedDelayString = "${link-platform.lifecycle.outbox-relay-delay}")
     public void relayPendingEvents() {
+        relayOnce();
+    }
+
+    public RelayIterationResult relayOnce() {
         OffsetDateTime now = OffsetDateTime.now(clock);
+        PipelineControl control = pipelineControlStore.get(PIPELINE_NAME);
+        if (control.paused()) {
+            return new RelayIterationResult(control.pipelineName(), true, 0, 0);
+        }
         OffsetDateTime claimUntil = now.plus(leaseDuration);
         List<LinkLifecycleOutboxRecord> unpublishedRecords =
                 linkLifecycleOutboxStore.claimBatch(workerId, now, claimUntil, batchSize);
+        int processedCount = 0;
+        int parkedCount = 0;
 
         for (LinkLifecycleOutboxRecord unpublishedRecord : unpublishedRecords) {
             try {
                 kafkaTemplate.send(topic, unpublishedRecord.eventKey(), unpublishedRecord.payloadJson()).join();
                 linkLifecycleOutboxStore.markPublished(unpublishedRecord.id(), OffsetDateTime.now(clock));
                 publishSuccessCounter.increment();
+                processedCount++;
             } catch (RuntimeException exception) {
                 publishFailureCounter.increment();
-                handlePublishFailure(unpublishedRecord, now, exception);
+                boolean parked = handlePublishFailure(unpublishedRecord, now, exception);
+                if (parked) {
+                    parkedCount++;
+                }
+                pipelineControlStore.recordRelayFailure(PIPELINE_NAME, OffsetDateTime.now(clock), compactErrorSummary(exception));
+                throw exception;
             }
         }
+        pipelineControlStore.recordRelaySuccess(PIPELINE_NAME, OffsetDateTime.now(clock));
+        return new RelayIterationResult(PIPELINE_NAME, false, processedCount, parkedCount);
     }
 
-    private void handlePublishFailure(
+    private boolean handlePublishFailure(
             LinkLifecycleOutboxRecord unpublishedRecord,
             OffsetDateTime now,
             RuntimeException exception) {
@@ -128,7 +152,7 @@ public class LinkLifecycleOutboxRelay {
                     errorSummary,
                     now);
             parkedCounter.increment();
-            return;
+            return true;
         }
 
         linkLifecycleOutboxStore.recordPublishFailure(
@@ -138,6 +162,7 @@ public class LinkLifecycleOutboxRelay {
                 errorSummary,
                 null);
         retryCounter.increment();
+        return false;
     }
 
     private Duration backoffForAttempt(int attemptCount) {
@@ -154,5 +179,8 @@ public class LinkLifecycleOutboxRelay {
         String message = root.getMessage();
         String summary = root.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
         return summary.length() <= 255 ? summary : summary.substring(0, 255);
+    }
+
+    public record RelayIterationResult(String pipelineName, boolean paused, int processedCount, int parkedCount) {
     }
 }

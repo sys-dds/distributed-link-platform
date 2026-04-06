@@ -9,14 +9,32 @@ public interface AnalyticsOutboxStore {
 
     long countUnpublished();
 
-    long countEligible(OffsetDateTime now);
+    default long countEligible() {
+        return countEligible(OffsetDateTime.now(java.time.Clock.systemUTC()));
+    }
+
+    default long countEligible(OffsetDateTime now) {
+        return countEligible();
+    }
 
     long countParked();
 
-    Double findOldestEligibleAgeSeconds(OffsetDateTime now);
+    default OffsetDateTime findOldestEligibleAt() {
+        return null;
+    }
+
+    default Double findOldestEligibleAgeSeconds(OffsetDateTime now) {
+        OffsetDateTime oldest = findOldestEligibleAt();
+        return oldest == null ? null : (double) java.time.Duration.between(oldest, now).toSeconds();
+    }
+
+    default OffsetDateTime findOldestParkedAt() {
+        return null;
+    }
 
     default Double findOldestParkedAgeSeconds(OffsetDateTime now) {
-        return null;
+        OffsetDateTime oldest = findOldestParkedAt();
+        return oldest == null ? null : (double) java.time.Duration.between(oldest, now).toSeconds();
     }
 
     List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit);
@@ -36,6 +54,10 @@ public interface AnalyticsOutboxStore {
 
     default int requeueParkedBatch(List<Long> ids, OffsetDateTime nextAttemptAt) {
         return 0;
+    }
+
+    default int requeueAllParked(int limit) {
+        return requeueAllParked(limit, OffsetDateTime.now(java.time.Clock.systemUTC()));
     }
 
     default int requeueAllParked(int limit, OffsetDateTime nextAttemptAt) {

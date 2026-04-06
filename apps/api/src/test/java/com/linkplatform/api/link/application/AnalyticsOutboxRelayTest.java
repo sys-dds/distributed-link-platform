@@ -2,6 +2,7 @@ package com.linkplatform.api.link.application;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -31,6 +32,9 @@ class AnalyticsOutboxRelayTest {
     private AnalyticsOutboxStore analyticsOutboxStore;
 
     @Mock
+    private PipelineControlStore pipelineControlStore;
+
+    @Mock
     private KafkaTemplate<String, String> kafkaTemplate;
 
     private SimpleMeterRegistry meterRegistry;
@@ -41,6 +45,7 @@ class AnalyticsOutboxRelayTest {
         meterRegistry = new SimpleMeterRegistry();
         analyticsOutboxRelay = new AnalyticsOutboxRelay(
                 analyticsOutboxStore,
+                pipelineControlStore,
                 kafkaTemplate,
                 meterRegistry,
                 "link-platform.analytics.redirect-clicks",
@@ -51,6 +56,17 @@ class AnalyticsOutboxRelayTest {
                 3,
                 Clock.fixed(Instant.parse("2026-04-03T09:00:00Z"), ZoneOffset.UTC),
                 "worker-a");
+        when(pipelineControlStore.get(AnalyticsOutboxRelay.PIPELINE_NAME))
+                .thenReturn(new PipelineControl(
+                        AnalyticsOutboxRelay.PIPELINE_NAME,
+                        false,
+                        null,
+                        OffsetDateTime.parse("2026-04-03T08:00:00Z"),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null));
     }
 
     @Test
@@ -78,10 +94,11 @@ class AnalyticsOutboxRelayTest {
         when(kafkaTemplate.send(eq("link-platform.analytics.redirect-clicks"), eq("launch-page"), eq("{\"eventId\":\"event-1\"}")))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        analyticsOutboxRelay.relayPendingEvents();
+        assertThrows(RuntimeException.class, () -> analyticsOutboxRelay.relayPendingEvents());
 
         verify(kafkaTemplate).send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-1\"}");
         verify(analyticsOutboxStore).markPublished(eq(1L), any(OffsetDateTime.class));
+        verify(pipelineControlStore).recordRelaySuccess(eq(AnalyticsOutboxRelay.PIPELINE_NAME), any(OffsetDateTime.class));
         assertEquals(1.0, meterRegistry.get("link.analytics.outbox.publish.success").counter().count());
         assertEquals(0.0, meterRegistry.get("link.analytics.outbox.publish.failure").counter().count());
     }
@@ -127,7 +144,7 @@ class AnalyticsOutboxRelayTest {
         when(kafkaTemplate.send(eq("link-platform.analytics.redirect-clicks"), eq("launch-page"), eq("{\"eventId\":\"event-2\"}")))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        analyticsOutboxRelay.relayPendingEvents();
+        assertThrows(RuntimeException.class, () -> analyticsOutboxRelay.relayPendingEvents());
 
         InOrder inOrder = inOrder(kafkaTemplate, analyticsOutboxStore);
         inOrder.verify(kafkaTemplate).send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-1\"}");
@@ -171,6 +188,10 @@ class AnalyticsOutboxRelayTest {
                 OffsetDateTime.parse("2026-04-03T09:00:05Z"),
                 "RuntimeException: Kafka unavailable",
                 null);
+        verify(pipelineControlStore).recordRelayFailure(
+                eq(AnalyticsOutboxRelay.PIPELINE_NAME),
+                any(OffsetDateTime.class),
+                eq("RuntimeException: Kafka unavailable"));
         verify(analyticsOutboxStore, never()).markPublished(any(Long.class), any(OffsetDateTime.class));
         assertEquals(0.0, meterRegistry.get("link.analytics.outbox.publish.success").counter().count());
         assertEquals(1.0, meterRegistry.get("link.analytics.outbox.publish.failure").counter().count());
@@ -235,6 +256,7 @@ class AnalyticsOutboxRelayTest {
                 null);
         AnalyticsOutboxRelay boundedRelay = new AnalyticsOutboxRelay(
                 analyticsOutboxStore,
+                pipelineControlStore,
                 kafkaTemplate,
                 meterRegistry,
                 "link-platform.analytics.redirect-clicks",
@@ -254,7 +276,7 @@ class AnalyticsOutboxRelayTest {
         when(kafkaTemplate.send("link-platform.analytics.redirect-clicks", "launch-page", "{\"eventId\":\"event-12\"}"))
                 .thenThrow(new RuntimeException("Still failing"));
 
-        boundedRelay.relayPendingEvents();
+        assertThrows(RuntimeException.class, () -> boundedRelay.relayPendingEvents());
 
         verify(analyticsOutboxStore).recordPublishFailure(
                 12L,

@@ -16,6 +16,7 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(HttpRequestLoggingFilter.class);
     private static final String API_KEY_HEADER = "X-API-Key";
     private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final int MAX_DETAIL_LENGTH = 120;
 
     @Override
     protected void doFilterInternal(
@@ -29,14 +30,16 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         } finally {
             long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
             log.info(
-                    "http_request method={} path={} status={} outcome={} duration_ms={} auth_mode={} remote={}",
+                    "http_request method={} path={} status={} outcome={} duration_ms={} auth_mode={} remote={} operation={} detail={}",
                     request.getMethod(),
                     request.getRequestURI(),
                     response.getStatus(),
                     requestOutcome(response.getStatus()),
                     durationMillis,
                     authMode(request),
-                    anonymizedRemote(request.getRemoteAddr()));
+                    anonymizedRemote(request.getRemoteAddr()),
+                    operationMarker(request),
+                    safeDetail(request));
         }
     }
 
@@ -81,5 +84,36 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
             return "hashed";
         }
         return remoteAddress.substring(0, lastSeparator) + ".x";
+    }
+
+    private String operationMarker(HttpServletRequest request) {
+        Object attribute = request.getAttribute("operatorOperation");
+        if (attribute instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        String path = request.getRequestURI();
+        if ("POST".equalsIgnoreCase(request.getMethod())) {
+            return switch (path) {
+                case "/api/v1/analytics/pipeline/pause" -> "analytics_pipeline_pause";
+                case "/api/v1/analytics/pipeline/resume" -> "analytics_pipeline_resume";
+                case "/api/v1/analytics/pipeline/force-tick" -> "analytics_pipeline_force_tick";
+                case "/api/v1/analytics/pipeline/parked/drain" -> "analytics_pipeline_drain";
+                case "/api/v1/lifecycle/pipeline/pause" -> "lifecycle_pipeline_pause";
+                case "/api/v1/lifecycle/pipeline/resume" -> "lifecycle_pipeline_resume";
+                case "/api/v1/lifecycle/pipeline/force-tick" -> "lifecycle_pipeline_force_tick";
+                case "/api/v1/lifecycle/pipeline/parked/drain" -> "lifecycle_pipeline_drain";
+                default -> "none";
+            };
+        }
+        return "none";
+    }
+
+    private String safeDetail(HttpServletRequest request) {
+        Object attribute = request.getAttribute("operatorDetail");
+        if (!(attribute instanceof String value) || value.isBlank()) {
+            return "none";
+        }
+        String trimmed = value.trim();
+        return trimmed.length() <= MAX_DETAIL_LENGTH ? trimmed : trimmed.substring(0, MAX_DETAIL_LENGTH);
     }
 }

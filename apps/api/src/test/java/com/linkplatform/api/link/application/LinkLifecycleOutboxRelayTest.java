@@ -1,6 +1,7 @@
 package com.linkplatform.api.link.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -29,6 +30,9 @@ class LinkLifecycleOutboxRelayTest {
     private LinkLifecycleOutboxStore linkLifecycleOutboxStore;
 
     @Mock
+    private PipelineControlStore pipelineControlStore;
+
+    @Mock
     private KafkaTemplate<String, String> kafkaTemplate;
 
     private SimpleMeterRegistry meterRegistry;
@@ -39,6 +43,7 @@ class LinkLifecycleOutboxRelayTest {
         meterRegistry = new SimpleMeterRegistry();
         relay = new LinkLifecycleOutboxRelay(
                 linkLifecycleOutboxStore,
+                pipelineControlStore,
                 kafkaTemplate,
                 meterRegistry,
                 "link-platform.lifecycle.link-events",
@@ -49,6 +54,17 @@ class LinkLifecycleOutboxRelayTest {
                 3,
                 Clock.fixed(Instant.parse("2026-04-04T09:00:00Z"), ZoneOffset.UTC),
                 "worker-a");
+        when(pipelineControlStore.get(LinkLifecycleOutboxRelay.PIPELINE_NAME))
+                .thenReturn(new PipelineControl(
+                        LinkLifecycleOutboxRelay.PIPELINE_NAME,
+                        false,
+                        null,
+                        OffsetDateTime.parse("2026-04-04T08:00:00Z"),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null));
     }
 
     @Test
@@ -76,10 +92,11 @@ class LinkLifecycleOutboxRelayTest {
         when(kafkaTemplate.send("link-platform.lifecycle.link-events", "launch-page", "{\"eventId\":\"event-1\"}"))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        relay.relayPendingEvents();
+        assertThrows(RuntimeException.class, () -> relay.relayPendingEvents());
 
         verify(kafkaTemplate).send("link-platform.lifecycle.link-events", "launch-page", "{\"eventId\":\"event-1\"}");
         verify(linkLifecycleOutboxStore).markPublished(eq(1L), any(OffsetDateTime.class));
+        verify(pipelineControlStore).recordRelaySuccess(eq(LinkLifecycleOutboxRelay.PIPELINE_NAME), any(OffsetDateTime.class));
         assertEquals(1.0, meterRegistry.get("link.lifecycle.outbox.publish.success").counter().count());
     }
 
@@ -108,7 +125,7 @@ class LinkLifecycleOutboxRelayTest {
         when(kafkaTemplate.send("link-platform.lifecycle.link-events", "launch-page", "{\"eventId\":\"event-2\"}"))
                 .thenThrow(new RuntimeException("Kafka unavailable"));
 
-        relay.relayPendingEvents();
+        assertThrows(RuntimeException.class, () -> relay.relayPendingEvents());
 
         verify(linkLifecycleOutboxStore).recordPublishFailure(
                 2L,
@@ -116,6 +133,10 @@ class LinkLifecycleOutboxRelayTest {
                 OffsetDateTime.parse("2026-04-04T09:00:05Z"),
                 "RuntimeException: Kafka unavailable",
                 null);
+        verify(pipelineControlStore).recordRelayFailure(
+                eq(LinkLifecycleOutboxRelay.PIPELINE_NAME),
+                any(OffsetDateTime.class),
+                eq("RuntimeException: Kafka unavailable"));
         verify(linkLifecycleOutboxStore, never()).markPublished(any(Long.class), any(OffsetDateTime.class));
         assertEquals(1.0, meterRegistry.get("link.lifecycle.outbox.retry").counter().count());
     }

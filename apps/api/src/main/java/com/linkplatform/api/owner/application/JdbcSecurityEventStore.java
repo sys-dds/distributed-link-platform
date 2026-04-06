@@ -144,6 +144,14 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case INVALID_CREDENTIAL -> "Invalid credential rejected";
             case RATE_LIMIT_REJECTED -> "Rate limit rejected";
             case QUOTA_REJECTED -> "Quota limit rejected";
+            case ANALYTICS_PIPELINE_PAUSED -> "Analytics pipeline paused";
+            case ANALYTICS_PIPELINE_RESUMED -> "Analytics pipeline resumed";
+            case ANALYTICS_PIPELINE_FORCE_TICKED -> "Analytics pipeline force ticked";
+            case ANALYTICS_PIPELINE_DRAINED -> "Analytics pipeline drained";
+            case LIFECYCLE_PIPELINE_PAUSED -> "Lifecycle pipeline paused";
+            case LIFECYCLE_PIPELINE_RESUMED -> "Lifecycle pipeline resumed";
+            case LIFECYCLE_PIPELINE_FORCE_TICKED -> "Lifecycle pipeline force ticked";
+            case LIFECYCLE_PIPELINE_DRAINED -> "Lifecycle pipeline drained";
             case CLICK_ROLLUP_DRIFT_DETECTED -> "Click rollup drift detected";
             case CLICK_ROLLUP_REPAIRED -> "Click rollup repaired";
             case QUERY_DATASOURCE_FALLBACK -> "Query datasource fallback activated";
