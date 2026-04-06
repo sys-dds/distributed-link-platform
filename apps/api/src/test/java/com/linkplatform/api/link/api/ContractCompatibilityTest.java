@@ -13,6 +13,8 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 
 class ContractCompatibilityTest {
 
@@ -68,6 +70,22 @@ class ContractCompatibilityTest {
 
         assertThat(json).isEqualTo(
                 "{\"slug\":\"launch-page\",\"originalUrl\":\"https://example.com/launch\",\"createdAt\":\"2026-04-01T08:00:00Z\",\"expiresAt\":\"2030-04-01T08:00:00Z\",\"title\":\"Launch\",\"tags\":[\"docs\"],\"hostname\":\"example.com\",\"version\":4,\"clickTotal\":12}");
+    }
+
+    @Test
+    void linkResponseJsonShapeRemainsCompatible() throws Exception {
+        String json = objectMapper.writeValueAsString(new LinkResponse(
+                "launch-page",
+                "https://example.com/launch",
+                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                OffsetDateTime.parse("2030-04-01T08:00:00Z"),
+                "Launch",
+                List.of("docs"),
+                "example.com",
+                4L));
+
+        assertThat(json).isEqualTo(
+                "{\"slug\":\"launch-page\",\"originalUrl\":\"https://example.com/launch\",\"createdAt\":\"2026-04-01T08:00:00Z\",\"expiresAt\":\"2030-04-01T08:00:00Z\",\"title\":\"Launch\",\"tags\":[\"docs\"],\"hostname\":\"example.com\",\"version\":4}");
     }
 
     @Test
@@ -130,5 +148,47 @@ class ContractCompatibilityTest {
 
         assertThat(json).isEqualTo(
                 "{\"ownerKey\":\"free-owner\",\"displayName\":\"Free Owner\",\"plan\":\"FREE\",\"activeLinkCount\":2,\"activeLinkLimit\":2}");
+    }
+
+    @Test
+    void linkActivityEventResponseJsonShapeRemainsCompatible() throws Exception {
+        String json = objectMapper.writeValueAsString(new LinkActivityEventResponse(
+                "created",
+                "launch-page",
+                "https://example.com/launch",
+                "Launch",
+                List.of("docs"),
+                "example.com",
+                OffsetDateTime.parse("2030-04-01T08:00:00Z"),
+                OffsetDateTime.parse("2026-04-06T08:00:00Z")));
+
+        assertThat(json).isEqualTo(
+                "{\"type\":\"created\",\"slug\":\"launch-page\",\"originalUrl\":\"https://example.com/launch\",\"title\":\"Launch\",\"tags\":[\"docs\"],\"hostname\":\"example.com\",\"expiresAt\":\"2030-04-01T08:00:00Z\",\"occurredAt\":\"2026-04-06T08:00:00Z\"}");
+    }
+
+    @Test
+    void unauthorizedProblemDetailJsonShapeRemainsCompatible() throws Exception {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                "X-API-Key header is required");
+        problemDetail.setTitle(HttpStatus.UNAUTHORIZED.getReasonPhrase());
+
+        String json = objectMapper.writeValueAsString(problemDetail);
+
+        assertThat(json).isEqualTo(
+                "{\"type\":\"about:blank\",\"title\":\"Unauthorized\",\"status\":401,\"detail\":\"X-API-Key header is required\",\"instance\":null,\"properties\":null}");
+    }
+
+    @Test
+    void serviceUnavailableProblemDetailJsonShapeRemainsCompatible() throws Exception {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Redirect lookup temporarily unavailable for slug: launch-page");
+        problemDetail.setTitle(HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase());
+
+        String json = objectMapper.writeValueAsString(problemDetail);
+
+        assertThat(json).isEqualTo(
+                "{\"type\":\"about:blank\",\"title\":\"Service Unavailable\",\"status\":503,\"detail\":\"Redirect lookup temporarily unavailable for slug: launch-page\",\"instance\":null,\"properties\":null}");
     }
 }

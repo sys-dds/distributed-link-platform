@@ -31,6 +31,7 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
                 .withDetail("publicBaseUrl", publicBaseUrl)
                 .withDetail("cacheEnabled", cacheEnabled)
                 .withDetail("routeStrategy", "cache-first-primary-lookup")
+                .withDetail("cacheDegradationPolicy", "fallback-to-primary")
                 .withDetail("analyticsWriteMode", "durable-outbox")
                 .withDetail("lastDecision", redirectRuntimeState.getLastDecision());
         if (!redirectEnabled) {
@@ -40,7 +41,10 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
         String failoverRegion = runtimeProperties.getRedirect().getFailoverRegion();
         String failoverBaseUrl = runtimeProperties.getRedirect().getFailoverBaseUrl();
         builder.withDetail("failoverConfigured", failoverRegion != null)
-                .withDetail("failoverMode", failoverRegion == null ? "single-region" : "regional-fallback");
+                .withDetail("failoverMode", failoverRegion == null ? "single-region" : "regional-fallback")
+                .withDetail(
+                        "primaryFailurePolicy",
+                        failoverRegion == null ? "fail-closed-service-unavailable" : "regional-failover");
         if (failoverRegion != null) {
             builder.withDetail("failoverRegion", failoverRegion)
                     .withDetail("failoverBaseUrl", failoverBaseUrl)
