@@ -1,128 +1,124 @@
-
-### 🚀 TICKET-035
+### 🚀 TICKET-036
 
 #### title[]
 
-Build real read-scaling and SRE hardening: actual query-datasource routing, deterministic analytics freshness, role-aware health/metrics, and performance/degradation proof
+Build the resilience and recovery proof pack: deterministic analytics freshness, backup/restore and retention, failure drills, and safer rollout/contract posture
 
 #### technical_detail[]
 
-PR 29 created the right seam, but it stopped at **runtime separation + query groundwork**.
+PR 30 improved runtime/read-scaling posture, but it stopped short of the next truly valuable end-state.
 
-TICKET-035 should turn that into a much more production-shaped slice by combining:
+TICKET-036 should be a **large resilience slice** that combines:
 
-### Part 1 — finish the missing TICKET-034 hardening
+### Part 1 — finish the missing 035 hardening
 
-* close the still-open analytics freshness gap
-* make click/rollup-driven analytics cache invalidation deterministic
-* prove discovery/search/analytics rebuild and cache behavior still converge correctly
+* make analytics freshness deterministic after click and rollup changes
+* ensure traffic summary, top links, trending links, and recent activity do not serve stale cached data after new traffic
+* add focused proof for redirect hot path and owner query paths so “performance/degradation proof” becomes real instead of implied
 
-### Part 2 — promote the query seam into real read-scaling posture
+### Part 2 — backup / restore / retention / archival
 
-* replace the “same-DataSource query template” setup with a **real query-datasource configuration**
-* keep primary write datasource and query datasource explicitly separate in configuration
-* default query datasource to primary when a dedicated query source is not configured
-* route owner discovery/search/analytics/list/detail reads through the query path intentionally
-* keep mutation/write paths on the primary write datasource
+Add real operational data protection posture:
 
-### Part 3 — role-aware operational/SRE hardening
+* backup and restore flows for PostgreSQL data that matter to the platform
+* retention and archival rules for analytics/history where appropriate
+* documented and testable recovery path inside the code/integration surface
+* keep it practical and local-dev/prod-shaped, not enterprise theater
 
-Add a stronger operations surface for the split runtimes:
+### Part 3 — resilience drills
 
-* role-aware readiness/health behavior
-* clearer metrics for:
+Add failure-mode proof for the critical runtime dependencies:
 
-    * cache hit/miss/fallback
-    * analytics outbox backlog / parked / retry posture
-    * lifecycle outbox backlog / parked / retry posture
-    * projection job lag/failure/reclaim posture
-    * rate-limit/security-event counters where useful
-* make runtime-specific degradation more visible without overbuilding dashboards inside the repo
+* Redis unavailable
+* dedicated query datasource unavailable
+* worker restart / replay / projection rebuild recovery
+* outbox backlog / parked / retry posture under failure
+* restore + rebuild convergence after recovery
 
-### Part 4 — performance and degradation proof
+### Part 4 — safer rollout and contract posture
 
-Add focused proof that the new architecture actually behaves well:
+Add the first real release-safety layer:
 
-* redirect runtime hot-path verification
-* owner control-plane read-path verification through query datasource
-* query-datasource outage / degradation behavior
-* Redis degradation still behaving correctly
-* targeted performance evidence for hot paths and owner query screens
+* explicit versioned API / event contract posture where needed
+* compatibility checks for important serialized event shapes
+* rollout-safe startup validation for runtime modes / datasource expectations
+* keep contracts friendly for the future Next.js frontend
+* do not add a giant release system; keep it practical
 
-Keep this explicit and production-shaped.
-Do **not** introduce full replica infrastructure or multi-region yet.
+This is the right next ticket because it combines:
+
+* the missing hardening from 035
+* real operational recovery posture
+* resilience proof
+* safer evolution posture
+
+That gets you closer to the polished end-state much faster than another narrow ticket.
 
 #### feature_delivered_by_end[]
 
 The platform has:
 
-* real query-datasource routing posture instead of just a placeholder seam
-* deterministic analytics freshness after click/rollup changes
-* stronger runtime-specific health/metrics visibility
-* better proof that redirect, control-plane, and worker runtimes behave correctly under load and degradation
+* deterministic analytics freshness after new click traffic
+* real backup/restore and retention posture
+* recovery drills proving replay/rebuild/degradation behavior
+* safer rollout and contract-evolution posture
+* stronger evidence that the platform is production-shaped, not just feature-rich
 
 #### how_this_unlocks_next_feature[]
 
-This unlocks the next major destination slices cleanly:
+This unlocks the remaining destination slices cleanly:
 
-* backup/restore + retention + recovery drills
 * multi-region redirect architecture
-* stronger security/release/resilience proof packs
-* final performance/observability/staff-level packaging
+* stronger security hardening
+* final performance/observability/cost packaging
+* final runbooks/portfolio/interview packaging
 
 #### acceptance_criteria[]
 
-* query datasource is separately configurable from the write datasource
-* query reads default safely to primary when a dedicated query datasource is not configured
-* owner discovery/search/analytics/list/detail reads go through the query path intentionally
-* mutations remain on the primary/write path
-* analytics caches are invalidated or refreshed deterministically after click/rollup changes
-* redirect runtime still behaves correctly and remains slim
-* control-plane and worker runtime behavior remains correctly separated
-* runtime-specific health/metrics expose useful operational signals
-* degraded query datasource behavior is explicit and proven
-* Redis degradation still does not break correctness
+* analytics caches are invalidated or refreshed deterministically after click and rollup changes
+* owner-facing traffic summary / top links / trending / recent activity do not serve stale results after new traffic
+* focused redirect and owner-query performance proof exists and is reproducible
+* backup flow exists and restore flow is proven against a realistic dataset
+* retention / archival behavior is explicit for data that should not grow unbounded
+* worker replay / projection rebuild after restore converges correctly
+* Redis outage behavior remains correct
+* dedicated query datasource outage behavior remains correct
+* runtime startup validation is safer and clearer
+* important API / event contract changes are guarded with compatibility-oriented tests
 * no repo churn in `docs/tickets.md`, README, or Postman
 
 #### code_target[]
 
-* runtime datasource configuration
-* `PostgresLinkStore`
-* owner-facing query/read paths in `LinkApplicationService` / `DefaultLinkApplicationService`
-* analytics click/rollup consumer path
-* cache invalidation hooks
-* runtime health/metrics wiring
-* focused runtime/query/cache tests
-* focused performance/degradation proof
+* analytics click / rollup consumer path
+* Redis invalidation / cache adapter paths
+* owner analytics/query service/store paths
+* runtime health / startup validation wiring
+* backup/restore/retention support in infra/scripts/test harness where appropriate
+* projection rebuild / replay paths
+* compatibility tests for important API/event contracts
+* focused resilience/performance tests
 * do **not** touch repo ticket-tracking/docs files
 
 #### proof[]
 
-* targeted tests proving query reads route through the query datasource path
-* targeted tests proving writes remain on the primary path
-* targeted tests proving analytics freshness after click/rollup changes
-* targeted tests proving redirect runtime still behaves correctly
-* targeted tests proving worker/control-plane separation still holds
-* targeted tests proving query-datasource fallback/degradation behavior
-* targeted tests proving Redis degradation still works
-* focused performance evidence for redirect and owner query paths
+* targeted tests proving analytics freshness after click changes
+* targeted tests proving analytics freshness after rollup updates
+* targeted tests proving restore + replay + rebuild convergence
+* targeted tests proving Redis outage fallback
+* targeted tests proving query datasource outage fallback
+* targeted tests proving runtime startup validation
+* focused performance evidence for redirect and owner query hot paths
 * actual compile/test command output with passing results
 
 #### delivery_note[]
 
-This is intentionally a **large** ticket.
+This is intentionally a **huge** ticket.
 
-It must:
+It folds together:
 
-* finish the missing hardening from PR 29
-* turn the query seam into real read-scaling posture
-* add the next serious SRE/operational proof layer
+* the missing hardening from 035
+* backup/restore + retention
+* resilience drills
+* rollout/contract safety
 
-Do **not** split this into separate tickets for:
-
-* cache freshness
-* query datasource
-* metrics/health
-* performance proof
-
-Do it as one coherent production-hardening jump.
+Do **not** split those into several small tickets unless the repo forces a clearly separate architectural cut.
