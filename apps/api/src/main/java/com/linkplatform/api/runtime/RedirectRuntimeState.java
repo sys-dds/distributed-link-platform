@@ -9,6 +9,7 @@ public class RedirectRuntimeState {
 
     private final Counter cacheHitCounter;
     private final Counter cacheMissCounter;
+    private final Counter cacheBypassCounter;
     private final Counter primaryLookupFailureCounter;
     private final Counter failoverActivatedCounter;
     private final Counter unavailableCounter;
@@ -24,6 +25,9 @@ public class RedirectRuntimeState {
                 .register(meterRegistry);
         this.cacheMissCounter = Counter.builder("link.redirect.cache.miss")
                 .description("Number of redirect cache misses")
+                .register(meterRegistry);
+        this.cacheBypassCounter = Counter.builder("link.redirect.cache.bypass")
+                .description("Number of redirect requests that bypassed cache because cache generation tracking was degraded")
                 .register(meterRegistry);
         this.primaryLookupFailureCounter = Counter.builder("link.redirect.primary.lookup.failure")
                 .description("Number of redirect primary lookup failures")
@@ -45,6 +49,11 @@ public class RedirectRuntimeState {
     public void recordCacheMiss() {
         cacheMissCounter.increment();
         lastDecision = "cache-miss";
+    }
+
+    public void recordCacheBypass() {
+        cacheBypassCounter.increment();
+        lastDecision = "cache-bypass";
     }
 
     public void recordPrimaryLookupSuccess() {

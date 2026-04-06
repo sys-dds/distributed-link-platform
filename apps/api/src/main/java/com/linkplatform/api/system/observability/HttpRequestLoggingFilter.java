@@ -15,6 +15,7 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(HttpRequestLoggingFilter.class);
     private static final String API_KEY_HEADER = "X-API-Key";
+    private static final String AUTHORIZATION_HEADER = "Authorization";
 
     @Override
     protected void doFilterInternal(
@@ -28,13 +29,33 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         } finally {
             long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
             log.info(
-                    "http_request method={} path={} status={} duration_ms={} api_key={}",
+                    "http_request method={} path={} status={} duration_ms={} auth_mode={} api_key={}",
                     request.getMethod(),
                     request.getRequestURI(),
                     response.getStatus(),
                     durationMillis,
+                    authMode(request),
                     redactApiKey(request.getHeader(API_KEY_HEADER)));
         }
+    }
+
+    private String authMode(HttpServletRequest request) {
+        boolean apiKeyPresent = headerPresent(request.getHeader(API_KEY_HEADER));
+        boolean authorizationPresent = headerPresent(request.getHeader(AUTHORIZATION_HEADER));
+        if (apiKeyPresent && authorizationPresent) {
+            return "both";
+        }
+        if (authorizationPresent) {
+            return "bearer";
+        }
+        if (apiKeyPresent) {
+            return "api-key";
+        }
+        return "absent";
+    }
+
+    private boolean headerPresent(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String redactApiKey(String apiKeyHeader) {

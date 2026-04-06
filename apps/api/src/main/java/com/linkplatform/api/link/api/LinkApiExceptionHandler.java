@@ -10,8 +10,10 @@ import com.linkplatform.api.link.application.SelfTargetLinkException;
 import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
 import com.linkplatform.api.owner.application.ControlPlaneRateLimitExceededException;
 import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -34,8 +36,10 @@ public class LinkApiExceptionHandler {
     }
 
     @ExceptionHandler(ApiKeyAuthenticationException.class)
-    public ProblemDetail handleApiKeyAuthentication(ApiKeyAuthenticationException exception) {
-        return problemDetail(HttpStatus.UNAUTHORIZED, exception.getMessage());
+    public ResponseEntity<ProblemDetail> handleApiKeyAuthentication(ApiKeyAuthenticationException exception) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"link-platform\"")
+                .body(problemDetail(HttpStatus.UNAUTHORIZED, exception.getMessage()));
     }
 
     @ExceptionHandler(ControlPlaneRateLimitExceededException.class)

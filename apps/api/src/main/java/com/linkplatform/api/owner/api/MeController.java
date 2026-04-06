@@ -27,9 +27,11 @@ public class MeController {
     @GetMapping
     public MeResponse me(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         AuthenticatedOwner owner = ownerAccessService.authorizeRead(
                 apiKey,
+                authorizationHeader,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());

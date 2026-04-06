@@ -27,20 +27,40 @@ public class OwnerAccessService {
     }
 
     public AuthenticatedOwner authorizeRead(String apiKey, String requestMethod, String requestPath, String remoteAddress) {
-        return authorize(apiKey, ControlPlaneRateLimitBucket.READ, requestMethod, requestPath, remoteAddress);
+        return authorize(apiKey, null, ControlPlaneRateLimitBucket.READ, requestMethod, requestPath, remoteAddress);
+    }
+
+    public AuthenticatedOwner authorizeRead(
+            String apiKey,
+            String authorizationHeader,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress) {
+        return authorize(apiKey, authorizationHeader, ControlPlaneRateLimitBucket.READ, requestMethod, requestPath, remoteAddress);
     }
 
     public AuthenticatedOwner authorizeMutation(String apiKey, String requestMethod, String requestPath, String remoteAddress) {
-        return authorize(apiKey, ControlPlaneRateLimitBucket.MUTATION, requestMethod, requestPath, remoteAddress);
+        return authorize(apiKey, null, ControlPlaneRateLimitBucket.MUTATION, requestMethod, requestPath, remoteAddress);
+    }
+
+    public AuthenticatedOwner authorizeMutation(
+            String apiKey,
+            String authorizationHeader,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress) {
+        return authorize(apiKey, authorizationHeader, ControlPlaneRateLimitBucket.MUTATION, requestMethod, requestPath, remoteAddress);
     }
 
     private AuthenticatedOwner authorize(
             String apiKey,
+            String authorizationHeader,
             ControlPlaneRateLimitBucket bucket,
             String requestMethod,
             String requestPath,
             String remoteAddress) {
-        if (apiKey == null || apiKey.isBlank()) {
+        String resolvedApiKey = resolveApiKey(apiKey, authorizationHeader, requestMethod, requestPath, remoteAddress);
+        if (resolvedApiKey == null) {
             securityEventStore.record(
                     SecurityEventType.MISSING_API_KEY,
                     null,
@@ -48,12 +68,12 @@ public class OwnerAccessService {
                     requestMethod,
                     requestPath,
                     remoteAddress,
-                    "Missing X-API-Key header rejected",
+                    "Missing API credential rejected",
                     OffsetDateTime.now(clock));
             throw new ApiKeyAuthenticationException("X-API-Key header is required");
         }
 
-        String apiKeyHash = sha256(apiKey.trim());
+        String apiKeyHash = sha256(resolvedApiKey);
         AuthenticatedOwner owner = ownerStore.findByApiKeyHash(apiKeyHash).orElse(null);
         if (owner == null) {
             securityEventStore.record(
@@ -63,7 +83,7 @@ public class OwnerAccessService {
                     requestMethod,
                     requestPath,
                     remoteAddress,
-                    "Invalid API key rejected",
+                    "Invalid API credential rejected",
                     OffsetDateTime.now(clock));
             throw new ApiKeyAuthenticationException("X-API-Key is invalid");
         }
@@ -86,6 +106,75 @@ public class OwnerAccessService {
                     "Control-plane " + bucket.name().toLowerCase() + " rate limit exceeded");
         }
         return owner;
+    }
+
+    private String resolveApiKey(
+            String apiKeyHeader,
+            String authorizationHeader,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress) {
+        String normalizedApiKey = trimToNull(apiKeyHeader);
+        String bearerToken = extractBearerToken(authorizationHeader, requestMethod, requestPath, remoteAddress);
+        if (normalizedApiKey != null && bearerToken != null && !normalizedApiKey.equals(bearerToken)) {
+            securityEventStore.record(
+                    SecurityEventType.CONFLICTING_API_CREDENTIALS,
+                    null,
+                    null,
+                    requestMethod,
+                    requestPath,
+                    remoteAddress,
+                    "Conflicting API credentials rejected",
+                    OffsetDateTime.now(clock));
+            throw new ApiKeyAuthenticationException(
+                    "X-API-Key and Authorization credentials must match when both are provided");
+        }
+        return normalizedApiKey != null ? normalizedApiKey : bearerToken;
+    }
+
+    private String extractBearerToken(
+            String authorizationHeader,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress) {
+        String normalizedAuthorization = trimToNull(authorizationHeader);
+        if (normalizedAuthorization == null) {
+            return null;
+        }
+        if (!normalizedAuthorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            securityEventStore.record(
+                    SecurityEventType.MALFORMED_AUTHORIZATION_HEADER,
+                    null,
+                    null,
+                    requestMethod,
+                    requestPath,
+                    remoteAddress,
+                    "Malformed Authorization header rejected",
+                    OffsetDateTime.now(clock));
+            throw new ApiKeyAuthenticationException("Authorization header must use Bearer token");
+        }
+        String bearerToken = trimToNull(normalizedAuthorization.substring(7));
+        if (bearerToken == null) {
+            securityEventStore.record(
+                    SecurityEventType.MALFORMED_AUTHORIZATION_HEADER,
+                    null,
+                    null,
+                    requestMethod,
+                    requestPath,
+                    remoteAddress,
+                    "Blank bearer token rejected",
+                    OffsetDateTime.now(clock));
+            throw new ApiKeyAuthenticationException("Authorization bearer token is required");
+        }
+        return bearerToken;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private String sha256(String value) {

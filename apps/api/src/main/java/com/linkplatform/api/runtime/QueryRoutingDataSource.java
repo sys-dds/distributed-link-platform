@@ -1,5 +1,7 @@
 package com.linkplatform.api.runtime;
 
+import com.linkplatform.api.owner.application.SecurityEventStore;
+import com.linkplatform.api.owner.application.SecurityEventType;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -8,6 +10,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
@@ -22,18 +25,23 @@ public class QueryRoutingDataSource extends AbstractDataSource {
     private final DataSource dedicatedQueryDataSource;
     private final boolean dedicatedConfigured;
     private final Counter fallbackCounter;
+    private final SecurityEventStore securityEventStore;
     private final Clock clock;
     private volatile OffsetDateTime lastFallbackAt;
     private volatile String lastFallbackReason;
+    private volatile OffsetDateTime lastFallbackAuditAt;
+    private volatile String lastFallbackAuditReason;
 
     public QueryRoutingDataSource(
             DataSource primaryDataSource,
             DataSource dedicatedQueryDataSource,
             boolean dedicatedConfigured,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            SecurityEventStore securityEventStore) {
         this.primaryDataSource = primaryDataSource;
         this.dedicatedQueryDataSource = dedicatedQueryDataSource;
         this.dedicatedConfigured = dedicatedConfigured;
+        this.securityEventStore = securityEventStore;
         this.fallbackCounter = Counter.builder("link.query.datasource.fallback")
                 .description("Number of query datasource fallbacks to the primary datasource")
                 .register(meterRegistry);
@@ -127,8 +135,44 @@ public class QueryRoutingDataSource extends AbstractDataSource {
             lastFallbackAt = OffsetDateTime.now(clock);
             lastFallbackReason = compactReason(exception);
             log.warn("link_query_datasource_fallback reason={}", lastFallbackReason);
+            recordFallbackAuditEvent();
             return primaryConnection(username, password);
         }
+    }
+
+    private void recordFallbackAuditEvent() {
+        OffsetDateTime occurredAt = OffsetDateTime.now(clock);
+        if (!shouldAuditFallback(occurredAt)) {
+            return;
+        }
+        try {
+            securityEventStore.record(
+                    SecurityEventType.QUERY_DATASOURCE_FALLBACK,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Dedicated query datasource fallback activated: " + lastFallbackReason,
+                    occurredAt);
+            lastFallbackAuditAt = occurredAt;
+            lastFallbackAuditReason = lastFallbackReason;
+        } catch (RuntimeException exception) {
+            log.warn("link_query_datasource_fallback_audit_failed reason={}", exception.getClass().getSimpleName());
+        }
+    }
+
+    private boolean shouldAuditFallback(OffsetDateTime occurredAt) {
+        if (lastFallbackReason == null) {
+            return false;
+        }
+        if (lastFallbackAuditAt == null) {
+            return true;
+        }
+        if (!lastFallbackReason.equals(lastFallbackAuditReason)) {
+            return true;
+        }
+        return lastFallbackAuditAt.plus(Duration.ofMinutes(5)).isBefore(occurredAt);
     }
 
     private Connection dedicatedConnection(String username, String password) throws SQLException {
