@@ -245,10 +245,11 @@ public class RedisLinkReadCache implements LinkReadCache {
                 meterRegistry.counter("link.cache.miss", "area", area).increment();
                 return Optional.empty();
             }
+            T parsed = objectMapper.readValue(value, type);
             meterRegistry.counter("link.cache.hit", "area", area).increment();
-            return Optional.of(objectMapper.readValue(value, type));
+            return Optional.of(parsed);
         } catch (Exception exception) {
-            handleFailure("read", area, exception);
+            handleReadFailure(area, key, exception);
             return Optional.empty();
         }
     }
@@ -260,10 +261,11 @@ public class RedisLinkReadCache implements LinkReadCache {
                 meterRegistry.counter("link.cache.miss", "area", area).increment();
                 return Optional.empty();
             }
+            T parsed = objectMapper.readValue(value, typeReference);
             meterRegistry.counter("link.cache.hit", "area", area).increment();
-            return Optional.of(objectMapper.readValue(value, typeReference));
+            return Optional.of(parsed);
         } catch (Exception exception) {
-            handleFailure("read", area, exception);
+            handleReadFailure(area, key, exception);
             return Optional.empty();
         }
     }
@@ -319,11 +321,26 @@ public class RedisLinkReadCache implements LinkReadCache {
     private long getGeneration(String generationKey) {
         try {
             String stored = redisTemplate.opsForValue().get(generationKey);
-            return stored == null ? 0L : Long.parseLong(stored);
+            if (stored == null) {
+                return 0L;
+            }
+            try {
+                return Long.parseLong(stored);
+            } catch (NumberFormatException invalidGeneration) {
+                // Corrupted generation data should not permanently force cache bypass.
+                delete("generation", generationKey);
+                meterRegistry.counter("link.cache.miss", "area", "generation").increment();
+                return 0L;
+            }
         } catch (Exception exception) {
             handleFailure("read_generation", "generation", exception);
             return CACHE_UNAVAILABLE_GENERATION;
         }
+    }
+
+    private void handleReadFailure(String area, String key, Exception exception) {
+        handleFailure("read", area, exception);
+        delete(area, key);
     }
 
     private void handleFailure(String operation, String area, Exception exception) {

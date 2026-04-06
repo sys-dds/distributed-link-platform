@@ -70,7 +70,8 @@ public class OwnerAccessService {
                     remoteAddress,
                     "Missing API credential rejected",
                     OffsetDateTime.now(clock));
-            throw new ApiKeyAuthenticationException("X-API-Key header is required");
+            throw new ApiKeyAuthenticationException(
+                    "API credential is required via X-API-Key or Authorization: Bearer <token>");
         }
 
         String apiKeyHash = sha256(resolvedApiKey);
@@ -85,7 +86,7 @@ public class OwnerAccessService {
                     remoteAddress,
                     "Invalid API credential rejected",
                     OffsetDateTime.now(clock));
-            throw new ApiKeyAuthenticationException("X-API-Key is invalid");
+            throw new ApiKeyAuthenticationException("API credential is invalid");
         }
 
         OffsetDateTime windowStartedAt = OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MINUTES);

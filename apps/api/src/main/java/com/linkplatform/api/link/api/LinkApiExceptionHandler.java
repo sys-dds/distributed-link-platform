@@ -10,12 +10,15 @@ import com.linkplatform.api.link.application.SelfTargetLinkException;
 import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
 import com.linkplatform.api.owner.application.ControlPlaneRateLimitExceededException;
 import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
+import java.util.Locale;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class LinkApiExceptionHandler {
@@ -69,7 +72,7 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(LinkPreconditionRequiredException.class)
     public ProblemDetail handleMissingPrecondition(LinkPreconditionRequiredException exception) {
-        return problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        return problemDetail(HttpStatus.PRECONDITION_REQUIRED, exception.getMessage());
     }
 
     @ExceptionHandler(RedirectLookupUnavailableException.class)
@@ -77,9 +80,24 @@ public class LinkApiExceptionHandler {
         return problemDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     }
 
+    @ExceptionHandler(ResponseStatusException.class)
+    public ProblemDetail handleResponseStatus(ResponseStatusException exception) {
+        HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
+        String detail = exception.getReason() == null || exception.getReason().isBlank()
+                ? status.getReasonPhrase()
+                : exception.getReason();
+        return problemDetail(status, detail);
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    public ProblemDetail handleDataAccess(DataAccessException exception) {
+        return problemDetail(HttpStatus.SERVICE_UNAVAILABLE, "Backend datastore temporarily unavailable");
+    }
+
     private ProblemDetail problemDetail(HttpStatus status, String detail) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detail);
         problemDetail.setTitle(status.getReasonPhrase());
+        problemDetail.setProperty("code", status.name().toLowerCase(Locale.ROOT).replace('_', '-'));
         return problemDetail;
     }
 }

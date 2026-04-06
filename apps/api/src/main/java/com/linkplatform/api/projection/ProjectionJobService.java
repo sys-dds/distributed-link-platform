@@ -82,7 +82,10 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildClickRollupsChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
-            linkStore.findOwnerIdsWithClickHistory().forEach(linkReadCache::invalidateOwnerAnalytics);
+            linkStore.findOwnerIdsWithClickHistory().forEach(ownerId -> {
+                linkReadCache.invalidateOwnerControlPlane(ownerId);
+                linkReadCache.invalidateOwnerAnalytics(ownerId);
+            });
             linkStore.resetClickDailyRollups();
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
@@ -95,9 +98,15 @@ public class ProjectionJobService {
                 .distinct()
                 .map(linkStore::findOwnerIdBySlug)
                 .flatMap(Optional::stream)
-                .forEach(linkReadCache::invalidateOwnerAnalytics);
+                .forEach(ownerId -> {
+                    linkReadCache.invalidateOwnerControlPlane(ownerId);
+                    linkReadCache.invalidateOwnerAnalytics(ownerId);
+                });
         if (completed) {
-            linkStore.findOwnerIdsWithClickHistory().forEach(linkReadCache::invalidateOwnerAnalytics);
+            linkStore.findOwnerIdsWithClickHistory().forEach(ownerId -> {
+                linkReadCache.invalidateOwnerControlPlane(ownerId);
+                linkReadCache.invalidateOwnerAnalytics(ownerId);
+            });
         }
         return new ProjectionJobChunkResult(
                 completed,

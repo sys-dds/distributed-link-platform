@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 public record RedirectClickAnalyticsEvent(
         String eventId,
         String slug,
+        Long ownerId,
         OffsetDateTime clickedAt,
         String userAgent,
         String referrer,
