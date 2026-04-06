@@ -3,4 +3,7 @@
 - Do not leave temporary artifacts in this repo.
 
 ## Execution rule
-- Never report compile/test results from stale build outputs. If signatures, contracts, migrations, runtime wiring, or tests changed, do a fresh targeted rebuild first.
+do not run automated tests
+do not write new tests
+focus on implementing the checklist fully
+only do a fresh build/compile to catch obvious breakage
