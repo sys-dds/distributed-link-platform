@@ -4,6 +4,7 @@ import com.linkplatform.api.link.application.DuplicateLinkSlugException;
 import com.linkplatform.api.link.application.LinkMutationConflictException;
 import com.linkplatform.api.link.application.LinkNotFoundException;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
+import com.linkplatform.api.link.application.RedirectLookupUnavailableException;
 import com.linkplatform.api.link.application.ReservedLinkSlugException;
 import com.linkplatform.api.link.application.SelfTargetLinkException;
 import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
@@ -65,6 +66,11 @@ public class LinkApiExceptionHandler {
     @ExceptionHandler(LinkPreconditionRequiredException.class)
     public ProblemDetail handleMissingPrecondition(LinkPreconditionRequiredException exception) {
         return problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    @ExceptionHandler(RedirectLookupUnavailableException.class)
+    public ProblemDetail handleRedirectLookupUnavailable(RedirectLookupUnavailableException exception) {
+        return problemDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     }
 
     private ProblemDetail problemDetail(HttpStatus status, String detail) {

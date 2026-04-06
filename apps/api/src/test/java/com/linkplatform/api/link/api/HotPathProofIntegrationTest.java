@@ -42,7 +42,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class HotPathProofIntegrationTest {
 
-    private static final String FREE_API_KEY = "free-owner-api-key";
+    private static final String PRO_API_KEY = "pro-owner-api-key";
 
     @Autowired
     private MockMvc mockMvc;
@@ -116,49 +116,57 @@ class HotPathProofIntegrationTest {
     @Test
     void ownerDiscoveryAndAnalyticsHotPathsReuseCachedResults() throws Exception {
         OffsetDateTime createdAt = OffsetDateTime.parse("2026-04-01T08:00:00Z");
-        insertLink(1L, "query-hot", "https://docs.example.com/query-hot", createdAt);
-        insertCatalogProjection(1L, "query-hot", "https://docs.example.com/query-hot", createdAt, "Query Hot", "[\"docs\"]");
-        insertDiscoveryProjection(1L, "query-hot", "https://docs.example.com/query-hot", createdAt, "Query Hot", "[\"docs\"]");
+        insertLink(2L, "query-hot", "https://docs.example.com/query-hot", createdAt);
+        insertCatalogProjection(2L, "query-hot", "https://docs.example.com/query-hot", createdAt, "Query Hot", "[\"docs\"]");
+        insertDiscoveryProjection(2L, "query-hot", "https://docs.example.com/query-hot", createdAt, "Query Hot", "[\"docs\"]");
         insertClick("query-hot", OffsetDateTime.parse("2026-04-06T08:00:00Z"));
         clearInvocations(linkStore);
 
         mockMvc.perform(get("/api/v1/links/discovery")
                         .param("search", "query")
-                        .header("X-API-Key", FREE_API_KEY))
+                        .header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].slug").value("query-hot"));
         mockMvc.perform(get("/api/v1/links/discovery")
                         .param("search", "query")
-                        .header("X-API-Key", FREE_API_KEY))
+                        .header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].slug").value("query-hot"));
 
-        mockMvc.perform(get("/api/v1/links/query-hot/traffic-summary").header("X-API-Key", FREE_API_KEY))
+        mockMvc.perform(get("/api/v1/links/query-hot/traffic-summary").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalClicks").value(1));
-        mockMvc.perform(get("/api/v1/links/query-hot/traffic-summary").header("X-API-Key", FREE_API_KEY))
+        mockMvc.perform(get("/api/v1/links/query-hot/traffic-summary").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalClicks").value(1));
 
-        verify(linkStore, times(1)).searchDiscovery(any(), eq(1L), any());
-        verify(linkStore, times(1)).findTrafficSummaryTotals(eq("query-hot"), any(), any(), eq(1L));
-        verify(linkStore, times(1)).findRecentDailyClickBuckets(eq("query-hot"), any(), eq(1L));
+        verify(linkStore, times(1)).searchDiscovery(any(), eq(2L), any());
+        verify(linkStore, times(1)).findTrafficSummaryTotals(eq("query-hot"), any(), any(), eq(2L));
+        verify(linkStore, times(1)).findRecentDailyClickBuckets(eq("query-hot"), any(), eq(2L));
     }
 
     @Test
     void analyticsCachesRefreshAfterClickDrivenInvalidation() throws Exception {
         OffsetDateTime createdAt = OffsetDateTime.parse("2026-04-01T08:00:00Z");
-        insertLink(1L, "fresh-clicks", "https://docs.example.com/fresh-clicks", createdAt);
-        insertCatalogProjection(1L, "fresh-clicks", "https://docs.example.com/fresh-clicks", createdAt, "Fresh Clicks", "[\"docs\"]");
-        insertDiscoveryProjection(1L, "fresh-clicks", "https://docs.example.com/fresh-clicks", createdAt, "Fresh Clicks", "[\"docs\"]");
+        insertLink(2L, "fresh-clicks", "https://docs.example.com/fresh-clicks", createdAt);
+        insertCatalogProjection(2L, "fresh-clicks", "https://docs.example.com/fresh-clicks", createdAt, "Fresh Clicks", "[\"docs\"]");
+        insertDiscoveryProjection(2L, "fresh-clicks", "https://docs.example.com/fresh-clicks", createdAt, "Fresh Clicks", "[\"docs\"]");
+        insertActivity(2L, "fresh-clicks", "https://docs.example.com/fresh-clicks", createdAt, "Fresh Clicks", "[\"docs\"]");
         insertClick("fresh-clicks", OffsetDateTime.now().minusHours(2));
 
-        mockMvc.perform(get("/api/v1/links/fresh-clicks/traffic-summary").header("X-API-Key", FREE_API_KEY))
+        mockMvc.perform(get("/api/v1/links/fresh-clicks/traffic-summary").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalClicks").value(1));
-        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "24h").header("X-API-Key", FREE_API_KEY))
+        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "24h").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].clickTotal").value(1));
+        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "24h").header("X-API-Key", PRO_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("fresh-clicks"))
+                .andExpect(jsonPath("$[0].currentWindowClicks").value(1));
+        mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", PRO_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("fresh-clicks"));
 
         redirectClickAnalyticsConsumer.consume(objectMapper.writeValueAsString(new RedirectClickAnalyticsEvent(
                 "fresh-event-2",
@@ -168,25 +176,36 @@ class HotPathProofIntegrationTest {
                 "https://referrer.example",
                 "127.0.0.1")));
 
-        mockMvc.perform(get("/api/v1/links/fresh-clicks/traffic-summary").header("X-API-Key", FREE_API_KEY))
+        mockMvc.perform(get("/api/v1/links/fresh-clicks/traffic-summary").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalClicks").value(2));
-        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "24h").header("X-API-Key", FREE_API_KEY))
+        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "24h").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].clickTotal").value(2));
+        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "24h").header("X-API-Key", PRO_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("fresh-clicks"))
+                .andExpect(jsonPath("$[0].currentWindowClicks").value(2));
+        mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", PRO_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("fresh-clicks"));
     }
 
     @Test
     void analyticsCachesRefreshAfterRollupRebuildInvalidation() throws Exception {
         OffsetDateTime createdAt = OffsetDateTime.parse("2026-04-01T08:00:00Z");
-        insertLink(1L, "rebuild-clicks", "https://docs.example.com/rebuild-clicks", createdAt);
-        insertCatalogProjection(1L, "rebuild-clicks", "https://docs.example.com/rebuild-clicks", createdAt, "Rebuild Clicks", "[\"docs\"]");
-        insertDiscoveryProjection(1L, "rebuild-clicks", "https://docs.example.com/rebuild-clicks", createdAt, "Rebuild Clicks", "[\"docs\"]");
+        insertLink(2L, "rebuild-clicks", "https://docs.example.com/rebuild-clicks", createdAt);
+        insertCatalogProjection(2L, "rebuild-clicks", "https://docs.example.com/rebuild-clicks", createdAt, "Rebuild Clicks", "[\"docs\"]");
+        insertDiscoveryProjection(2L, "rebuild-clicks", "https://docs.example.com/rebuild-clicks", createdAt, "Rebuild Clicks", "[\"docs\"]");
         insertClick("rebuild-clicks", OffsetDateTime.now().minusDays(1));
 
-        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "7d").header("X-API-Key", FREE_API_KEY))
+        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "7d").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].clickTotal").value(1));
+        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "7d").header("X-API-Key", PRO_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("rebuild-clicks"))
+                .andExpect(jsonPath("$[0].currentWindowClicks").value(1));
 
         jdbcTemplate.update("DELETE FROM link_click_daily_rollups");
         insertClickWithoutRollup("rebuild-clicks", OffsetDateTime.now().minusHours(1));
@@ -195,9 +214,13 @@ class HotPathProofIntegrationTest {
         projectionJobRunner.runPendingJobs();
         projectionJobRunner.runPendingJobs();
 
-        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "7d").header("X-API-Key", FREE_API_KEY))
+        mockMvc.perform(get("/api/v1/links/traffic/top").param("window", "7d").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].clickTotal").value(2));
+        mockMvc.perform(get("/api/v1/links/traffic/trending").param("window", "7d").header("X-API-Key", PRO_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("rebuild-clicks"))
+                .andExpect(jsonPath("$[0].currentWindowClicks").value(2));
     }
 
     private void insertLink(long ownerId, String slug, String originalUrl, OffsetDateTime createdAt) {
@@ -294,5 +317,30 @@ class HotPathProofIntegrationTest {
                 "test-agent",
                 "https://referrer.example",
                 "127.0.0.1");
+    }
+
+    private void insertActivity(
+            long ownerId,
+            String slug,
+            String originalUrl,
+            OffsetDateTime occurredAt,
+            String title,
+            String tagsJson) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_activity_events (
+                    event_id, owner_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                slug + "-created",
+                ownerId,
+                "CREATED",
+                slug,
+                originalUrl,
+                title,
+                tagsJson,
+                URI.create(originalUrl).getHost().toLowerCase(),
+                null,
+                occurredAt);
     }
 }

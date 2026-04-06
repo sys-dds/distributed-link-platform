@@ -24,6 +24,7 @@ public class LinkPlatformRuntimeProperties {
 
         private String region = "local";
         private String failoverRegion;
+        private String failoverBaseUrl;
 
         public String getRegion() {
             return region;
@@ -39,6 +40,14 @@ public class LinkPlatformRuntimeProperties {
 
         public void setFailoverRegion(String failoverRegion) {
             this.failoverRegion = blankToNull(failoverRegion);
+        }
+
+        public String getFailoverBaseUrl() {
+            return failoverBaseUrl;
+        }
+
+        public void setFailoverBaseUrl(String failoverBaseUrl) {
+            this.failoverBaseUrl = blankToNull(failoverBaseUrl);
         }
 
         private String blankToNull(String value) {
