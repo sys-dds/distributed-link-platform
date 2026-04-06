@@ -8,11 +8,24 @@ public interface ProjectionJobStore {
 
     ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt);
 
+    default ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
+        if (ownerId != null || slug != null) {
+            throw new UnsupportedOperationException("Scoped projection jobs are not supported");
+        }
+        return createJob(jobType, requestedAt);
+    }
+
     Optional<ProjectionJob> findById(long id);
 
     List<ProjectionJob> findRecent(int limit);
 
-    Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil);
+    default Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
+        return claimNextQueued(workerId, now, claimedUntil);
+    }
+
+    default Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
+        return Optional.empty();
+    }
 
     void markProgress(long id, long processedCountIncrement, Long checkpointId);
 
@@ -20,7 +33,11 @@ public interface ProjectionJobStore {
 
     void markFailed(long id, OffsetDateTime completedAt, String errorSummary);
 
-    long countQueued();
+    default long countQueued() {
+        return 0L;
+    }
 
-    long countActive();
+    default long countActive() {
+        return 0L;
+    }
 }

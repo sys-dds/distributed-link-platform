@@ -199,7 +199,9 @@ class ProjectionJobRunnerTest {
                         resultSet.getObject("checkpoint_id", Long.class),
                         resultSet.getString("error_summary"),
                         resultSet.getString("claimed_by"),
-                        resultSet.getObject("claimed_until", OffsetDateTime.class)),
+                        resultSet.getObject("claimed_until", OffsetDateTime.class),
+                        resultSet.getObject("owner_id", Long.class),
+                        resultSet.getString("slug")),
                 jobId);
         assertEquals(status, job.status());
         assertEquals(processedCount, job.processedCount());

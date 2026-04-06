@@ -123,6 +123,27 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
     }
 
     @Override
+    public Double findOldestParkedAgeSeconds(OffsetDateTime now) {
+        OffsetDateTime oldest = jdbcTemplate.query(
+                        """
+                        SELECT parked_at
+                        FROM link_lifecycle_outbox
+                        WHERE parked_at IS NOT NULL
+                          AND published_at IS NULL
+                        ORDER BY parked_at ASC, id ASC
+                        LIMIT 1
+                        """,
+                        (resultSet, rowNum) -> resultSet.getObject("parked_at", OffsetDateTime.class))
+                .stream()
+                .findFirst()
+                .orElse(null);
+        if (oldest == null) {
+            return null;
+        }
+        return (double) Duration.between(oldest, now).toSeconds();
+    }
+
+    @Override
     public List<LinkLifecycleOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) {
         return transactionTemplate.execute(status -> {
             List<Long> ids = jdbcTemplate.query(
@@ -228,19 +249,37 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
 
     @Override
     public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit) {
-        return jdbcTemplate.query(
-                """
-                SELECT id, payload_json
-                FROM link_lifecycle_outbox
-                WHERE id > ?
-                ORDER BY id ASC
+        return findHistoryChunkAfter(afterId, limit, null, null);
+    }
+
+    @Override
+    public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit, Long ownerId, String slug) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT o.id, o.payload_json
+                FROM link_lifecycle_outbox o
+                WHERE o.id > ?
+                """);
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(afterId);
+        if (slug != null && !slug.isBlank()) {
+            sql.append(" AND o.event_key = ?");
+            parameters.add(slug);
+        }
+        if (ownerId != null) {
+            sql.append(" AND o.payload_json LIKE ?");
+            parameters.add("%\"ownerId\":" + ownerId + "%");
+        }
+        sql.append("""
+                ORDER BY o.id ASC
                 LIMIT ?
-                """,
+                """);
+        parameters.add(limit);
+        return jdbcTemplate.query(
+                sql.toString(),
                 (resultSet, rowNum) -> new LinkLifecycleHistoryRecord(
                         resultSet.getLong("id"),
                         deserialize(resultSet.getString("payload_json"))),
-                afterId,
-                limit);
+                parameters.toArray());
     }
 
     @Override
@@ -275,6 +314,46 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
                 """,
                 nextAttemptAt,
                 id) == 1;
+    }
+
+    @Override
+    public int requeueParkedBatch(List<Long> ids, OffsetDateTime nextAttemptAt) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        String placeholders = ids.stream().map(ignored -> "?").collect(Collectors.joining(", "));
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(nextAttemptAt);
+        parameters.addAll(ids);
+        return jdbcTemplate.update(
+                """
+                UPDATE link_lifecycle_outbox
+                SET parked_at = NULL,
+                    next_attempt_at = ?,
+                    last_error_summary = NULL,
+                    claimed_by = NULL,
+                    claimed_until = NULL
+                WHERE parked_at IS NOT NULL
+                  AND published_at IS NULL
+                  AND id IN (%s)
+                """.formatted(placeholders),
+                parameters.toArray());
+    }
+
+    @Override
+    public int requeueAllParked(int limit, OffsetDateTime nextAttemptAt) {
+        List<Long> ids = jdbcTemplate.query(
+                """
+                SELECT id
+                FROM link_lifecycle_outbox
+                WHERE parked_at IS NOT NULL
+                  AND published_at IS NULL
+                ORDER BY parked_at ASC, id ASC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> resultSet.getLong("id"),
+                limit);
+        return requeueParkedBatch(ids, nextAttemptAt);
     }
 
     private LinkLifecycleOutboxRecord mapRecord(ResultSet resultSet) throws SQLException {

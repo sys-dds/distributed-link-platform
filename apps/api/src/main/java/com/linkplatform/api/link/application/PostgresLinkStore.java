@@ -107,28 +107,58 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public boolean transitionLifecycle(
+    public boolean updateLifecycle(
             String slug,
-            LinkLifecycleState currentState,
+            LinkLifecycleState expectedState,
             LinkLifecycleState nextState,
+            OffsetDateTime expiresAt,
             long expectedVersion,
             long nextVersion,
             long ownerId) {
         return jdbcTemplate.update(
                 """
                 UPDATE links
-                SET lifecycle_state = ?, version = ?
+                SET lifecycle_state = ?, expires_at = ?, version = ?
                 WHERE slug = ?
                   AND lifecycle_state = ?
                   AND version = ?
                   AND owner_id = ?
                 """,
                 nextState.name(),
+                expiresAt,
                 nextVersion,
                 slug,
-                currentState.name(),
+                expectedState.name(),
                 expectedVersion,
                 ownerId) == 1;
+    }
+
+    @Override
+    public boolean restoreDeleted(
+            DeletedLinkSnapshot deletedLinkSnapshot,
+            LinkLifecycleState restoredState,
+            long nextVersion,
+            long ownerId) {
+        try {
+            return jdbcTemplate.update(
+                    """
+                    INSERT INTO links (
+                        slug, original_url, created_at, expires_at, title, tags_json, hostname, version, owner_id, lifecycle_state
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    deletedLinkSnapshot.slug(),
+                    deletedLinkSnapshot.originalUrl(),
+                    deletedLinkSnapshot.createdAt(),
+                    deletedLinkSnapshot.expiresAt(),
+                    deletedLinkSnapshot.title(),
+                    serializeTags(deletedLinkSnapshot.tags()),
+                    deletedLinkSnapshot.hostname(),
+                    nextVersion,
+                    ownerId,
+                    restoredState.name()) == 1;
+        } catch (DuplicateKeyException exception) {
+            return false;
+        }
     }
 
     @Override
@@ -216,14 +246,31 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public List<Long> findOwnerIdsWithClickHistory() {
-        return jdbcTemplate.query(
-                """
+        return findOwnerIdsWithClickHistory(null, null);
+    }
+
+    @Override
+    public List<Long> findOwnerIdsWithClickHistory(Long ownerId, String slug) {
+        StringBuilder sql = new StringBuilder("""
                 SELECT DISTINCT l.owner_id
                 FROM links l
                 JOIN link_clicks c ON c.slug = l.slug
-                ORDER BY l.owner_id ASC
-                """,
-                (resultSet, rowNum) -> resultSet.getLong("owner_id"));
+                WHERE 1 = 1
+                """);
+        List<Object> parameters = new ArrayList<>();
+        if (ownerId != null) {
+            sql.append(" AND l.owner_id = ?");
+            parameters.add(ownerId);
+        }
+        if (slug != null && !slug.isBlank()) {
+            sql.append(" AND l.slug = ?");
+            parameters.add(slug);
+        }
+        sql.append(" ORDER BY l.owner_id ASC");
+        return jdbcTemplate.query(
+                sql.toString(),
+                (resultSet, rowNum) -> resultSet.getLong("owner_id"),
+                parameters.toArray());
     }
 
     @Override
@@ -242,7 +289,7 @@ public class PostgresLinkStore implements LinkStore {
     public void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent) {
         String tagsJson = serializeTags(linkLifecycleEvent.tags());
         switch (linkLifecycleEvent.eventType()) {
-            case CREATED, UPDATED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> upsertCatalogProjection(
+            case CREATED, UPDATED, RESTORED, EXPIRED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> upsertCatalogProjection(
                     linkLifecycleEvent,
                     tagsJson,
                     null);
@@ -258,7 +305,7 @@ public class PostgresLinkStore implements LinkStore {
         String tagsJson = serializeTags(linkLifecycleEvent.tags());
         String lifecycleState = determineLifecycleState(linkLifecycleEvent, OffsetDateTime.now());
         switch (linkLifecycleEvent.eventType()) {
-            case CREATED, UPDATED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> upsertDiscoveryProjection(
+            case CREATED, UPDATED, RESTORED, EXPIRED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> upsertDiscoveryProjection(
                     linkLifecycleEvent,
                     tagsJson,
                     null,
@@ -273,30 +320,59 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public void resetCatalogProjection() {
-        jdbcTemplate.update("DELETE FROM link_catalog_projection");
+        resetCatalogProjection(null, null);
+    }
+
+    @Override
+    public void resetCatalogProjection(Long ownerId, String slug) {
+        deleteProjectionRows("link_catalog_projection", ownerId, slug);
     }
 
     @Override
     public void resetDiscoveryProjection() {
-        jdbcTemplate.update("DELETE FROM link_discovery_projection");
+        resetDiscoveryProjection(null, null);
+    }
+
+    @Override
+    public void resetDiscoveryProjection(Long ownerId, String slug) {
+        deleteProjectionRows("link_discovery_projection", ownerId, slug);
     }
 
     @Override
     public List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit) {
-        return jdbcTemplate.query(
-                """
-                SELECT id, slug, CAST(clicked_at AS DATE) AS rollup_date
-                FROM link_clicks
-                WHERE id > ?
-                ORDER BY id ASC
+        return findClickHistoryChunkAfter(afterId, limit, null, null);
+    }
+
+    @Override
+    public List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit, Long ownerId, String slug) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT c.id, c.slug, CAST(c.clicked_at AS DATE) AS rollup_date
+                FROM link_clicks c
+                JOIN links l ON l.slug = c.slug
+                WHERE c.id > ?
+                """);
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(afterId);
+        if (ownerId != null) {
+            sql.append(" AND l.owner_id = ?");
+            parameters.add(ownerId);
+        }
+        if (slug != null && !slug.isBlank()) {
+            sql.append(" AND c.slug = ?");
+            parameters.add(slug);
+        }
+        sql.append("""
+                ORDER BY c.id ASC
                 LIMIT ?
-                """,
+                """);
+        parameters.add(limit);
+        return jdbcTemplate.query(
+                sql.toString(),
                 (resultSet, rowNum) -> new LinkClickHistoryRecord(
                         resultSet.getLong("id"),
                         resultSet.getString("slug"),
                         resultSet.getObject("rollup_date", LocalDate.class)),
-                afterId,
-                limit);
+                parameters.toArray());
     }
 
     @Override
@@ -320,12 +396,43 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public void resetClickDailyRollups() {
-        jdbcTemplate.update("DELETE FROM link_click_daily_rollups");
+        resetClickDailyRollups(null, null);
+    }
+
+    @Override
+    public void resetClickDailyRollups(Long ownerId, String slug) {
+        if (ownerId == null && (slug == null || slug.isBlank())) {
+            jdbcTemplate.update("DELETE FROM link_click_daily_rollups");
+            return;
+        }
+        StringBuilder sql = new StringBuilder("""
+                DELETE FROM link_click_daily_rollups
+                WHERE slug IN (
+                    SELECT l.slug
+                    FROM links l
+                    WHERE 1 = 1
+                """);
+        List<Object> parameters = new ArrayList<>();
+        if (ownerId != null) {
+            sql.append(" AND l.owner_id = ?");
+            parameters.add(ownerId);
+        }
+        if (slug != null && !slug.isBlank()) {
+            sql.append(" AND l.slug = ?");
+            parameters.add(slug);
+        }
+        sql.append(")");
+        jdbcTemplate.update(sql.toString(), parameters.toArray());
     }
 
     @Override
     public List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit) {
-        return findClickHistoryChunkAfter(afterId, limit);
+        return findClickHistoryChunkForReconciliationAfter(afterId, limit, null, null);
+    }
+
+    @Override
+    public List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit, Long ownerId, String slug) {
+        return findClickHistoryChunkAfter(afterId, limit, ownerId, slug);
     }
 
     @Override
@@ -495,6 +602,40 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getString("hostname"),
                                 resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
+                        slug,
+                        ownerId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<DeletedLinkSnapshot> findDeletedSnapshotBySlug(String slug, long ownerId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT slug,
+                               original_url,
+                               created_at,
+                               expires_at,
+                               title,
+                               tags_json,
+                               hostname,
+                               version,
+                               lifecycle_state
+                        FROM link_catalog_projection
+                        WHERE slug = ?
+                          AND owner_id = ?
+                          AND deleted_at IS NOT NULL
+                        """,
+                        (resultSet, rowNum) -> new DeletedLinkSnapshot(
+                                resultSet.getString("slug"),
+                                resultSet.getString("original_url"),
+                                resultSet.getObject("created_at", OffsetDateTime.class),
+                                resultSet.getObject("expires_at", OffsetDateTime.class),
+                                resultSet.getString("title"),
+                                deserializeTags(resultSet.getString("tags_json")),
+                                resultSet.getString("hostname"),
+                                resultSet.getLong("version"),
+                                LinkLifecycleState.valueOf(resultSet.getString("lifecycle_state"))),
                         slug,
                         ownerId)
                 .stream()
@@ -1187,6 +1328,24 @@ public class PostgresLinkStore implements LinkStore {
                     linkLifecycleEvent.slug(),
                     linkLifecycleEvent.version());
         }
+    }
+
+    private void deleteProjectionRows(String tableName, Long ownerId, String slug) {
+        if (ownerId == null && (slug == null || slug.isBlank())) {
+            jdbcTemplate.update("DELETE FROM " + tableName);
+            return;
+        }
+        StringBuilder sql = new StringBuilder("DELETE FROM " + tableName + " WHERE 1 = 1");
+        List<Object> parameters = new ArrayList<>();
+        if (ownerId != null) {
+            sql.append(" AND owner_id = ?");
+            parameters.add(ownerId);
+        }
+        if (slug != null && !slug.isBlank()) {
+            sql.append(" AND slug = ?");
+            parameters.add(slug);
+        }
+        jdbcTemplate.update(sql.toString(), parameters.toArray());
     }
 
     private List<TopLinkTraffic> findTopLinksLast24Hours(OffsetDateTime since, long ownerId) {

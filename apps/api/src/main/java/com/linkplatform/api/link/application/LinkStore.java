@@ -7,6 +7,18 @@ import java.util.Optional;
 
 public interface LinkStore {
 
+    record DeletedLinkSnapshot(
+            String slug,
+            String originalUrl,
+            OffsetDateTime createdAt,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags,
+            String hostname,
+            long version,
+            LinkLifecycleState lifecycleState) {
+    }
+
     boolean save(
             Link link,
             OffsetDateTime expiresAt,
@@ -29,81 +41,193 @@ public interface LinkStore {
 
     boolean deleteBySlug(String slug, long expectedVersion, long ownerId);
 
-    boolean transitionLifecycle(
+    default boolean transitionLifecycle(
             String slug,
             LinkLifecycleState currentState,
             LinkLifecycleState nextState,
             long expectedVersion,
             long nextVersion,
-            long ownerId);
+            long ownerId) {
+        return updateLifecycle(slug, currentState, nextState, null, expectedVersion, nextVersion, ownerId);
+    }
 
-    long countActiveLinksByOwner(long ownerId);
+    default boolean updateLifecycle(
+            String slug,
+            LinkLifecycleState expectedState,
+            LinkLifecycleState nextState,
+            OffsetDateTime expiresAt,
+            long expectedVersion,
+            long nextVersion,
+            long ownerId) {
+        return transitionLifecycle(slug, expectedState, nextState, expectedVersion, nextVersion, ownerId);
+    }
 
-    boolean recordClickIfAbsent(LinkClick linkClick);
+    default boolean restoreDeleted(
+            DeletedLinkSnapshot deletedLinkSnapshot,
+            LinkLifecycleState restoredState,
+            long nextVersion,
+            long ownerId) {
+        return false;
+    }
 
-    boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent);
+    default long countActiveLinksByOwner(long ownerId) {
+        return 0L;
+    }
 
-    Optional<Long> findOwnerIdBySlug(String slug);
+    default boolean recordClickIfAbsent(LinkClick linkClick) {
+        return false;
+    }
 
-    Optional<LinkLifecycleState> findLifecycleStateBySlug(String slug, long ownerId);
+    default boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent) {
+        return false;
+    }
 
-    List<Long> findOwnerIdsWithClickHistory();
+    default Optional<Long> findOwnerIdBySlug(String slug) {
+        return Optional.empty();
+    }
 
-    long rebuildClickDailyRollups();
+    default Optional<LinkLifecycleState> findLifecycleStateBySlug(String slug, long ownerId) {
+        return Optional.empty();
+    }
 
-    void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent);
+    default List<Long> findOwnerIdsWithClickHistory() {
+        return List.of();
+    }
 
-    void projectDiscoveryEvent(LinkLifecycleEvent linkLifecycleEvent);
+    default List<Long> findOwnerIdsWithClickHistory(Long ownerId, String slug) {
+        return findOwnerIdsWithClickHistory();
+    }
 
-    void resetCatalogProjection();
+    default long rebuildClickDailyRollups() {
+        return 0L;
+    }
 
-    void resetDiscoveryProjection();
+    default void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent) {
+    }
 
-    List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit);
+    default void projectDiscoveryEvent(LinkLifecycleEvent linkLifecycleEvent) {
+    }
 
-    long applyClickHistoryChunkToDailyRollups(List<LinkClickHistoryRecord> clickHistoryChunk);
+    default void resetCatalogProjection() {
+    }
 
-    void resetClickDailyRollups();
+    default void resetCatalogProjection(Long ownerId, String slug) {
+        resetCatalogProjection();
+    }
 
-    List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit);
+    default void resetDiscoveryProjection() {
+    }
 
-    java.util.Map<String, Long> findDailyRollupTotalsBySlugAndDay(java.util.Set<String> slugDayKeys);
+    default void resetDiscoveryProjection(Long ownerId, String slug) {
+        resetDiscoveryProjection();
+    }
 
-    void upsertClickRollupReconciliation(ClickRollupDriftRecord driftRecord);
+    default List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit) {
+        return List.of();
+    }
 
-    void repairDailyRollupTotal(String slug, java.time.LocalDate bucketDay, long rawClickCount);
+    default List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit, Long ownerId, String slug) {
+        return findClickHistoryChunkAfter(afterId, limit);
+    }
 
-    Optional<Link> findBySlug(String slug, OffsetDateTime now);
+    default long applyClickHistoryChunkToDailyRollups(List<LinkClickHistoryRecord> clickHistoryChunk) {
+        return 0L;
+    }
 
-    Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now, long ownerId);
+    default void resetClickDailyRollups() {
+    }
 
-    Optional<LinkDetails> findStoredDetailsBySlug(String slug);
+    default void resetClickDailyRollups(Long ownerId, String slug) {
+        resetClickDailyRollups();
+    }
 
-    Optional<LinkDetails> findStoredDetailsBySlug(String slug, long ownerId);
+    default List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit) {
+        return List.of();
+    }
 
-    List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long ownerId);
+    default List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit, Long ownerId, String slug) {
+        return findClickHistoryChunkForReconciliationAfter(afterId, limit);
+    }
 
-    List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId);
+    default java.util.Map<String, Long> findDailyRollupTotalsBySlugAndDay(java.util.Set<String> slugDayKeys) {
+        return java.util.Map.of();
+    }
 
-    LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long ownerId, LinkDiscoveryQuery query);
+    default void upsertClickRollupReconciliation(ClickRollupDriftRecord driftRecord) {
+    }
 
-    List<LinkActivityEvent> findRecentActivity(int limit, long ownerId);
+    default void repairDailyRollupTotal(String slug, java.time.LocalDate bucketDay, long rawClickCount) {
+    }
 
-    Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
+    default Optional<Link> findBySlug(String slug, OffsetDateTime now) {
+        return Optional.empty();
+    }
+
+    default Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now, long ownerId) {
+        return Optional.empty();
+    }
+
+    default Optional<LinkDetails> findStoredDetailsBySlug(String slug) {
+        return Optional.empty();
+    }
+
+    default Optional<LinkDetails> findStoredDetailsBySlug(String slug, long ownerId) {
+        return Optional.empty();
+    }
+
+    default Optional<DeletedLinkSnapshot> findDeletedSnapshotBySlug(String slug, long ownerId) {
+        return Optional.empty();
+    }
+
+    default List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long ownerId) {
+        return List.of();
+    }
+
+    default List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId) {
+        return List.of();
+    }
+
+    default LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long ownerId, LinkDiscoveryQuery query) {
+        return new LinkDiscoveryPage(List.of(), null, false);
+    }
+
+    default List<LinkActivityEvent> findRecentActivity(int limit, long ownerId) {
+        return List.of();
+    }
+
+    default Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
             String slug,
             OffsetDateTime last24HoursSince,
             java.time.LocalDate last7DaysStartDate,
-            long ownerId);
+            long ownerId) {
+        return Optional.empty();
+    }
 
-    List<DailyClickBucket> findRecentDailyClickBuckets(String slug, java.time.LocalDate startDate, long ownerId);
+    default List<DailyClickBucket> findRecentDailyClickBuckets(String slug, java.time.LocalDate startDate, long ownerId) {
+        return List.of();
+    }
 
-    List<DailyClickBucket> findRecentHourlyClickBuckets(String slug, OffsetDateTime since, long ownerId);
+    default List<DailyClickBucket> findRecentHourlyClickBuckets(String slug, OffsetDateTime since, long ownerId) {
+        return List.of();
+    }
 
-    List<TopReferrer> findTopReferrers(String slug, int limit, long ownerId);
+    default List<TopReferrer> findTopReferrers(String slug, int limit, long ownerId) {
+        return List.of();
+    }
 
-    OwnerTrafficTotals findOwnerTrafficTotals(OffsetDateTime last1HourSince, OffsetDateTime last24HoursSince, java.time.LocalDate last7DaysStartDate, long ownerId);
+    default OwnerTrafficTotals findOwnerTrafficTotals(
+            OffsetDateTime last1HourSince,
+            OffsetDateTime last24HoursSince,
+            java.time.LocalDate last7DaysStartDate,
+            long ownerId) {
+        return new OwnerTrafficTotals(0, 0, 0);
+    }
 
-    List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now, long ownerId);
+    default List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now, long ownerId) {
+        return List.of();
+    }
 
-    List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId);
+    default List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId) {
+        return List.of();
+    }
 }

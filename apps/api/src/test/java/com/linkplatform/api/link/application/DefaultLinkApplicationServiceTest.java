@@ -543,6 +543,7 @@ class DefaultLinkApplicationServiceTest {
         private boolean matchesState(String slug, OffsetDateTime now, LinkLifecycleState state) {
             return switch (state) {
                 case ACTIVE -> !isExpired(slug, now);
+                case SUSPENDED, ARCHIVED -> false;
                 case EXPIRED -> isExpired(slug, now);
                 case ALL -> true;
             };

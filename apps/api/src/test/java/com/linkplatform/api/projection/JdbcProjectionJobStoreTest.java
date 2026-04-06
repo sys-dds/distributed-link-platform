@@ -33,7 +33,9 @@ class JdbcProjectionJobStoreTest {
     void createAndClaimJobUpdatesQueuedAndActiveGauges() {
         ProjectionJob created = store.createJob(
                 ProjectionJobType.ACTIVITY_FEED_REPLAY,
-                OffsetDateTime.parse("2026-04-04T10:00:00Z"));
+                OffsetDateTime.parse("2026-04-04T10:00:00Z"),
+                null,
+                null);
 
         assertEquals(1L, store.countQueued());
         assertEquals(1.0, meterRegistry.get("link.projection.jobs.queued").gauge().value());
@@ -53,8 +55,8 @@ class JdbcProjectionJobStoreTest {
 
     @Test
     void concurrentWorkersDoNotClaimSameJob() throws Exception {
-        store.createJob(ProjectionJobType.ACTIVITY_FEED_REPLAY, OffsetDateTime.parse("2026-04-04T10:00:00Z"));
-        store.createJob(ProjectionJobType.CLICK_ROLLUP_REBUILD, OffsetDateTime.parse("2026-04-04T10:00:01Z"));
+        store.createJob(ProjectionJobType.ACTIVITY_FEED_REPLAY, OffsetDateTime.parse("2026-04-04T10:00:00Z"), null, null);
+        store.createJob(ProjectionJobType.CLICK_ROLLUP_REBUILD, OffsetDateTime.parse("2026-04-04T10:00:01Z"), null, null);
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
@@ -79,7 +81,9 @@ class JdbcProjectionJobStoreTest {
     void staleRunningJobBecomesClaimableAgain() {
         ProjectionJob created = store.createJob(
                 ProjectionJobType.ACTIVITY_FEED_REPLAY,
-                OffsetDateTime.parse("2026-04-04T10:00:00Z"));
+                OffsetDateTime.parse("2026-04-04T10:00:00Z"),
+                null,
+                null);
         store.claimNext(
                 "worker-a",
                 OffsetDateTime.parse("2026-04-04T10:01:00Z"),
@@ -99,7 +103,9 @@ class JdbcProjectionJobStoreTest {
     void failedJobRemainsCountedAsQueuedBacklogAndCanBeReclaimed() {
         ProjectionJob created = store.createJob(
                 ProjectionJobType.LINK_CATALOG_REBUILD,
-                OffsetDateTime.parse("2026-04-04T10:00:00Z"));
+                OffsetDateTime.parse("2026-04-04T10:00:00Z"),
+                null,
+                null);
         store.markFailed(created.id(), OffsetDateTime.parse("2026-04-04T10:05:00Z"), "boom");
 
         assertEquals(1L, store.countQueued());

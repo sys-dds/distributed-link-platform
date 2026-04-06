@@ -1,4 +1,6 @@
 package com.linkplatform.api.link.api;
 
-public record ChangeLinkLifecycleRequest(String action) {
+import java.time.OffsetDateTime;
+
+public record ChangeLinkLifecycleRequest(String action, OffsetDateTime expiresAt) {
 }
