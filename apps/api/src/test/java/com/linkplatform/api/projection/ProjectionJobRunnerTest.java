@@ -76,6 +76,15 @@ class ProjectionJobRunnerTest {
     }
 
     @Test
+    void emptyProjectionJobsCompleteWithoutCheckpointFailures() {
+        for (ProjectionJobType jobType : ProjectionJobType.values()) {
+            ProjectionJob job = projectionJobService.createJob(jobType);
+            projectionJobRunner.runPendingJobs();
+            assertJob(job.id(), ProjectionJobStatus.COMPLETED, 0L, null);
+        }
+    }
+
+    @Test
     void clickRollupRebuildResumesFromCheckpointAfterFailureStatus() throws Exception {
         insertLink("alpha", "https://example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"));
         insertLink("beta", "https://example.com/beta", OffsetDateTime.parse("2026-04-01T08:00:00Z"));

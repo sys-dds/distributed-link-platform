@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
         "link-platform.query.datasource.url=jdbc:h2:tcp://localhost:65534/linkplatform",
+        "link-platform.query.datasource.username=query_user",
         "link-platform.query.datasource.driver-class-name=org.h2.Driver",
         "management.endpoint.health.show-details=always",
         "management.endpoint.health.group.readiness.show-details=always"

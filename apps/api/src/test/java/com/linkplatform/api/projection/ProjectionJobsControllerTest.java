@@ -20,12 +20,15 @@ import org.springframework.test.web.servlet.MockMvc;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class ProjectionJobsControllerTest {
 
+    private static final String FREE_API_KEY = "free-owner-api-key";
+
     @Autowired
     private MockMvc mockMvc;
 
     @Test
     void createGetAndListProjectionJobs() throws Exception {
         mockMvc.perform(post("/api/v1/projection-jobs")
+                        .header("X-API-Key", FREE_API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -36,13 +39,30 @@ class ProjectionJobsControllerTest {
                 .andExpect(jsonPath("$.jobType").value("ACTIVITY_FEED_REPLAY"))
                 .andExpect(jsonPath("$.status").value("QUEUED"));
 
-        mockMvc.perform(get("/api/v1/projection-jobs"))
+        mockMvc.perform(get("/api/v1/projection-jobs").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].jobType").value("ACTIVITY_FEED_REPLAY"));
 
-        mockMvc.perform(get("/api/v1/projection-jobs/1"))
+        mockMvc.perform(get("/api/v1/projection-jobs/1").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.status").value("QUEUED"));
+    }
+
+    @Test
+    void projectionJobsEndpointsRequireApiKey() throws Exception {
+        mockMvc.perform(post("/api/v1/projection-jobs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jobType": "ACTIVITY_FEED_REPLAY"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("X-API-Key header is required"));
+
+        mockMvc.perform(get("/api/v1/projection-jobs"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("X-API-Key header is required"));
     }
 }
