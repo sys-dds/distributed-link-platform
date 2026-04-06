@@ -11,6 +11,8 @@ import com.linkplatform.api.runtime.RuntimeMode;
 import java.net.URI;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
@@ -18,6 +20,8 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.REDIRECT})
 public class RedirectRuntimeService {
+
+    private static final Logger log = LoggerFactory.getLogger(RedirectRuntimeService.class);
 
     private final LinkStore linkStore;
     private final LinkReadCache linkReadCache;
@@ -89,11 +93,8 @@ public class RedirectRuntimeService {
         String reason = compactReason(exception);
         OffsetDateTime occurredAt = OffsetDateTime.now(clock);
         redirectRuntimeState.recordPrimaryLookupFailure(reason);
-        securityEventStore.record(
+        recordSecurityEvent(
                 SecurityEventType.REDIRECT_LOOKUP_FAILED,
-                null,
-                null,
-                "GET",
                 requestPath,
                 remoteAddress,
                 "Redirect lookup failed in region " + runtimeProperties.getRedirect().getRegion() + ": " + reason,
@@ -103,11 +104,8 @@ public class RedirectRuntimeService {
         String failoverRegion = runtimeProperties.getRedirect().getFailoverRegion();
         if (failoverBaseUrl != null && failoverRegion != null) {
             redirectRuntimeState.recordFailoverActivated();
-            securityEventStore.record(
+            recordSecurityEvent(
                     SecurityEventType.REDIRECT_FAILOVER_ACTIVATED,
-                    null,
-                    null,
-                    "GET",
                     requestPath,
                     remoteAddress,
                     "Redirect failover activated from " + runtimeProperties.getRedirect().getRegion()
@@ -117,11 +115,8 @@ public class RedirectRuntimeService {
         }
 
         redirectRuntimeState.recordUnavailable();
-        securityEventStore.record(
+        recordSecurityEvent(
                 SecurityEventType.REDIRECT_UNAVAILABLE,
-                null,
-                null,
-                "GET",
                 requestPath,
                 remoteAddress,
                 "Redirect unavailable in region " + runtimeProperties.getRedirect().getRegion() + ": " + reason,
@@ -129,6 +124,30 @@ public class RedirectRuntimeService {
         throw new RedirectLookupUnavailableException(
                 "Redirect lookup temporarily unavailable for slug: " + slug,
                 exception);
+    }
+
+    private void recordSecurityEvent(
+            SecurityEventType eventType,
+            String requestPath,
+            String remoteAddress,
+            String detailSummary,
+            OffsetDateTime occurredAt) {
+        try {
+            securityEventStore.record(
+                    eventType,
+                    null,
+                    null,
+                    "GET",
+                    requestPath,
+                    remoteAddress,
+                    detailSummary,
+                    occurredAt);
+        } catch (RuntimeException recordException) {
+            log.warn(
+                    "redirect_security_event_record_failed eventType={} reason={}",
+                    eventType.name(),
+                    recordException.getClass().getSimpleName());
+        }
     }
 
     private String buildFailoverLocation(String slug, String queryString) {

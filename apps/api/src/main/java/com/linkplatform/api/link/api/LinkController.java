@@ -254,7 +254,7 @@ public class LinkController {
 
     private LinkLifecycleState parseState(String state) {
         try {
-            return LinkLifecycleState.valueOf(state.toUpperCase(Locale.ROOT));
+            return LinkLifecycleState.valueOf(normalize(state).toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("State must be one of: active, expired, all");
         }
@@ -262,14 +262,14 @@ public class LinkController {
 
     private LinkDiscoveryLifecycleFilter parseDiscoveryLifecycle(String lifecycle) {
         try {
-            return LinkDiscoveryLifecycleFilter.valueOf(lifecycle.toUpperCase(Locale.ROOT));
+            return LinkDiscoveryLifecycleFilter.valueOf(normalize(lifecycle).toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("Lifecycle must be one of: active, expired, deleted, all");
         }
     }
 
     private LinkDiscoveryExpirationFilter parseExpiration(String expiration) {
-        return switch (expiration.toLowerCase(Locale.ROOT)) {
+        return switch (normalize(expiration).toLowerCase(Locale.ROOT)) {
             case "any" -> LinkDiscoveryExpirationFilter.ANY;
             case "scheduled" -> LinkDiscoveryExpirationFilter.SCHEDULED;
             case "none" -> LinkDiscoveryExpirationFilter.NONE;
@@ -279,7 +279,7 @@ public class LinkController {
     }
 
     private LinkDiscoverySort parseSort(String sort) {
-        return switch (sort.toLowerCase(Locale.ROOT)) {
+        return switch (normalize(sort).toLowerCase(Locale.ROOT)) {
             case "updated_desc" -> LinkDiscoverySort.UPDATED_DESC;
             case "created_desc" -> LinkDiscoverySort.CREATED_DESC;
             case "slug_asc" -> LinkDiscoverySort.SLUG_ASC;
@@ -299,10 +299,20 @@ public class LinkController {
     }
 
     private String resolveSearchText(String q, String search) {
-        if (q != null && !q.isBlank()) {
-            return q;
+        String normalizedQ = normalizeToNull(q);
+        if (normalizedQ != null) {
+            return normalizedQ;
         }
-        return search;
+        return normalizeToNull(search);
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String normalizeToNull(String value) {
+        String normalized = normalize(value);
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private LinkResponse toUpdateResponse(LinkMutationResult result) {

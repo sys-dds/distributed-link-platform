@@ -69,7 +69,7 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(LinkPreconditionRequiredException.class)
     public ProblemDetail handleMissingPrecondition(LinkPreconditionRequiredException exception) {
-        return problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        return problemDetail(HttpStatus.PRECONDITION_REQUIRED, exception.getMessage());
     }
 
     @ExceptionHandler(RedirectLookupUnavailableException.class)

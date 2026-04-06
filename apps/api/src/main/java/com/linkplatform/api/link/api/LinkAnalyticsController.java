@@ -109,7 +109,8 @@ public class LinkAnalyticsController {
     }
 
     private LinkTrafficWindow parseWindow(String window) {
-        return switch (window) {
+        String normalized = window == null ? "" : window.trim().toLowerCase();
+        return switch (normalized) {
             case "24h" -> LinkTrafficWindow.LAST_24_HOURS;
             case "7d" -> LinkTrafficWindow.LAST_7_DAYS;
             default -> throw new IllegalArgumentException("Window must be one of: 24h, 7d");
