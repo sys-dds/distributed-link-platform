@@ -44,16 +44,18 @@ public class RedirectRuntimeService {
 
     public RedirectDecision resolve(String slug, String requestPath, String queryString, String remoteAddress) {
         String validatedSlug = new LinkSlug(slug).value();
-        return linkReadCache.getPublicRedirect(validatedSlug)
+        long generation = linkReadCache.getPublicRedirectGeneration(validatedSlug);
+        return linkReadCache.getPublicRedirect(validatedSlug, generation)
                 .map(link -> {
                     redirectRuntimeState.recordCacheHit();
                     return new RedirectDecision(link.originalUrl().value(), true, false);
                 })
-                .orElseGet(() -> resolveFromPrimary(validatedSlug, requestPath, queryString, remoteAddress));
+                .orElseGet(() -> resolveFromPrimary(validatedSlug, generation, requestPath, queryString, remoteAddress));
     }
 
     private RedirectDecision resolveFromPrimary(
             String slug,
+            long generation,
             String requestPath,
             String queryString,
             String remoteAddress) {
@@ -61,7 +63,7 @@ public class RedirectRuntimeService {
         try {
             Link link = linkStore.findBySlug(slug, OffsetDateTime.now(clock))
                     .orElseThrow(() -> new LinkNotFoundException(slug));
-            linkReadCache.putPublicRedirect(slug, link);
+            linkReadCache.putPublicRedirect(slug, generation, link);
             redirectRuntimeState.recordPrimaryLookupSuccess();
             return new RedirectDecision(link.originalUrl().value(), true, false);
         } catch (DataAccessException exception) {

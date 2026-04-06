@@ -59,6 +59,7 @@ class RedirectClickAnalyticsConsumerTest {
 
         assertCount("SELECT COUNT(*) FROM link_clicks WHERE slug = 'summary-link'", 1);
         assertCount("SELECT click_count FROM link_click_daily_rollups WHERE slug = 'summary-link' AND rollup_date = DATE '2026-04-03'", 1);
+        assertCount("SELECT COUNT(*) FROM link_activity_events WHERE event_type = 'CLICKED' AND slug = 'summary-link'", 1);
         assertEquals(1.0, meterRegistry.get("link.analytics.consumer.processed").counter().count());
         assertEquals(0.0, meterRegistry.get("link.analytics.consumer.duplicate").counter().count());
     }
@@ -82,6 +83,11 @@ class RedirectClickAnalyticsConsumerTest {
                 .andExpect(jsonPath("$.totalClicks").value(1))
                 .andExpect(jsonPath("$.clicksLast24Hours").value(1))
                 .andExpect(jsonPath("$.clicksLast7Days").value(1));
+        mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("clicked"))
+                .andExpect(jsonPath("$[0].slug").value("report-link"))
+                .andExpect(jsonPath("$[0].occurredAt").value(clickedAt.withOffsetSameInstant(java.time.ZoneOffset.UTC).toString()));
     }
 
     @Test
@@ -155,6 +161,7 @@ class RedirectClickAnalyticsConsumerTest {
         assertCount(
                 "SELECT click_count FROM link_click_daily_rollups WHERE slug = 'idempotent-link' AND rollup_date = DATE '2026-04-03'",
                 1);
+        assertCount("SELECT COUNT(*) FROM link_activity_events WHERE event_id = 'event-3'", 1);
         assertEquals(1.0, meterRegistry.get("link.analytics.consumer.processed").counter().count());
         assertEquals(1.0, meterRegistry.get("link.analytics.consumer.duplicate").counter().count());
     }

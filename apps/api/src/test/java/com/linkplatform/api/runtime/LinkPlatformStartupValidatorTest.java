@@ -23,7 +23,19 @@ class LinkPlatformStartupValidatorTest {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .hasMessageContaining(
-                                    "link-platform.query.datasource.url must be set when any dedicated query datasource property is configured");
+                                "link-platform.query.datasource.url must be set when any dedicated query datasource property is configured");
+                });
+    }
+
+    @Test
+    void dedicatedQueryDatasourceRequiresUsernameWhenUrlIsConfigured() {
+        contextRunner
+                .withPropertyValues("link-platform.query.datasource.url=jdbc:h2:mem:query")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining(
+                                    "link-platform.query.datasource.username must be set when link-platform.query.datasource.url is configured");
                 });
     }
 
@@ -75,7 +87,8 @@ class LinkPlatformStartupValidatorTest {
     void dedicatedQueryDatasourceIsRejectedForRedirectRuntime() {
         contextRunner.withPropertyValues(
                         "link-platform.runtime.mode=redirect",
-                        "link-platform.query.datasource.url=jdbc:h2:mem:query")
+                        "link-platform.query.datasource.url=jdbc:h2:mem:query",
+                        "link-platform.query.datasource.username=query_user")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())

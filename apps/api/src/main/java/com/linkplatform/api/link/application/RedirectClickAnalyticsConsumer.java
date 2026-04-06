@@ -47,7 +47,22 @@ public class RedirectClickAnalyticsConsumer {
                 redirectClickAnalyticsEvent.remoteAddress()));
         if (persisted) {
             linkStore.findOwnerIdBySlug(redirectClickAnalyticsEvent.slug())
-                    .ifPresent(linkReadCache::invalidateOwnerAnalytics);
+                    .ifPresent(ownerId -> {
+                        linkStore.findStoredDetailsBySlug(redirectClickAnalyticsEvent.slug(), ownerId)
+                                .ifPresent(linkDetails -> linkStore.recordActivityIfAbsent(
+                                        redirectClickAnalyticsEvent.eventId(),
+                                        new LinkActivityEvent(
+                                                ownerId,
+                                                LinkActivityType.CLICKED,
+                                                linkDetails.slug(),
+                                                linkDetails.originalUrl(),
+                                                linkDetails.title(),
+                                                linkDetails.tags(),
+                                                linkDetails.hostname(),
+                                                linkDetails.expiresAt(),
+                                                redirectClickAnalyticsEvent.clickedAt())));
+                        linkReadCache.invalidateOwnerAnalytics(ownerId);
+                    });
             processedCounter.increment();
             return;
         }

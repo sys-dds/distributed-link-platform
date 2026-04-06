@@ -184,6 +184,46 @@ class DefaultLinkApplicationServiceTest {
     }
 
     @Test
+    void staleAnalyticsWritesCannotRepopulateAfterInvalidation() {
+        service.createLink(FREE_OWNER, new CreateLinkCommand("metrics-race", "https://example.com/metrics-race", null, null, null), null);
+        linkStore.trafficTotalsBySlug.put("metrics-race", new LinkTrafficSummaryTotals("metrics-race", "https://example.com/metrics-race", 1L, 1L, 1L));
+        linkStore.dailyBucketsBySlug.put("metrics-race", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 1L)));
+
+        LinkTrafficSummary initial = service.getTrafficSummary(FREE_OWNER, "metrics-race");
+        long staleGeneration = linkReadCache.getOwnerAnalyticsGeneration(FREE_OWNER.id());
+
+        linkStore.trafficTotalsBySlug.put("metrics-race", new LinkTrafficSummaryTotals("metrics-race", "https://example.com/metrics-race", 4L, 4L, 4L));
+        linkStore.dailyBucketsBySlug.put("metrics-race", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 4L)));
+        linkReadCache.invalidateOwnerAnalytics(FREE_OWNER.id());
+        linkReadCache.putOwnerTrafficSummary(FREE_OWNER.id(), staleGeneration, "metrics-race", initial);
+
+        assertEquals(4L, service.getTrafficSummary(FREE_OWNER, "metrics-race").totalClicks());
+    }
+
+    @Test
+    void staleRedirectWritesCannotRepopulateAfterInvalidation() {
+        service.createLink(FREE_OWNER, new CreateLinkCommand("redirect-race", "https://example.com/original", null, null, null), null);
+        service.resolveLink("redirect-race");
+        long staleGeneration = linkReadCache.getPublicRedirectGeneration("redirect-race");
+
+        service.updateLink(
+                FREE_OWNER,
+                "redirect-race",
+                "https://example.com/updated",
+                null,
+                null,
+                null,
+                1L,
+                null);
+        linkReadCache.putPublicRedirect(
+                "redirect-race",
+                staleGeneration,
+                new Link(new LinkSlug("redirect-race"), new OriginalUrl("https://example.com/original")));
+
+        assertEquals("https://example.com/updated", service.resolveLink("redirect-race").originalUrl().value());
+    }
+
+    @Test
     void searchLinksUsesDiscoveryProjectionShape() {
         service.createLink(FREE_OWNER, new CreateLinkCommand("alpha-docs", "https://docs.example.com/alpha", null, "Alpha Docs", List.of("docs")), null);
         service.createLink(PRO_OWNER, new CreateLinkCommand("alpha-pro", "https://app.example.com/alpha", null, "Alpha App", List.of("product")), null);
@@ -662,59 +702,75 @@ class DefaultLinkApplicationServiceTest {
 
     private static final class TestLinkReadCache implements LinkReadCache {
         private final Map<String, Link> redirectCache = new ConcurrentHashMap<>();
+        private final Map<String, Long> redirectGenerationBySlug = new ConcurrentHashMap<>();
         private final List<String> invalidatedRedirects = new java.util.concurrent.CopyOnWriteArrayList<>();
         private final List<Long> invalidatedControlPlaneOwners = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final Map<Long, Long> controlPlaneGenerationByOwner = new ConcurrentHashMap<>();
+        private final Map<Long, Long> analyticsGenerationByOwner = new ConcurrentHashMap<>();
 
         @Override
-        public Optional<Link> getPublicRedirect(String slug) {
-            return Optional.ofNullable(redirectCache.get(slug));
+        public long getPublicRedirectGeneration(String slug) {
+            return redirectGenerationBySlug.getOrDefault(slug, 0L);
         }
 
         @Override
-        public void putPublicRedirect(String slug, Link link) {
-            redirectCache.put(slug, link);
+        public Optional<Link> getPublicRedirect(String slug, long generation) {
+            return Optional.ofNullable(redirectCache.get(redirectCacheKey(slug, generation)));
+        }
+
+        @Override
+        public void putPublicRedirect(String slug, long generation, Link link) {
+            redirectCache.put(redirectCacheKey(slug, generation), link);
         }
 
         @Override
         public void invalidatePublicRedirect(String slug) {
             invalidatedRedirects.add(slug);
-            redirectCache.remove(slug);
+            redirectGenerationBySlug.merge(slug, 1L, Long::sum);
         }
 
-        @Override public Optional<LinkDetails> getOwnerLinkDetails(long ownerId, String slug) { return Optional.empty(); }
-        @Override public void putOwnerLinkDetails(long ownerId, String slug, LinkDetails linkDetails) { }
-        @Override public Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state) { return Optional.empty(); }
-        @Override public void putOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) { }
-        @Override public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, String query, int limit) { return Optional.empty(); }
-        @Override public void putOwnerSuggestions(long ownerId, String query, int limit, List<LinkSuggestion> suggestions) { }
-        @Override public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query) { return Optional.empty(); }
-        @Override public void putOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query, LinkDiscoveryPage page) { }
+        @Override public long getOwnerControlPlaneGeneration(long ownerId) { return controlPlaneGenerationByOwner.getOrDefault(ownerId, 0L); }
+        @Override public Optional<LinkDetails> getOwnerLinkDetails(long ownerId, long generation, String slug) { return Optional.empty(); }
+        @Override public void putOwnerLinkDetails(long ownerId, long generation, String slug, LinkDetails linkDetails) { }
+        @Override public Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state) { return Optional.empty(); }
+        @Override public void putOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) { }
+        @Override public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, long generation, String query, int limit) { return Optional.empty(); }
+        @Override public void putOwnerSuggestions(long ownerId, long generation, String query, int limit, List<LinkSuggestion> suggestions) { }
+        @Override public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query) { return Optional.empty(); }
+        @Override public void putOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query, LinkDiscoveryPage page) { }
+        @Override public long getOwnerAnalyticsGeneration(long ownerId) { return analyticsGenerationByOwner.getOrDefault(ownerId, 0L); }
 
         private final Map<String, List<LinkActivityEvent>> recentActivityCache = new ConcurrentHashMap<>();
         private final Map<String, LinkTrafficSummary> trafficSummaryCache = new ConcurrentHashMap<>();
         private final Map<String, List<TopLinkTraffic>> topLinksCache = new ConcurrentHashMap<>();
         private final Map<String, List<TrendingLink>> trendingLinksCache = new ConcurrentHashMap<>();
 
-        @Override public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, int limit) { return Optional.ofNullable(recentActivityCache.get(ownerId + ":" + limit)); }
-        @Override public void putOwnerRecentActivity(long ownerId, int limit, List<LinkActivityEvent> activityEvents) { recentActivityCache.put(ownerId + ":" + limit, activityEvents); }
-        @Override public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, String slug) { return Optional.ofNullable(trafficSummaryCache.get(ownerId + ":" + slug)); }
-        @Override public void putOwnerTrafficSummary(long ownerId, String slug, LinkTrafficSummary summary) { trafficSummaryCache.put(ownerId + ":" + slug, summary); }
-        @Override public Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, LinkTrafficWindow window) { return Optional.ofNullable(topLinksCache.get(ownerId + ":" + window.name())); }
-        @Override public void putOwnerTopLinks(long ownerId, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) { topLinksCache.put(ownerId + ":" + window.name(), topLinks); }
-        @Override public Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit) { return Optional.ofNullable(trendingLinksCache.get(ownerId + ":" + window.name() + ":" + limit)); }
-        @Override public void putOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) { trendingLinksCache.put(ownerId + ":" + window.name() + ":" + limit, trendingLinks); }
+        @Override public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, long generation, int limit) { return Optional.ofNullable(recentActivityCache.get(ownerAnalyticsKey(ownerId, generation, String.valueOf(limit)))); }
+        @Override public void putOwnerRecentActivity(long ownerId, long generation, int limit, List<LinkActivityEvent> activityEvents) { recentActivityCache.put(ownerAnalyticsKey(ownerId, generation, String.valueOf(limit)), activityEvents); }
+        @Override public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, long generation, String slug) { return Optional.ofNullable(trafficSummaryCache.get(ownerAnalyticsKey(ownerId, generation, slug))); }
+        @Override public void putOwnerTrafficSummary(long ownerId, long generation, String slug, LinkTrafficSummary summary) { trafficSummaryCache.put(ownerAnalyticsKey(ownerId, generation, slug), summary); }
+        @Override public Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window) { return Optional.ofNullable(topLinksCache.get(ownerAnalyticsKey(ownerId, generation, window.name()))); }
+        @Override public void putOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) { topLinksCache.put(ownerAnalyticsKey(ownerId, generation, window.name()), topLinks); }
+        @Override public Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit) { return Optional.ofNullable(trendingLinksCache.get(ownerAnalyticsKey(ownerId, generation, window.name() + ":" + limit))); }
+        @Override public void putOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) { trendingLinksCache.put(ownerAnalyticsKey(ownerId, generation, window.name() + ":" + limit), trendingLinks); }
 
         @Override
         public void invalidateOwnerControlPlane(long ownerId) {
             invalidatedControlPlaneOwners.add(ownerId);
+            controlPlaneGenerationByOwner.merge(ownerId, 1L, Long::sum);
         }
 
         @Override
         public void invalidateOwnerAnalytics(long ownerId) {
-            recentActivityCache.keySet().removeIf(key -> key.startsWith(ownerId + ":"));
-            trafficSummaryCache.keySet().removeIf(key -> key.startsWith(ownerId + ":"));
-            topLinksCache.keySet().removeIf(key -> key.startsWith(ownerId + ":"));
-            trendingLinksCache.keySet().removeIf(key -> key.startsWith(ownerId + ":"));
+            analyticsGenerationByOwner.merge(ownerId, 1L, Long::sum);
+        }
+
+        private String redirectCacheKey(String slug, long generation) {
+            return slug + ":" + generation;
+        }
+
+        private String ownerAnalyticsKey(long ownerId, long generation, String suffix) {
+            return ownerId + ":" + generation + ":" + suffix;
         }
     }
 }

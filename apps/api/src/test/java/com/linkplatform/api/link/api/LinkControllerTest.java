@@ -73,6 +73,12 @@ class LinkControllerTest {
                                 }
                                 """))
                 .andExpect(problemDetail(401, "Unauthorized", "X-API-Key header is required"));
+
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'MISSING_API_KEY'",
+                        Integer.class));
     }
 
     @Test
@@ -338,6 +344,12 @@ class LinkControllerTest {
 
         mockMvc.perform(get("/api/v1/links/read-auth"))
                 .andExpect(problemDetail(401, "Unauthorized", "X-API-Key header is required"));
+
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'MISSING_API_KEY'",
+                        Integer.class));
     }
 
     @Test

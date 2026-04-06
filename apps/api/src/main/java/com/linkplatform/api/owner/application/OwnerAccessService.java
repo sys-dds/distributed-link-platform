@@ -41,6 +41,15 @@ public class OwnerAccessService {
             String requestPath,
             String remoteAddress) {
         if (apiKey == null || apiKey.isBlank()) {
+            securityEventStore.record(
+                    SecurityEventType.MISSING_API_KEY,
+                    null,
+                    null,
+                    requestMethod,
+                    requestPath,
+                    remoteAddress,
+                    "Missing X-API-Key header rejected",
+                    OffsetDateTime.now(clock));
             throw new ApiKeyAuthenticationException("X-API-Key header is required");
         }
 
