@@ -251,7 +251,8 @@ public class LinkController {
                         httpServletRequest.getRequestURI(),
                         httpServletRequest.getRemoteAddr()),
                 slug,
-                parseLifecycleAction(request.action()),
+                request == null ? null : request.action(),
+                request == null ? null : request.expiresAt(),
                 parseIfMatch(ifMatch),
                 idempotencyKey));
     }
@@ -339,19 +340,6 @@ public class LinkController {
     private String normalizeToNull(String value) {
         String normalized = normalize(value);
         return normalized.isEmpty() ? null : normalized;
-    }
-
-    private LinkLifecycleState parseLifecycleAction(String action) {
-        String normalized = normalizeToNull(action);
-        if (normalized == null) {
-            throw new IllegalArgumentException("Lifecycle action is required");
-        }
-        return switch (normalized.toLowerCase(Locale.ROOT)) {
-            case "suspend" -> LinkLifecycleState.SUSPENDED;
-            case "resume", "unarchive" -> LinkLifecycleState.ACTIVE;
-            case "archive" -> LinkLifecycleState.ARCHIVED;
-            default -> throw new IllegalArgumentException("Lifecycle action must be one of: suspend, resume, archive, unarchive");
-        };
     }
 
     private LinkResponse toUpdateResponse(LinkMutationResult result) {

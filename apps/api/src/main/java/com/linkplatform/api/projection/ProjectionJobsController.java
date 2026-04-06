@@ -48,7 +48,7 @@ public class ProjectionJobsController {
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
-        return toResponse(projectionJobService.createJob(request.jobType()));
+        return toResponse(projectionJobService.createJob(request.jobType(), request.ownerId(), request.slug()));
     }
 
     @GetMapping("/{id}")
@@ -106,6 +106,8 @@ public class ProjectionJobsController {
                 null,
                 job.errorSummary(),
                 job.claimedBy(),
-                job.claimedUntil());
+                job.claimedUntil(),
+                job.ownerId(),
+                job.slug());
     }
 }

@@ -174,6 +174,27 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
     }
 
     @Override
+    public Double findOldestParkedAgeSeconds(OffsetDateTime now) {
+        OffsetDateTime oldest = jdbcTemplate.query(
+                        """
+                        SELECT parked_at
+                        FROM analytics_outbox
+                        WHERE parked_at IS NOT NULL
+                          AND published_at IS NULL
+                        ORDER BY parked_at ASC, id ASC
+                        LIMIT 1
+                        """,
+                        (resultSet, rowNum) -> resultSet.getObject("parked_at", OffsetDateTime.class))
+                .stream()
+                .findFirst()
+                .orElse(null);
+        if (oldest == null) {
+            return null;
+        }
+        return (double) java.time.Duration.between(oldest, now).toSeconds();
+    }
+
+    @Override
     public void markPublished(long id, OffsetDateTime publishedAt) {
         jdbcTemplate.update(
                 """
@@ -249,6 +270,46 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 """,
                 nextAttemptAt,
                 id) == 1;
+    }
+
+    @Override
+    public int requeueParkedBatch(List<Long> ids, OffsetDateTime nextAttemptAt) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        String placeholders = ids.stream().map(ignored -> "?").collect(Collectors.joining(", "));
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(nextAttemptAt);
+        parameters.addAll(ids);
+        return jdbcTemplate.update(
+                """
+                UPDATE analytics_outbox
+                SET parked_at = NULL,
+                    next_attempt_at = ?,
+                    last_error_summary = NULL,
+                    claimed_by = NULL,
+                    claimed_until = NULL
+                WHERE parked_at IS NOT NULL
+                  AND published_at IS NULL
+                  AND id IN (%s)
+                """.formatted(placeholders),
+                parameters.toArray());
+    }
+
+    @Override
+    public int requeueAllParked(int limit, OffsetDateTime nextAttemptAt) {
+        List<Long> ids = jdbcTemplate.query(
+                """
+                SELECT id
+                FROM analytics_outbox
+                WHERE parked_at IS NOT NULL
+                  AND published_at IS NULL
+                ORDER BY parked_at ASC, id ASC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> resultSet.getLong("id"),
+                limit);
+        return requeueParkedBatch(ids, nextAttemptAt);
     }
 
     @Override

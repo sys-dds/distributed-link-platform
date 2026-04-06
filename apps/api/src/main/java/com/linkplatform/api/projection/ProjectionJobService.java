@@ -51,7 +51,11 @@ public class ProjectionJobService {
     }
 
     public ProjectionJob createJob(ProjectionJobType jobType) {
-        return projectionJobStore.createJob(jobType, OffsetDateTime.now(clock));
+        return createJob(jobType, null, null);
+    }
+
+    public ProjectionJob createJob(ProjectionJobType jobType, Long ownerId, String slug) {
+        return projectionJobStore.createJob(jobType, OffsetDateTime.now(clock), ownerId, slug);
     }
 
     @Transactional
@@ -73,7 +77,11 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult replayActivityFeedChunk(ProjectionJob job) {
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
-        List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(afterId, chunkSize + 1);
+        List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(
+                afterId,
+                chunkSize + 1,
+                job.ownerId(),
+                job.slug());
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
         Set<Long> ownerIds = new HashSet<>();
@@ -91,11 +99,11 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildClickRollupsChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
-            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory()));
-            linkStore.resetClickDailyRollups();
+            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory(job.ownerId(), job.slug())));
+            linkStore.resetClickDailyRollups(job.ownerId(), job.slug());
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
-        List<LinkClickHistoryRecord> fetchedChunk = linkStore.findClickHistoryChunkAfter(afterId, chunkSize + 1);
+        List<LinkClickHistoryRecord> fetchedChunk = linkStore.findClickHistoryChunkAfter(afterId, chunkSize + 1, job.ownerId(), job.slug());
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkClickHistoryRecord> clickHistoryChunk = limitToChunk(fetchedChunk);
         long processedCount = linkStore.applyClickHistoryChunkToDailyRollups(clickHistoryChunk);
@@ -106,7 +114,7 @@ public class ProjectionJobService {
                 .flatMap(Optional::stream)
                 .forEach(this::invalidateOwnerAnalyticsCaches);
         if (completed) {
-            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory()));
+            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory(job.ownerId(), job.slug())));
         }
         return new ProjectionJobChunkResult(
                 completed,
@@ -116,10 +124,14 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildCatalogChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
-            linkStore.resetCatalogProjection();
+            linkStore.resetCatalogProjection(job.ownerId(), job.slug());
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
-        List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(afterId, chunkSize + 1);
+        List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(
+                afterId,
+                chunkSize + 1,
+                job.ownerId(),
+                job.slug());
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
         Set<Long> ownerIds = new HashSet<>();
@@ -136,7 +148,11 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult reconcileClickRollupsChunk(ProjectionJob job) {
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
-        List<LinkClickHistoryRecord> fetchedChunk = linkStore.findClickHistoryChunkForReconciliationAfter(afterId, chunkSize + 1);
+        List<LinkClickHistoryRecord> fetchedChunk = linkStore.findClickHistoryChunkForReconciliationAfter(
+                afterId,
+                chunkSize + 1,
+                job.ownerId(),
+                job.slug());
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkClickHistoryRecord> clickHistoryChunk = limitToChunk(fetchedChunk);
         Map<String, Long> rawCounts = new HashMap<>();
@@ -193,10 +209,14 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildDiscoveryChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
-            linkStore.resetDiscoveryProjection();
+            linkStore.resetDiscoveryProjection(job.ownerId(), job.slug());
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
-        List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(afterId, chunkSize + 1);
+        List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(
+                afterId,
+                chunkSize + 1,
+                job.ownerId(),
+                job.slug());
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
         Set<Long> ownerIds = new HashSet<>();
@@ -221,7 +241,7 @@ public class ProjectionJobService {
     private LinkActivityEvent toActivityEvent(LinkLifecycleEvent lifecycleEvent) {
         LinkActivityType type = switch (lifecycleEvent.eventType()) {
             case CREATED -> LinkActivityType.CREATED;
-            case UPDATED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> LinkActivityType.UPDATED;
+            case UPDATED, RESTORED, EXPIRED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> LinkActivityType.UPDATED;
             case DELETED -> LinkActivityType.DELETED;
         };
         return new LinkActivityEvent(

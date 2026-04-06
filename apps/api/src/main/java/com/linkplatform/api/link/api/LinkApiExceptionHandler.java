@@ -27,7 +27,9 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleIllegalArgument(IllegalArgumentException exception) {
-        return problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        ProblemDetail problemDetail = problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        problemDetail.setProperty("category", "bad-request");
+        return problemDetail;
     }
 
     @ExceptionHandler(DuplicateLinkSlugException.class)
@@ -37,7 +39,10 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(LinkMutationConflictException.class)
     public ProblemDetail handleMutationConflict(LinkMutationConflictException exception) {
-        return problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+        String detail = exception.getMessage() == null ? "" : exception.getMessage().toLowerCase(Locale.ROOT);
+        problemDetail.setProperty("category", detail.contains("version conflict") ? "stale-if-match" : "conflict");
+        return problemDetail;
     }
 
     @ExceptionHandler(ApiKeyAuthenticationException.class)
@@ -69,12 +74,16 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(LinkNotFoundException.class)
     public ProblemDetail handleMissingSlug(LinkNotFoundException exception) {
-        return problemDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+        ProblemDetail problemDetail = problemDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+        problemDetail.setProperty("category", "not-found");
+        return problemDetail;
     }
 
     @ExceptionHandler(LinkPreconditionRequiredException.class)
     public ProblemDetail handleMissingPrecondition(LinkPreconditionRequiredException exception) {
-        return problemDetail(HttpStatus.PRECONDITION_REQUIRED, exception.getMessage());
+        ProblemDetail problemDetail = problemDetail(HttpStatus.PRECONDITION_REQUIRED, exception.getMessage());
+        problemDetail.setProperty("category", "missing-if-match");
+        return problemDetail;
     }
 
     @ExceptionHandler(RedirectLookupUnavailableException.class)

@@ -26,6 +26,9 @@ public class AnalyticsPipelineController {
 
     private static final int DEFAULT_LIMIT = 20;
     private static final int MAX_LIMIT = 100;
+    private static final int DEFAULT_REQUEUE_LIMIT = 50;
+    private static final int MAX_REQUEUE_LIMIT = 200;
+    private static final int MAX_BATCH_IDS = 200;
 
     private final AnalyticsOutboxStore analyticsOutboxStore;
     private final OwnerAccessService ownerAccessService;
@@ -54,7 +57,9 @@ public class AnalyticsPipelineController {
         return new AnalyticsPipelineStatusResponse(
                 analyticsOutboxStore.countEligible(now),
                 analyticsOutboxStore.countParked(),
-                analyticsOutboxStore.findOldestEligibleAgeSeconds(now));
+                analyticsOutboxStore.findOldestEligibleAgeSeconds(now),
+                analyticsOutboxStore.findOldestParkedAgeSeconds(now),
+                null);
     }
 
     @GetMapping("/parked")
@@ -93,10 +98,66 @@ public class AnalyticsPipelineController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/parked/requeue-batch")
+    public ResponseEntity<Void> requeueParkedBatch(
+            @org.springframework.web.bind.annotation.RequestBody RequeueParkedBatchRequest request,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        List<Long> ids = validateBatchRequest(request);
+        analyticsOutboxStore.requeueParkedBatch(ids, OffsetDateTime.now(clock));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/parked/requeue-all")
+    public ResponseEntity<Void> requeueAll(
+            @RequestParam(required = false) Integer limit,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        analyticsOutboxStore.requeueAllParked(resolveRequeueLimit(limit), OffsetDateTime.now(clock));
+        return ResponseEntity.noContent().build();
+    }
+
     private void validateLimit(int limit) {
         if (limit < 1 || limit > MAX_LIMIT) {
             throw new IllegalArgumentException("Limit must be between 1 and " + MAX_LIMIT);
         }
+    }
+
+    private int resolveRequeueLimit(Integer limit) {
+        if (limit == null) {
+            return DEFAULT_REQUEUE_LIMIT;
+        }
+        if (limit < 1) {
+            throw new IllegalArgumentException("limit must be at least 1");
+        }
+        return Math.min(limit, MAX_REQUEUE_LIMIT);
+    }
+
+    private List<Long> validateBatchRequest(RequeueParkedBatchRequest request) {
+        if (request == null || request.ids() == null || request.ids().isEmpty()) {
+            throw new IllegalArgumentException("ids must contain at least one parked row id");
+        }
+        if (request.ids().size() > MAX_BATCH_IDS) {
+            throw new IllegalArgumentException("ids must contain at most " + MAX_BATCH_IDS + " parked row ids");
+        }
+        if (request.ids().stream().distinct().count() != request.ids().size()) {
+            throw new IllegalArgumentException("ids must be unique");
+        }
+        return request.ids();
     }
 
     private AnalyticsPipelineParkedRecordResponse toResponse(AnalyticsOutboxRecord record) {

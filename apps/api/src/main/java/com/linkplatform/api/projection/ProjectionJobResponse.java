@@ -15,5 +15,7 @@ public record ProjectionJobResponse(
         Long repairCount,
         String errorSummary,
         String claimedBy,
-        OffsetDateTime claimedUntil) {
+        OffsetDateTime claimedUntil,
+        Long ownerId,
+        String slug) {
 }

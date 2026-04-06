@@ -4,6 +4,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -14,8 +19,8 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public JdbcSecurityEventStore(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    public JdbcSecurityEventStore(DataSource dataSource) {
+        this.jdbcTemplate = new JdbcTemplate(dataSource);
     }
 
     @Override
@@ -43,6 +48,56 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
                 sanitizeRemoteAddress(remoteAddress),
                 shorten(detailSummary),
                 occurredAt);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SecurityEventRecord> findEvents(long ownerId, SecurityEventQuery query) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT id, event_type, occurred_at
+                FROM owner_security_events
+                WHERE owner_id = ?
+                """);
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(ownerId);
+        if (query.types() != null && !query.types().isEmpty()) {
+            sql.append(" AND event_type IN (");
+            sql.append(query.types().stream().map(ignored -> "?").reduce((left, right) -> left + ", " + right).orElse(""));
+            sql.append(')');
+            query.types().stream()
+                    .map(SecurityEventType::name)
+                    .forEach(parameters::add);
+        }
+        if (query.since() != null) {
+            sql.append(" AND occurred_at >= ?");
+            parameters.add(query.since());
+        }
+        DecodedCursor cursor = decodeCursor(query.cursor());
+        if (cursor != null) {
+            sql.append("""
+                     AND (
+                         occurred_at < ?
+                         OR (occurred_at = ? AND id < ?)
+                     )
+                    """);
+            parameters.add(cursor.occurredAt());
+            parameters.add(cursor.occurredAt());
+            parameters.add(cursor.id());
+        }
+        sql.append("""
+                ORDER BY occurred_at DESC, id DESC
+                LIMIT ?
+                """);
+        parameters.add(query.limit() + 1);
+        return jdbcTemplate.query(
+                sql.toString(),
+                (resultSet, rowNum) -> new SecurityEventRecord(
+                        resultSet.getLong("id"),
+                        SecurityEventType.valueOf(resultSet.getString("event_type")),
+                        resultSet.getObject("occurred_at", OffsetDateTime.class),
+                        summarize(SecurityEventType.valueOf(resultSet.getString("event_type"))),
+                        null),
+                parameters.toArray());
     }
 
     private String shorten(String detailSummary) {
@@ -75,5 +130,48 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 not available", exception);
         }
+    }
+
+    private String summarize(SecurityEventType eventType) {
+        return switch (eventType) {
+            case API_KEY_CREATED -> "API key created";
+            case API_KEY_REVOKED -> "API key revoked";
+            case API_KEY_ROTATED -> "API key rotated";
+            case API_KEY_EXPIRED -> "API key expired";
+            case MISSING_CREDENTIAL -> "Missing credential rejected";
+            case MALFORMED_BEARER -> "Malformed bearer rejected";
+            case AMBIGUOUS_CREDENTIAL -> "Conflicting credential rejected";
+            case INVALID_CREDENTIAL -> "Invalid credential rejected";
+            case RATE_LIMIT_REJECTED -> "Rate limit rejected";
+            case QUOTA_REJECTED -> "Quota limit rejected";
+            case CLICK_ROLLUP_DRIFT_DETECTED -> "Click rollup drift detected";
+            case CLICK_ROLLUP_REPAIRED -> "Click rollup repaired";
+            case QUERY_DATASOURCE_FALLBACK -> "Query datasource fallback activated";
+            case RUNTIME_CONFIGURATION_REJECTED -> "Runtime configuration rejected";
+            case REDIRECT_LOOKUP_FAILED -> "Redirect lookup failed";
+            case REDIRECT_FAILOVER_ACTIVATED -> "Redirect failover activated";
+            case REDIRECT_UNAVAILABLE -> "Redirect unavailable";
+        };
+    }
+
+    private DecodedCursor decodeCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            int delimiterIndex = decoded.lastIndexOf('|');
+            if (delimiterIndex <= 0 || delimiterIndex == decoded.length() - 1) {
+                throw new IllegalArgumentException("Cursor is invalid");
+            }
+            return new DecodedCursor(
+                    OffsetDateTime.parse(decoded.substring(0, delimiterIndex)),
+                    Long.parseLong(decoded.substring(delimiterIndex + 1)));
+        } catch (IllegalArgumentException | DateTimeParseException exception) {
+            throw new IllegalArgumentException("Cursor is invalid");
+        }
+    }
+
+    private record DecodedCursor(OffsetDateTime occurredAt, long id) {
     }
 }

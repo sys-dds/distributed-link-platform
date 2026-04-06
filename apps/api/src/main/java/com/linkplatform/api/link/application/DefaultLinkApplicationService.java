@@ -15,6 +15,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +33,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private static final String CREATE_OPERATION = "CREATE";
     private static final String UPDATE_OPERATION = "UPDATE";
     private static final String DELETE_OPERATION = "DELETE";
+    private static final String LIFECYCLE_OPERATION = "LIFECYCLE";
+    private static final String BULK_OPERATION_PREFIX = "BULK:";
 
     private final LinkStore linkStore;
     private final AnalyticsOutboxStore analyticsOutboxStore;
@@ -184,6 +187,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+        LinkLifecycleState currentState = resolveCurrentState(storedDetails, owner.id(), now);
 
         if (!linkStore.deleteBySlug(linkSlug.value(), expectedVersion, owner.id())) {
             throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
@@ -202,6 +206,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 LinkLifecycleEventType.DELETED,
                 owner.id(),
                 result,
+                persistedStateFor(currentState),
                 now);
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
         applyLifecycleReadModels(lifecycleEvent);
@@ -215,28 +220,146 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     public LinkMutationResult changeLifecycle(
             AuthenticatedOwner owner,
             String slug,
-            LinkLifecycleState nextState,
+            String action,
+            OffsetDateTime expiresAt,
             long expectedVersion,
             String idempotencyKey) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
-        LinkDetails current = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
-                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
-        LinkLifecycleState currentState = linkStore.findLifecycleStateBySlug(linkSlug.value(), owner.id())
-                .orElseGet(() -> resolveLifecycleState(current, now));
-        validateLifecycleTransition(currentState, nextState);
-        long nextVersion = current.version() + 1;
-        if (!linkStore.transitionLifecycle(linkSlug.value(), currentState, nextState, expectedVersion, nextVersion, owner.id())) {
-            throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
+        LifecycleAction lifecycleAction = parseLifecycleAction(action);
+        String requestHash = fingerprintLifecycle(linkSlug.value(), lifecycleAction, expiresAt, expectedVersion);
+        LinkMutationResult replayed = findReplayIfPresent(owner.id(), idempotencyKey, LIFECYCLE_OPERATION, requestHash);
+        if (replayed != null) {
+            return replayed;
         }
-        LinkDetails updated = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
-                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
-        LinkLifecycleEvent lifecycleEvent = toLifecycleEvent(determineLifecycleEventType(currentState, nextState), owner.id(), updated, nextState, now);
+
+        LinkMutationResult result = null;
+        LinkLifecycleEvent lifecycleEvent = null;
+        LinkStore.DeletedLinkSnapshot deletedSnapshot = linkStore.findDeletedSnapshotBySlug(linkSlug.value(), owner.id()).orElse(null);
+        LinkDetails current = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id()).orElse(null);
+        LinkLifecycleState currentState = resolveCurrentState(current, deletedSnapshot, owner.id(), linkSlug.value(), now);
+        validateLifecycleAction(currentState, lifecycleAction);
+        switch (lifecycleAction) {
+            case RESTORE -> {
+                if (deletedSnapshot == null) {
+                    throw new LinkNotFoundException(linkSlug.value());
+                }
+                if (deletedSnapshot.version() != expectedVersion) {
+                    throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
+                }
+                LinkLifecycleState restoredState = restoreTargetState(deletedSnapshot, now);
+                long nextVersion = deletedSnapshot.version() + 1;
+                if (!linkStore.restoreDeleted(deletedSnapshot, persistedStateFor(restoredState), nextVersion, owner.id())) {
+                    throw new LinkMutationConflictException("Deleted link cannot be restored for slug: " + linkSlug.value());
+                }
+                LinkDetails restored = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
+                        .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+                result = LinkMutationResult.fromDetails(restored);
+                lifecycleEvent = toLifecycleEvent(LinkLifecycleEventType.RESTORED, owner.id(), restored, persistedStateFor(restoredState), now);
+            }
+            case EXPIRE_NOW, EXTEND_EXPIRY, SUSPEND, RESUME, ARCHIVE, UNARCHIVE -> {
+                if (current == null) {
+                    throw new LinkNotFoundException(linkSlug.value());
+                }
+                OffsetDateTime nextExpiresAt = resolveNextExpiry(current, lifecycleAction, expiresAt, now);
+                LinkLifecycleState nextState = resolveNextState(currentState, lifecycleAction, nextExpiresAt, now);
+                long nextVersion = current.version() + 1;
+                if (!linkStore.updateLifecycle(
+                        linkSlug.value(),
+                        persistedStateFor(currentState),
+                        persistedStateFor(nextState),
+                        nextExpiresAt,
+                        expectedVersion,
+                        nextVersion,
+                        owner.id())) {
+                    throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
+                }
+                LinkDetails updated = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
+                        .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+                result = LinkMutationResult.fromDetails(updated);
+                lifecycleEvent = toLifecycleEvent(determineLifecycleEventType(lifecycleAction), owner.id(), updated, persistedStateFor(nextState), now);
+            }
+        }
+        if (result == null || lifecycleEvent == null) {
+            throw new IllegalStateException("Lifecycle change did not produce a result");
+        }
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
         applyLifecycleReadModels(lifecycleEvent);
-        LinkMutationResult result = LinkMutationResult.fromDetails(updated);
+        saveIdempotentResult(owner.id(), idempotencyKey, LIFECYCLE_OPERATION, requestHash, result, now);
         invalidateWriteCaches(owner.id(), linkSlug.value());
         return result;
+    }
+
+    @Override
+    @Transactional
+    public List<BulkLinkActionResult> bulkAction(
+            AuthenticatedOwner owner,
+            String action,
+            List<String> slugs,
+            List<String> tags,
+            OffsetDateTime expiresAt,
+            String idempotencyKey) {
+        String normalizedAction = normalizeRequiredAction(action);
+        List<String> normalizedTags = "update-tags".equals(normalizedAction) ? normalizeTags(tags) : tags;
+        OffsetDateTime now = now();
+        List<BulkLinkActionResult> results = new ArrayList<>();
+        for (int index = 0; index < slugs.size(); index++) {
+            String slug = slugs.get(index).trim();
+            String itemIdempotencyKey = idempotencyKey + ":" + normalizedAction + ":" + slug;
+            String bulkOperation = BULK_OPERATION_PREFIX + normalizedAction.toUpperCase(Locale.ROOT);
+            String bulkRequestHash = fingerprintBulk(normalizedAction, slug, normalizedTags, expiresAt);
+            LinkMutationResult replayed = findReplayIfPresent(owner.id(), itemIdempotencyKey, bulkOperation, bulkRequestHash);
+            if (replayed != null) {
+                results.add(new BulkLinkActionResult(slug, true, replayed.version(), null, null));
+                continue;
+            }
+            try {
+                LinkMutationResult result = switch (normalizedAction) {
+                    case "archive" -> changeLifecycle(owner, slug, "archive", null, currentVersion(owner, slug), null);
+                    case "suspend" -> changeLifecycle(owner, slug, "suspend", null, currentVersion(owner, slug), null);
+                    case "delete" -> deleteLink(owner, slug, currentVersion(owner, slug), null);
+                    case "update-tags" -> {
+                        LinkDetails current = linkStore.findStoredDetailsBySlug(slug, owner.id())
+                                .orElseThrow(() -> new LinkNotFoundException(slug));
+                        yield updateLink(
+                                owner,
+                                slug,
+                                current.originalUrl(),
+                                current.expiresAt(),
+                                current.title(),
+                                normalizedTags,
+                                current.version(),
+                                null);
+                    }
+                    case "update-expiry" -> {
+                        if (!expiresAt.isAfter(now)) {
+                            throw new IllegalArgumentException("expiresAt must be in the future");
+                        }
+                        LinkDetails current = linkStore.findStoredDetailsBySlug(slug, owner.id())
+                                .orElseThrow(() -> new LinkNotFoundException(slug));
+                        yield updateLink(
+                                owner,
+                                slug,
+                                current.originalUrl(),
+                                expiresAt,
+                                current.title(),
+                                current.tags(),
+                                current.version(),
+                                null);
+                    }
+                    default -> throw new IllegalArgumentException("Unsupported bulk action: " + normalizedAction);
+                };
+                saveIdempotentResult(owner.id(), itemIdempotencyKey, bulkOperation, bulkRequestHash, result, now);
+                results.add(new BulkLinkActionResult(slug, true, result.version(), null, null));
+            } catch (LinkNotFoundException exception) {
+                results.add(new BulkLinkActionResult(slug, false, null, "not-found", exception.getMessage()));
+            } catch (LinkMutationConflictException exception) {
+                results.add(new BulkLinkActionResult(slug, false, null, "conflict", exception.getMessage()));
+            } catch (IllegalArgumentException exception) {
+                results.add(new BulkLinkActionResult(slug, false, null, "bad-request", exception.getMessage()));
+            }
+        }
+        return List.copyOf(results);
     }
 
     @Override
@@ -539,6 +662,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             LinkLifecycleEventType type,
             long ownerId,
             LinkMutationResult result,
+            LinkLifecycleState lifecycleState,
             OffsetDateTime occurredAt) {
         return new LinkLifecycleEvent(
                 UUID.randomUUID().toString(),
@@ -550,7 +674,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 result.tags(),
                 result.hostname(),
                 result.expiresAt(),
-                LinkLifecycleState.ARCHIVED,
+                lifecycleState,
                 result.version(),
                 occurredAt);
     }
@@ -566,34 +690,160 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 : LinkLifecycleEventType.UPDATED;
     }
 
-    private LinkLifecycleEventType determineLifecycleEventType(LinkLifecycleState currentState, LinkLifecycleState nextState) {
-        return switch (nextState) {
-            case SUSPENDED -> LinkLifecycleEventType.SUSPENDED;
-            case ACTIVE -> currentState == LinkLifecycleState.ARCHIVED
-                    ? LinkLifecycleEventType.UNARCHIVED
-                    : LinkLifecycleEventType.RESUMED;
-            case ARCHIVED -> LinkLifecycleEventType.ARCHIVED;
-            default -> throw new IllegalArgumentException("Unsupported lifecycle transition target: " + nextState);
+    private LinkLifecycleEventType determineLifecycleEventType(LifecycleAction action) {
+        return switch (action) {
+            case SUSPEND -> LinkLifecycleEventType.SUSPENDED;
+            case RESUME -> LinkLifecycleEventType.RESUMED;
+            case ARCHIVE -> LinkLifecycleEventType.ARCHIVED;
+            case UNARCHIVE -> LinkLifecycleEventType.UNARCHIVED;
+            case EXPIRE_NOW -> LinkLifecycleEventType.EXPIRED;
+            case EXTEND_EXPIRY -> LinkLifecycleEventType.EXPIRATION_UPDATED;
+            case RESTORE -> LinkLifecycleEventType.RESTORED;
         };
     }
 
-    private void validateLifecycleTransition(LinkLifecycleState currentState, LinkLifecycleState nextState) {
+    private LifecycleAction parseLifecycleAction(String action) {
+        String normalized = normalizeRequiredAction(action);
+        return switch (normalized) {
+            case "suspend" -> LifecycleAction.SUSPEND;
+            case "resume" -> LifecycleAction.RESUME;
+            case "archive" -> LifecycleAction.ARCHIVE;
+            case "unarchive" -> LifecycleAction.UNARCHIVE;
+            case "restore" -> LifecycleAction.RESTORE;
+            case "expire-now" -> LifecycleAction.EXPIRE_NOW;
+            case "extend-expiry" -> LifecycleAction.EXTEND_EXPIRY;
+            default -> throw new IllegalArgumentException(
+                    "Lifecycle action must be one of: suspend, resume, archive, unarchive, restore, expire-now, extend-expiry");
+        };
+    }
+
+    private String normalizeRequiredAction(String action) {
+        if (action == null || action.isBlank()) {
+            throw new IllegalArgumentException("Lifecycle action is required");
+        }
+        return action.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void validateLifecycleAction(LinkLifecycleState currentState, LifecycleAction action) {
         boolean valid = switch (currentState) {
-            case ACTIVE -> nextState == LinkLifecycleState.SUSPENDED || nextState == LinkLifecycleState.ARCHIVED;
-            case SUSPENDED -> nextState == LinkLifecycleState.ACTIVE || nextState == LinkLifecycleState.ARCHIVED;
-            case ARCHIVED -> nextState == LinkLifecycleState.ACTIVE;
-            case EXPIRED, ALL -> false;
+            case ACTIVE -> action == LifecycleAction.SUSPEND
+                    || action == LifecycleAction.ARCHIVE
+                    || action == LifecycleAction.EXPIRE_NOW
+                    || action == LifecycleAction.EXTEND_EXPIRY;
+            case SUSPENDED -> action == LifecycleAction.RESUME
+                    || action == LifecycleAction.ARCHIVE
+                    || action == LifecycleAction.EXPIRE_NOW
+                    || action == LifecycleAction.EXTEND_EXPIRY;
+            case ARCHIVED -> action == LifecycleAction.UNARCHIVE;
+            case EXPIRED -> action == LifecycleAction.EXTEND_EXPIRY || action == LifecycleAction.ARCHIVE;
+            case ALL -> action == LifecycleAction.RESTORE;
         };
         if (!valid) {
-            throw new IllegalArgumentException("Illegal lifecycle transition from " + currentState + " to " + nextState);
+            throw new IllegalArgumentException(
+                    "Lifecycle action " + action.name().toLowerCase(Locale.ROOT).replace('_', '-') + " is not allowed from "
+                            + currentState.name().toLowerCase(Locale.ROOT));
         }
     }
 
-    private LinkLifecycleState resolveLifecycleState(LinkDetails linkDetails, OffsetDateTime now) {
-        if (linkDetails.expiresAt() != null && !linkDetails.expiresAt().isAfter(now)) {
+    private LinkLifecycleState resolveCurrentState(
+            LinkDetails current,
+            LinkStore.DeletedLinkSnapshot deletedSnapshot,
+            long ownerId,
+            String slug,
+            OffsetDateTime now) {
+        if (current != null) {
+            return resolveCurrentState(current, ownerId, now);
+        }
+        if (deletedSnapshot != null) {
+            return LinkLifecycleState.ALL;
+        }
+        throw new LinkNotFoundException(slug);
+    }
+
+    private LinkLifecycleState resolveCurrentState(LinkDetails current, long ownerId, OffsetDateTime now) {
+        LinkLifecycleState storedState = linkStore.findLifecycleStateBySlug(current.slug(), ownerId)
+                .orElse(LinkLifecycleState.ACTIVE);
+        if (storedState == LinkLifecycleState.ARCHIVED) {
+            return LinkLifecycleState.ARCHIVED;
+        }
+        if (storedState == LinkLifecycleState.SUSPENDED) {
+            return LinkLifecycleState.SUSPENDED;
+        }
+        if (current.expiresAt() != null && !current.expiresAt().isAfter(now)) {
             return LinkLifecycleState.EXPIRED;
         }
         return LinkLifecycleState.ACTIVE;
+    }
+
+    private LinkLifecycleState persistedStateFor(LinkLifecycleState logicalState) {
+        return switch (logicalState) {
+            case ACTIVE, EXPIRED, ALL -> LinkLifecycleState.ACTIVE;
+            case SUSPENDED -> LinkLifecycleState.SUSPENDED;
+            case ARCHIVED -> LinkLifecycleState.ARCHIVED;
+        };
+    }
+
+    private OffsetDateTime resolveNextExpiry(
+            LinkDetails current,
+            LifecycleAction action,
+            OffsetDateTime requestedExpiry,
+            OffsetDateTime now) {
+        return switch (action) {
+            case EXPIRE_NOW -> now;
+            case EXTEND_EXPIRY -> validateExtension(current.expiresAt(), requestedExpiry, now);
+            case SUSPEND, RESUME, ARCHIVE, UNARCHIVE -> current.expiresAt();
+            case RESTORE -> requestedExpiry;
+        };
+    }
+
+    private OffsetDateTime validateExtension(OffsetDateTime currentExpiry, OffsetDateTime requestedExpiry, OffsetDateTime now) {
+        if (requestedExpiry == null) {
+            throw new IllegalArgumentException("expiresAt is required for action extend-expiry");
+        }
+        if (!requestedExpiry.isAfter(now)) {
+            throw new IllegalArgumentException("expiresAt must be in the future");
+        }
+        if (currentExpiry != null && !requestedExpiry.isAfter(currentExpiry)) {
+            throw new IllegalArgumentException("expiresAt must extend the current expiry");
+        }
+        return requestedExpiry;
+    }
+
+    private LinkLifecycleState resolveNextState(
+            LinkLifecycleState currentState,
+            LifecycleAction action,
+            OffsetDateTime nextExpiresAt,
+            OffsetDateTime now) {
+        return switch (action) {
+            case SUSPEND -> LinkLifecycleState.SUSPENDED;
+            case RESUME, UNARCHIVE -> nextExpiresAt != null && !nextExpiresAt.isAfter(now)
+                    ? LinkLifecycleState.EXPIRED
+                    : LinkLifecycleState.ACTIVE;
+            case ARCHIVE -> LinkLifecycleState.ARCHIVED;
+            case EXPIRE_NOW -> LinkLifecycleState.EXPIRED;
+            case EXTEND_EXPIRY -> currentState == LinkLifecycleState.SUSPENDED
+                    ? LinkLifecycleState.SUSPENDED
+                    : LinkLifecycleState.ACTIVE;
+            case RESTORE -> LinkLifecycleState.ACTIVE;
+        };
+    }
+
+    private LinkLifecycleState restoreTargetState(LinkStore.DeletedLinkSnapshot deletedSnapshot, OffsetDateTime now) {
+        if (deletedSnapshot.lifecycleState() == LinkLifecycleState.SUSPENDED) {
+            return LinkLifecycleState.SUSPENDED;
+        }
+        if (deletedSnapshot.expiresAt() != null && !deletedSnapshot.expiresAt().isAfter(now)) {
+            return LinkLifecycleState.EXPIRED;
+        }
+        return deletedSnapshot.lifecycleState() == LinkLifecycleState.ARCHIVED
+                ? LinkLifecycleState.ACTIVE
+                : LinkLifecycleState.ACTIVE;
+    }
+
+    private long currentVersion(AuthenticatedOwner owner, String slug) {
+        return linkStore.findStoredDetailsBySlug(slug, owner.id())
+                .map(LinkDetails::version)
+                .orElseThrow(() -> new LinkNotFoundException(slug));
     }
 
     private List<DailyClickBucket> fillDailyBuckets(LocalDate startDate, List<DailyClickBucket> buckets) {
@@ -675,6 +925,15 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         return sha256(DELETE_OPERATION + "|" + slug + "|" + expectedVersion);
     }
 
+    private String fingerprintLifecycle(String slug, LifecycleAction action, OffsetDateTime expiresAt, long expectedVersion) {
+        return sha256(LIFECYCLE_OPERATION + "|" + slug + "|" + action.name() + "|" + expiresAt + "|" + expectedVersion);
+    }
+
+    private String fingerprintBulk(String action, String slug, List<String> tags, OffsetDateTime expiresAt) {
+        String normalizedTags = tags == null ? "" : String.join(",", tags);
+        return sha256(BULK_OPERATION_PREFIX + action + "|" + slug + "|" + normalizedTags + "|" + expiresAt);
+    }
+
     private String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -704,7 +963,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private LinkActivityEvent toActivityEvent(LinkLifecycleEvent lifecycleEvent) {
         LinkActivityType activityType = switch (lifecycleEvent.eventType()) {
             case CREATED -> LinkActivityType.CREATED;
-            case UPDATED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> LinkActivityType.UPDATED;
+            case UPDATED, RESTORED, EXPIRED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> LinkActivityType.UPDATED;
             case DELETED -> LinkActivityType.DELETED;
         };
         return new LinkActivityEvent(
@@ -717,5 +976,15 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 lifecycleEvent.hostname(),
                 lifecycleEvent.expiresAt(),
                 lifecycleEvent.occurredAt());
+    }
+
+    private enum LifecycleAction {
+        SUSPEND,
+        RESUME,
+        ARCHIVE,
+        UNARCHIVE,
+        RESTORE,
+        EXPIRE_NOW,
+        EXTEND_EXPIRY
     }
 }

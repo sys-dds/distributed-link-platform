@@ -2,6 +2,7 @@ package com.linkplatform.api.link.application;
 
 import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.owner.application.AuthenticatedOwner;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 public interface LinkApplicationService {
@@ -23,8 +24,17 @@ public interface LinkApplicationService {
     LinkMutationResult changeLifecycle(
             AuthenticatedOwner owner,
             String slug,
-            LinkLifecycleState nextState,
+            String action,
+            OffsetDateTime expiresAt,
             long expectedVersion,
+            String idempotencyKey);
+
+    List<BulkLinkActionResult> bulkAction(
+            AuthenticatedOwner owner,
+            String action,
+            List<String> slugs,
+            List<String> tags,
+            OffsetDateTime expiresAt,
             String idempotencyKey);
 
     Link resolveLink(String slug);
@@ -48,4 +58,12 @@ public interface LinkApplicationService {
     List<TopLinkTraffic> getTopLinks(AuthenticatedOwner owner, LinkTrafficWindow window);
 
     List<TrendingLink> getTrendingLinks(AuthenticatedOwner owner, LinkTrafficWindow window, int limit);
+
+    record BulkLinkActionResult(
+            String slug,
+            boolean success,
+            Long newVersion,
+            String errorCategory,
+            String errorDetail) {
+    }
 }

@@ -1,7 +1,9 @@
 package com.linkplatform.api.link.api;
 
 public record LifecyclePipelineStatusResponse(
-        long eligibleBacklogCount,
+        long eligibleCount,
         long parkedCount,
-        Double oldestEligibleAgeSeconds) {
+        Double oldestEligibleAgeSeconds,
+        Double oldestParkedAgeSeconds,
+        java.time.OffsetDateTime lastRequeueAt) {
 }

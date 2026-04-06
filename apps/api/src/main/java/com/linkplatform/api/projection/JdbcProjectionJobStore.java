@@ -47,18 +47,20 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement statement = connection.prepareStatement(
                     """
-                    INSERT INTO projection_jobs (job_type, status, requested_at, checkpoint_id)
-                    VALUES (?, ?, ?, NULL)
+                    INSERT INTO projection_jobs (job_type, status, requested_at, checkpoint_id, owner_id, slug)
+                    VALUES (?, ?, ?, NULL, ?, ?)
                     """,
                     new String[]{"id"});
             statement.setString(1, jobType.name());
             statement.setString(2, ProjectionJobStatus.QUEUED.name());
             statement.setObject(3, requestedAt);
+            statement.setObject(4, ownerId);
+            statement.setString(5, slug);
             return statement;
         }, keyHolder);
         Number id = keyHolder.getKey();
@@ -73,7 +75,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return jdbcTemplate.query(
                         """
                         SELECT id, job_type, status, requested_at, started_at, completed_at,
-                               processed_count, checkpoint_id, error_summary, claimed_by, claimed_until
+                               processed_count, checkpoint_id, error_summary, claimed_by, claimed_until, owner_id, slug
                         FROM projection_jobs
                         WHERE id = ?
                         """,
@@ -88,7 +90,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return jdbcTemplate.query(
                 """
                 SELECT id, job_type, status, requested_at, started_at, completed_at,
-                       processed_count, checkpoint_id, error_summary, claimed_by, claimed_until
+                       processed_count, checkpoint_id, error_summary, claimed_by, claimed_until, owner_id, slug
                 FROM projection_jobs
                 ORDER BY requested_at DESC, id DESC
                 LIMIT ?
@@ -102,7 +104,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return transactionTemplate.execute(status -> jdbcTemplate.query(
                         """
                         SELECT id, job_type, status, requested_at, started_at, completed_at,
-                               processed_count, checkpoint_id, error_summary, claimed_by, claimed_until
+                               processed_count, checkpoint_id, error_summary, claimed_by, claimed_until, owner_id, slug
                         FROM projection_jobs
                         WHERE (status = 'QUEUED'
                                OR status = 'FAILED'
@@ -244,7 +246,14 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 getNullableLong(resultSet, "checkpoint_id"),
                 resultSet.getString("error_summary"),
                 resultSet.getString("claimed_by"),
-                resultSet.getObject("claimed_until", OffsetDateTime.class));
+                resultSet.getObject("claimed_until", OffsetDateTime.class),
+                getNullableLong(resultSet, "owner_id"),
+                resultSet.getString("slug"));
+    }
+
+    @Override
+    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+        return createJob(jobType, requestedAt, null, null);
     }
 
     private Long getNullableLong(ResultSet resultSet, String column) throws SQLException {

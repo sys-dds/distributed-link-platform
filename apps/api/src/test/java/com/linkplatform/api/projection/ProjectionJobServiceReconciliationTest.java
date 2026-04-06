@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.linkplatform.api.link.application.ClickRollupDriftRecord;
 import com.linkplatform.api.link.application.DailyClickBucket;
-import com.linkplatform.api.link.application.Link;
 import com.linkplatform.api.link.application.LinkActivityEvent;
 import com.linkplatform.api.link.application.LinkClick;
 import com.linkplatform.api.link.application.LinkClickHistoryRecord;
@@ -27,6 +26,7 @@ import com.linkplatform.api.link.application.LinkLifecycleHistoryRecord;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
+import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
 import java.time.LocalDate;

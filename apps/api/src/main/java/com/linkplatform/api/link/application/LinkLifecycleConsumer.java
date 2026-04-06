@@ -57,7 +57,7 @@ public class LinkLifecycleConsumer {
     private LinkActivityEvent toActivityEvent(LinkLifecycleEvent linkLifecycleEvent) {
         LinkActivityType activityType = switch (linkLifecycleEvent.eventType()) {
             case CREATED -> LinkActivityType.CREATED;
-            case UPDATED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> LinkActivityType.UPDATED;
+            case UPDATED, RESTORED, EXPIRED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> LinkActivityType.UPDATED;
             case DELETED -> LinkActivityType.DELETED;
         };
         return new LinkActivityEvent(
