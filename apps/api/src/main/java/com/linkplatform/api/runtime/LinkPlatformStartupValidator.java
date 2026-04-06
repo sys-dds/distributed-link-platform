@@ -42,6 +42,10 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
             throw new IllegalStateException(
                     "link-platform.runtime.redirect.region must be set when the redirect surface is enabled");
         }
+        if (runtimeProperties.getMode() == RuntimeMode.REDIRECT && !cacheEnabled) {
+            throw new IllegalStateException(
+                    "link-platform.cache.enabled must remain true when link-platform.runtime.mode is redirect");
+        }
         if (!redirectEnabled && (failoverRegion != null || failoverBaseUrl != null)) {
             throw new IllegalStateException(
                     "Redirect failover configuration requires a redirect-enabled runtime mode");

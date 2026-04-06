@@ -24,6 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import io.micrometer.core.instrument.MeterRegistry;
 
 @SpringBootTest(properties = {
         "link-platform.runtime.mode=redirect",
@@ -42,6 +43,9 @@ class RedirectRuntimeNoFailoverIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @SpyBean
     private com.linkplatform.api.link.application.LinkStore linkStore;
@@ -106,10 +110,17 @@ class RedirectRuntimeNoFailoverIntegrationTest {
                 jdbcTemplate.queryForObject(
                         "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'REDIRECT_FAILOVER_ACTIVATED'",
                         Integer.class));
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'REDIRECT_UNAVAILABLE'",
+                        Integer.class));
+        assertEquals(1.0, meterRegistry.get("link.redirect.unavailable").counter().count());
 
         mockMvc.perform(get("/actuator/health/readiness"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.components.redirectRuntime.details.failoverConfigured").value(false))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.primaryFailurePolicy").value("fail-closed-service-unavailable"))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.lastDecision").value("unavailable"));
     }
 

@@ -36,6 +36,8 @@ class RuntimeHealthIntegrationTest {
                 .andExpect(jsonPath("$.components.redirectRuntime.details.publicBaseUrl").value("http://localhost:8080"))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.failoverConfigured").value(false))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.routeStrategy").value("cache-first-primary-lookup"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.cacheDegradationPolicy").value("fallback-to-primary"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.primaryFailurePolicy").value("fail-closed-service-unavailable"))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.lastDecision").value("startup"))
                 .andExpect(jsonPath("$.components.queryDataSource.details.required").value(true))
                 .andExpect(jsonPath("$.components.queryDataSource.details.usingPrimaryByDefault").value(true))

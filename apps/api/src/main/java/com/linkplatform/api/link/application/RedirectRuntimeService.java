@@ -106,6 +106,15 @@ public class RedirectRuntimeService {
         }
 
         redirectRuntimeState.recordUnavailable();
+        securityEventStore.record(
+                SecurityEventType.REDIRECT_UNAVAILABLE,
+                null,
+                null,
+                "GET",
+                requestPath,
+                remoteAddress,
+                "Redirect unavailable in region " + runtimeProperties.getRedirect().getRegion() + ": " + reason,
+                occurredAt);
         throw new RedirectLookupUnavailableException(
                 "Redirect lookup temporarily unavailable for slug: " + slug,
                 exception);

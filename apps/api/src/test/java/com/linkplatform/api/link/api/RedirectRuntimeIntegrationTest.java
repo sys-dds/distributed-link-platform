@@ -7,6 +7,7 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -62,12 +63,15 @@ class RedirectRuntimeIntegrationTest {
     @MockBean
     private StringRedisTemplate redisTemplate;
 
+    private ValueOperations<String, String> valueOperations;
+
     private final Map<String, String> redisState = new ConcurrentHashMap<>();
 
     @org.junit.jupiter.api.BeforeEach
     void setUpRedis() {
         @SuppressWarnings("unchecked")
-        ValueOperations<String, String> valueOperations = org.mockito.Mockito.mock(ValueOperations.class);
+        ValueOperations<String, String> mockedValueOperations = org.mockito.Mockito.mock(ValueOperations.class);
+        this.valueOperations = mockedValueOperations;
         org.mockito.Mockito.when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         org.mockito.Mockito.when(valueOperations.get(anyString()))
                 .thenAnswer(invocation -> redisState.get(invocation.getArgument(0)));
@@ -132,7 +136,9 @@ class RedirectRuntimeIntegrationTest {
                 .andExpect(jsonPath("$.components.redirectRuntime.details.failoverConfigured").value(true))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.failoverRegion").value("us-east-1"))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.failoverBaseUrl").value("http://localhost:8082"))
-                .andExpect(jsonPath("$.components.redirectRuntime.details.failoverReady").value(true));
+                .andExpect(jsonPath("$.components.redirectRuntime.details.failoverReady").value(true))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.cacheDegradationPolicy").value("fallback-to-primary"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.primaryFailurePolicy").value("regional-failover"));
     }
 
     @Test
@@ -153,6 +159,25 @@ class RedirectRuntimeIntegrationTest {
                 .andExpect(header().string("Location", "https://example.com/cached-runtime"));
 
         verify(linkStore, never()).findBySlug(org.mockito.ArgumentMatchers.eq("cached-runtime-link"), any());
+    }
+
+    @Test
+    void redirectRuntimeFallsBackToPrimaryWhenRedisCacheIsDegraded() throws Exception {
+        insertLink("degraded-cache-link", "https://example.com/degraded-cache");
+        org.mockito.Mockito.when(valueOperations.get(anyString()))
+                .thenThrow(new RuntimeException("redis down"));
+
+        mockMvc.perform(get("/degraded-cache-link"))
+                .andExpect(status().isTemporaryRedirect())
+                .andExpect(header().string("Location", "https://example.com/degraded-cache"));
+
+        verify(linkStore, times(1)).findBySlug(org.mockito.ArgumentMatchers.eq("degraded-cache-link"), any());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                meterRegistry.get("link.cache.degraded")
+                        .tag("area", "redirect")
+                        .tag("operation", "read")
+                        .counter()
+                        .count() >= 1.0d);
     }
 
     @Test

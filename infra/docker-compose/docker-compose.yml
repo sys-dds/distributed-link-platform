@@ -75,6 +75,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      LINK_PLATFORM_CACHE_ENABLED: "true"
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8081
       LINK_PLATFORM_RUNTIME_MODE: control-plane-api
       LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
@@ -101,6 +102,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      LINK_PLATFORM_CACHE_ENABLED: "true"
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8081
       LINK_PLATFORM_RUNTIME_MODE: redirect
       LINK_PLATFORM_RUNTIME_REDIRECT_REGION: eu-west-1
@@ -130,6 +132,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      LINK_PLATFORM_CACHE_ENABLED: "true"
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8082
       LINK_PLATFORM_RUNTIME_MODE: redirect
       LINK_PLATFORM_RUNTIME_REDIRECT_REGION: us-east-1
@@ -159,6 +162,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      LINK_PLATFORM_CACHE_ENABLED: "true"
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8081
       LINK_PLATFORM_RUNTIME_MODE: worker
       LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
