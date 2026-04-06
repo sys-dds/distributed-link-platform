@@ -34,6 +34,12 @@ link-platform:
   public-base-url: ${LINK_PLATFORM_PUBLIC_BASE_URL:http://localhost:8080}
   runtime:
     mode: ${LINK_PLATFORM_RUNTIME_MODE:all}
+  query:
+    datasource:
+      url: ${QUERY_DB_URL:}
+      username: ${QUERY_DB_USERNAME:}
+      password: ${QUERY_DB_PASSWORD:}
+      driver-class-name: ${QUERY_DB_DRIVER_CLASS_NAME:${spring.datasource.driver-class-name}}
   analytics:
     click-topic: ${LINK_PLATFORM_ANALYTICS_CLICK_TOPIC:link-platform.analytics.redirect-clicks}
     outbox-relay-batch-size: ${LINK_PLATFORM_ANALYTICS_OUTBOX_BATCH_SIZE:50}
@@ -73,4 +79,4 @@ management:
         liveness:
           include: livenessState
         readiness:
-          include: readinessState,db
+          include: readinessState,db,queryDataSource,runtimeRole

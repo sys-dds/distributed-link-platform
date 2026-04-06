@@ -1,5 +1,6 @@
 package com.linkplatform.api.projection;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.PreparedStatement;
@@ -21,6 +22,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
+    private final Counter reclaimedCounter;
 
     public JdbcProjectionJobStore(
             JdbcTemplate jdbcTemplate,
@@ -34,6 +36,13 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 .register(meterRegistry);
         Gauge.builder("link.projection.jobs.active", this, JdbcProjectionJobStore::countActive)
                 .description("Number of active projection jobs")
+                .register(meterRegistry);
+        Gauge.builder("link.projection.jobs.oldest.queued.age.seconds", this,
+                        store -> store.findOldestQueuedAgeSeconds(OffsetDateTime.now(clock)))
+                .description("Age in seconds of the oldest queued or retryable projection job")
+                .register(meterRegistry);
+        this.reclaimedCounter = Counter.builder("link.projection.jobs.reclaimed")
+                .description("Number of projection jobs reclaimed after failure or stale lease")
                 .register(meterRegistry);
     }
 
@@ -107,6 +116,9 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 .stream()
                 .findFirst()
                 .map(job -> {
+                    if (job.status() == ProjectionJobStatus.FAILED || job.status() == ProjectionJobStatus.RUNNING) {
+                        reclaimedCounter.increment();
+                    }
                     jdbcTemplate.update(
                             """
                             UPDATE projection_jobs
@@ -199,6 +211,25 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 "SELECT COUNT(*) FROM projection_jobs WHERE status = 'RUNNING'",
                 Long.class);
         return count == null ? 0L : count;
+    }
+
+    Double findOldestQueuedAgeSeconds(OffsetDateTime now) {
+        OffsetDateTime oldestRequestedAt = jdbcTemplate.query(
+                        """
+                        SELECT requested_at
+                        FROM projection_jobs
+                        WHERE status IN ('QUEUED', 'FAILED')
+                        ORDER BY requested_at ASC, id ASC
+                        LIMIT 1
+                        """,
+                        (resultSet, rowNum) -> resultSet.getObject("requested_at", OffsetDateTime.class))
+                .stream()
+                .findFirst()
+                .orElse(null);
+        if (oldestRequestedAt == null) {
+            return null;
+        }
+        return (double) java.time.Duration.between(oldestRequestedAt.toInstant(), now.toInstant()).getSeconds();
     }
 
     private ProjectionJob mapJob(ResultSet resultSet) throws SQLException {

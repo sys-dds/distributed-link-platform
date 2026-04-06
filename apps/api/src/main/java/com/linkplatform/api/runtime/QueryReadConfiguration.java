@@ -1,17 +1,59 @@
 package com.linkplatform.api.runtime;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import javax.sql.DataSource;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(LinkPlatformQueryProperties.class)
 public class QueryReadConfiguration {
 
     @Bean
-    @Qualifier("queryJdbcTemplate")
-    JdbcTemplate queryJdbcTemplate(DataSource dataSource) {
-        return new JdbcTemplate(dataSource);
+    QueryRoutingDataSourceHolder queryRoutingDataSourceHolder(
+            @Qualifier("dataSource") DataSource dataSource,
+            LinkPlatformQueryProperties queryProperties,
+            MeterRegistry meterRegistry) {
+        return new QueryRoutingDataSourceHolder(new QueryRoutingDataSource(
+                dataSource,
+                dedicatedQueryDataSource(queryProperties),
+                queryProperties.isDedicatedConfigured(),
+                meterRegistry));
+    }
+
+    @Bean(name = "queryDataSourceHealthIndicator")
+    QueryDataSourceHealthIndicator queryDataSourceHealthIndicator(
+            QueryRoutingDataSourceHolder queryRoutingDataSourceHolder,
+            LinkPlatformRuntimeProperties runtimeProperties) {
+        return new QueryDataSourceHealthIndicator(queryRoutingDataSourceHolder.dataSource(), runtimeProperties);
+    }
+
+    @Bean(name = "runtimeRoleHealthIndicator")
+    RuntimeRoleHealthIndicator runtimeRoleHealthIndicator(LinkPlatformRuntimeProperties runtimeProperties) {
+        return new RuntimeRoleHealthIndicator(runtimeProperties);
+    }
+
+    @Bean
+    @org.springframework.beans.factory.annotation.Qualifier("queryJdbcTemplate")
+    JdbcTemplate queryJdbcTemplate(QueryRoutingDataSourceHolder queryRoutingDataSourceHolder) {
+        return new JdbcTemplate(queryRoutingDataSourceHolder.dataSource());
+    }
+
+    private DataSource dedicatedQueryDataSource(LinkPlatformQueryProperties queryProperties) {
+        if (!queryProperties.isDedicatedConfigured()) {
+            return null;
+        }
+        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        dataSource.setUrl(queryProperties.getUrl());
+        if (queryProperties.getDriverClassName() != null) {
+            dataSource.setDriverClassName(queryProperties.getDriverClassName());
+        }
+        dataSource.setUsername(queryProperties.getUsername());
+        dataSource.setPassword(queryProperties.getPassword());
+        return dataSource;
     }
 }
