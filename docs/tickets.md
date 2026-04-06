@@ -1,118 +1,135 @@
-TICKET-037
-title[]
 
-Build the global redirect resilience slice: multi-region redirect posture, deterministic analytics freshness, security/config hardening, and rollout-safe evolution
+### 🚀 TICKET-038
 
-technical_detail[]
+#### title[]
 
-PR 31 added useful resilience groundwork, but the project now needs a bigger destination-oriented jump, not another narrow ticket.
+Finish global redirect failover for real, close live analytics freshness, and land the final production-hardening pack: security/config hygiene, rollout safety, observability/performance/cost proof
 
-This ticket should intentionally combine four adjacent endgame themes into one coherent slice:
+#### technical_detail[]
 
-Part 1 — finish the still-open 036 hardening
+PR 32 added the right seam, but not the full end-state.
 
-close the analytics freshness gap properly
-make click-driven and rollup-driven cache invalidation deterministic
-ensure traffic summary, top links, trending links, and recent activity do not serve stale data after new traffic
-preserve replay/rebuild convergence after cache invalidation
+TICKET-038 should be a **very large endgame slice** that folds together the unfinished parts of 037 and the next major polish layers, instead of spreading them across multiple small tickets.
 
-Part 2 — multi-region redirect posture
-Build the first serious multi-region redirect architecture slice inside the current single codebase/runtime model.
+This ticket should combine:
 
-That should include:
+##### 1. Finish the still-open 037 correctness gap
 
-region-aware redirect runtime configuration
-region identity in redirect/runtime configuration
-health-aware redirect failover posture
-region-aware redirect metrics and diagnostics
-clear behavior for slug resolution/read path under region failure or degraded query/cache dependencies
-practical local/dev simulation support for at least two redirect runtimes
-keep control-plane and worker roles consistent with this evolution
+* close the **live** analytics freshness gap, not just rebuild-time invalidation
+* make click-driven and rollup-driven cache invalidation deterministic
+* ensure traffic summary, top links, trending, and recent activity do not serve stale data after new traffic
+* preserve replay/rebuild convergence
 
-Do not turn this into full distributed infra theater.
-This is about creating a believable architecture seam and proving the main failure/consistency behavior.
+##### 2. Turn the multi-region seam into real failover behavior
 
-Part 3 — security and config hardening
-Bundle the security/config layer here instead of making it a separate tiny ticket:
+* keep region-aware redirect config
+* add explicit redirect failover behavior for degraded primary lookup / degraded dependencies
+* make local multi-region simulation more realistic
+* define and enforce clear behavior for:
 
-tighten secret/config hygiene for runtime roles and datasource/cache settings
-add stronger startup validation for unsafe config combinations
-harden API-key and auth-related operational behavior where needed
-improve audit/security-event usefulness for operator investigation
-ensure internal/operational surfaces are appropriately gated by runtime role
+    * cache hit / cache miss
+    * primary lookup failure
+    * failover-region posture
+    * degraded analytics-write posture
+* keep redirect hot-path correctness first
 
-Part 4 — rollout-safe evolution
-Strengthen safe change posture for a system that now has multiple runtimes and evolving event/API contracts:
+##### 3. Bundle security/config hardening
 
-compatibility-oriented tests for key serialized contracts
-rollout-safe validation for region/runtime/config combinations
-safer behavior when one runtime is upgraded before another
-keep frontend-facing contract shapes stable for the future Next.js app
+* tighten secret/config hygiene for runtime, datasource, Redis, and auth settings
+* add stricter startup validation for unsafe production-shaped combinations
+* improve security/audit events for auth/runtime/config failures
+* make runtime-role exposure safer and more explicit
 
-This is the right next ticket because it:
+##### 4. Bundle rollout-safe evolution
 
-finishes the still-open correctness gap from 036
-adds the first real global/failover story
-hardens runtime safety and security posture
-gets you closer to the final showcase version faster than splitting these into three smaller tickets
-feature_delivered_by_end[]
+* extend compatibility tests for key API and event contracts
+* add mixed-runtime / partial-rollout safety checks where practical
+* ensure frontend-facing contracts stay stable for the future Next.js app
+* validate risky upgrade/config combinations early
+
+##### 5. Add the final serious observability/performance/cost proof layer
+
+* add focused hot-path performance proof for redirect
+* add focused query-path performance proof for owner discovery/analytics
+* add stronger operational signals for:
+
+    * redirect failover activation
+    * analytics freshness invalidation
+    * cache degradation/fallback
+    * query datasource fallback
+    * worker backlog / reclaim / retry posture where useful
+* add capacity/cost notes in code/test proof shape where practical, not fluff
+
+This should be treated as the **final major backend hardening pack**, not a narrow follow-up.
+
+#### feature_delivered_by_end[]
 
 The platform has:
 
-deterministic analytics freshness after new click traffic
-a real multi-region redirect posture
-region-aware redirect/runtime diagnostics
-stronger config/secret/runtime safety
-safer rollout and compatibility posture for multiple runtimes
-a much more believable staff-level architecture story
-how_this_unlocks_next_feature[]
+* deterministic live analytics freshness
+* real redirect failover behavior, not just config placeholders
+* stronger security/config/runtime safety
+* rollout-safe evolution posture
+* meaningful observability/performance/cost proof
+* a much more polished senior/staff-level production story
 
-This unlocks the final destination slices cleanly:
+#### how_this_unlocks_next_feature[]
 
-performance / observability / capacity / cost proof pack
-final security/release polish if anything remains
-final runbooks / architecture diagrams / interview packaging
-stronger frontend/backend showcase story
-acceptance_criteria[]
-analytics caches invalidate or refresh deterministically after click and rollup changes
-owner-facing traffic summary / top links / trending / recent activity do not serve stale results after new traffic
-redirect runtime supports region-aware configuration
-at least two redirect runtime instances can be simulated locally with distinct region identities
-redirect failover/degradation behavior is explicit and tested
-runtime/config validation catches unsafe region/query/cache combinations
-security/audit signals are improved for relevant auth/runtime failure cases
-key API/event contracts remain compatibility-tested
-public redirect behavior remains correct and fast
-control-plane and worker behavior remain correctly separated
-no repo churn in docs/tickets.md, README, or Postman
-code_target[]
-click analytics / rollup consumer and analytics-cache invalidation paths
-redirect runtime configuration and health/metrics wiring
-runtime/config validation
-query/cache fallback behavior where region/failover posture needs it
-security/audit event handling where runtime/config/auth failures matter
-compatibility tests for key contracts
-local infra/runtime wiring needed to simulate region-aware redirect posture
-focused runtime/resilience tests
-do not touch repo ticket-tracking/docs files
-proof[]
-targeted tests proving analytics freshness after click changes
-targeted tests proving analytics freshness after rollup updates
-targeted tests proving region-aware redirect runtimes start and behave correctly
-targeted tests proving failover/degraded redirect behavior is explicit and safe
-targeted tests proving unsafe runtime/config combinations fail fast
-targeted tests proving key API/event contracts remain compatible
-targeted tests proving public redirect behavior remains unchanged
-actual compile/test command output with passing results
-delivery_note[]
+This unlocks the final backend finish cleanly:
 
-This is intentionally a huge ticket.
+* last-mile repo polish
+* architecture/runbook/interview packaging
+* clean handoff into the Next.js frontend build
+
+#### acceptance_criteria[]
+
+* analytics caches invalidate or refresh deterministically after live click changes
+* analytics caches invalidate or refresh deterministically after rollup changes
+* traffic summary / top links / trending / recent activity do not serve stale data after new traffic
+* redirect runtime supports explicit failover behavior under degraded primary lookup and cache states
+* local multi-region simulation is stronger and tested
+* unsafe runtime/config combinations fail fast
+* security/audit events are improved for auth/runtime/config failure cases
+* key API/event contracts remain compatibility-tested
+* redirect hot path and owner query hot paths have focused reproducible performance proof
+* public redirect behavior remains correct and fast
+* control-plane and worker separation remains intact
+* no repo churn in `docs/tickets.md`, README, or Postman
+
+#### code_target[]
+
+* live click / rollup consumer paths
+* analytics cache invalidation paths
+* redirect runtime configuration / failover behavior
+* runtime/config/startup validators
+* security/audit event paths
+* compatibility tests for key contracts
+* health/metrics/observability wiring
+* focused performance/failover tests
+* local runtime/compose wiring only where needed
+* do **not** touch repo ticket-tracking/docs files
+
+#### proof[]
+
+* targeted tests proving live analytics freshness after click changes
+* targeted tests proving analytics freshness after rollup updates
+* targeted tests proving redirect failover behavior under degraded primary lookup
+* targeted tests proving unsafe runtime/config combinations fail fast
+* targeted tests proving security/audit events for auth/runtime/config failures
+* targeted tests proving key API/event contracts remain compatible
+* focused reproducible performance evidence for redirect and owner query paths
+* actual compile/test command output with passing results
+
+#### delivery_note[]
+
+This is intentionally a **huge** ticket.
 
 It folds together:
 
-the unfinished correctness gap from 036
-multi-region redirect posture
-security/config hardening
-rollout-safe evolution
+* the unfinished correctness from 037
+* real redirect failover behavior
+* security/config hardening
+* rollout-safe evolution
+* observability/performance/cost proof
 
-Do not split those into several smaller tickets unless the repo forces a clearly separate architectural cut.
+Do **not** split these into several smaller tickets unless the repo forces a clearly separate architectural cut.
