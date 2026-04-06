@@ -32,11 +32,6 @@ public class QueryReadConfiguration {
         return new QueryDataSourceHealthIndicator(queryRoutingDataSourceHolder.dataSource(), runtimeProperties);
     }
 
-    @Bean(name = "runtimeRoleHealthIndicator")
-    RuntimeRoleHealthIndicator runtimeRoleHealthIndicator(LinkPlatformRuntimeProperties runtimeProperties) {
-        return new RuntimeRoleHealthIndicator(runtimeProperties);
-    }
-
     @Bean
     @org.springframework.beans.factory.annotation.Qualifier("queryJdbcTemplate")
     JdbcTemplate queryJdbcTemplate(QueryRoutingDataSourceHolder queryRoutingDataSourceHolder) {

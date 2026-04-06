@@ -178,6 +178,18 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public List<Long> findOwnerIdsWithClickHistory() {
+        return jdbcTemplate.query(
+                """
+                SELECT DISTINCT l.owner_id
+                FROM links l
+                JOIN link_clicks c ON c.slug = l.slug
+                ORDER BY l.owner_id ASC
+                """,
+                (resultSet, rowNum) -> resultSet.getLong("owner_id"));
+    }
+
+    @Override
     public long rebuildClickDailyRollups() {
         jdbcTemplate.update("DELETE FROM link_click_daily_rollups");
         return jdbcTemplate.update(

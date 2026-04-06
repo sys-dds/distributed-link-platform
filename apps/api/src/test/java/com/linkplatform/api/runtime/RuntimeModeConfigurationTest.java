@@ -324,7 +324,9 @@ class RuntimeModeConfigurationTest {
 
         @Bean
         LinkStore linkStore() {
-            return Mockito.mock(LinkStore.class);
+            LinkStore linkStore = Mockito.mock(LinkStore.class);
+            Mockito.when(linkStore.findOwnerIdsWithClickHistory()).thenReturn(List.of());
+            return linkStore;
         }
 
         @Bean

@@ -306,6 +306,11 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public List<Long> findOwnerIdsWithClickHistory() {
+            return ownerIdBySlug.values().stream().distinct().sorted().toList();
+        }
+
+        @Override
         public long rebuildClickDailyRollups() {
             return 0;
         }

@@ -31,6 +31,10 @@ class RuntimeHealthIntegrationTest {
                 .andExpect(jsonPath("$.components.runtimeRole.details.redirectEnabled").value(true))
                 .andExpect(jsonPath("$.components.runtimeRole.details.controlPlaneEnabled").value(true))
                 .andExpect(jsonPath("$.components.runtimeRole.details.workerEnabled").value(true))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.required").value(true))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.region").value("local"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.failoverConfigured").value(false))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.routeStrategy").value("cache-first-primary-lookup"))
                 .andExpect(jsonPath("$.components.queryDataSource.details.required").value(true))
                 .andExpect(jsonPath("$.components.queryDataSource.details.usingPrimaryByDefault").value(true))
                 .andExpect(jsonPath("$.components.queryDataSource.details.route").value("primary"));

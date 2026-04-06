@@ -32,13 +32,70 @@ class LinkPlatformStartupValidatorTest {
         contextRunner.run(context -> assertThat(context).hasNotFailed());
     }
 
+    @Test
+    void redirectEnabledRuntimeRequiresNonBlankRegion() {
+        contextRunner.withPropertyValues("link-platform.runtime.redirect.region= ")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining(
+                                    "link-platform.runtime.redirect.region must be set when the redirect surface is enabled");
+                });
+    }
+
+    @Test
+    void failoverRegionMustDifferFromPrimaryRegion() {
+        contextRunner.withPropertyValues(
+                        "link-platform.runtime.redirect.region=eu-west-1",
+                        "link-platform.runtime.redirect.failover-region=eu-west-1")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining(
+                                    "link-platform.runtime.redirect.failover-region must differ from link-platform.runtime.redirect.region");
+                });
+    }
+
+    @Test
+    void failoverRegionRequiresCacheEnabled() {
+        contextRunner.withPropertyValues(
+                        "link-platform.runtime.redirect.region=eu-west-1",
+                        "link-platform.runtime.redirect.failover-region=us-east-1",
+                        "link-platform.cache.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining(
+                                    "link-platform.cache.enabled must remain true when link-platform.runtime.redirect.failover-region is configured");
+                });
+    }
+
+    @Test
+    void dedicatedQueryDatasourceIsRejectedForRedirectRuntime() {
+        contextRunner.withPropertyValues(
+                        "link-platform.runtime.mode=redirect",
+                        "link-platform.query.datasource.url=jdbc:h2:mem:query")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining(
+                                    "Dedicated query datasource configuration is only valid for all or control-plane-api runtime modes");
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
-    @org.springframework.boot.context.properties.EnableConfigurationProperties(LinkPlatformQueryProperties.class)
+    @org.springframework.boot.context.properties.EnableConfigurationProperties({
+            LinkPlatformQueryProperties.class,
+            LinkPlatformRuntimeProperties.class
+    })
     static class TestConfiguration {
 
         @Bean
-        LinkPlatformStartupValidator linkPlatformStartupValidator(LinkPlatformQueryProperties queryProperties) {
-            return new LinkPlatformStartupValidator(queryProperties);
+        LinkPlatformStartupValidator linkPlatformStartupValidator(
+                LinkPlatformQueryProperties queryProperties,
+                LinkPlatformRuntimeProperties runtimeProperties,
+                @org.springframework.beans.factory.annotation.Value("${link-platform.cache.enabled:true}") boolean cacheEnabled) {
+            return new LinkPlatformStartupValidator(queryProperties, runtimeProperties, cacheEnabled);
         }
     }
 }
