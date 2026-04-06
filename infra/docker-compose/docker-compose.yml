@@ -105,6 +105,7 @@ services:
       LINK_PLATFORM_RUNTIME_MODE: redirect
       LINK_PLATFORM_RUNTIME_REDIRECT_REGION: eu-west-1
       LINK_PLATFORM_RUNTIME_REDIRECT_FAILOVER_REGION: us-east-1
+      LINK_PLATFORM_RUNTIME_REDIRECT_FAILOVER_BASE_URL: http://localhost:8082
       LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
     ports:
       - "8081:8080"
@@ -133,6 +134,7 @@ services:
       LINK_PLATFORM_RUNTIME_MODE: redirect
       LINK_PLATFORM_RUNTIME_REDIRECT_REGION: us-east-1
       LINK_PLATFORM_RUNTIME_REDIRECT_FAILOVER_REGION: eu-west-1
+      LINK_PLATFORM_RUNTIME_REDIRECT_FAILOVER_BASE_URL: http://localhost:8081
       LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
     ports:
       - "8082:8080"

@@ -28,7 +28,14 @@ public class LinkPlatformRuntimeConfiguration {
     @Bean(name = "redirectRuntimeHealthIndicator")
     RedirectRuntimeHealthIndicator redirectRuntimeHealthIndicator(
             LinkPlatformRuntimeProperties runtimeProperties,
-            @org.springframework.beans.factory.annotation.Value("${link-platform.cache.enabled:true}") boolean cacheEnabled) {
-        return new RedirectRuntimeHealthIndicator(runtimeProperties, cacheEnabled);
+            @org.springframework.beans.factory.annotation.Value("${link-platform.cache.enabled:true}") boolean cacheEnabled,
+            @org.springframework.beans.factory.annotation.Value("${link-platform.public-base-url}") String publicBaseUrl,
+            RedirectRuntimeState redirectRuntimeState) {
+        return new RedirectRuntimeHealthIndicator(runtimeProperties, cacheEnabled, publicBaseUrl, redirectRuntimeState);
+    }
+
+    @Bean
+    RedirectRuntimeState redirectRuntimeState(io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new RedirectRuntimeState(meterRegistry);
     }
 }

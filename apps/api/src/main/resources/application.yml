@@ -37,6 +37,7 @@ link-platform:
     redirect:
       region: ${LINK_PLATFORM_RUNTIME_REDIRECT_REGION:local}
       failover-region: ${LINK_PLATFORM_RUNTIME_REDIRECT_FAILOVER_REGION:}
+      failover-base-url: ${LINK_PLATFORM_RUNTIME_REDIRECT_FAILOVER_BASE_URL:}
   query:
     datasource:
       url: ${QUERY_DB_URL:}
