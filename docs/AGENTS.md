@@ -1,5 +1,7 @@
 ## Repo-local rules
 Do not fall back to PowerShell-native search yet.
+Use available Windows tools in this project: fd, git, rg, jq, yq, bat, java, and mvnw.cmd.
+Use wrapper scripts for compile/test/clean when available.
 - Get-Command rg -All
 - rg --version
 - Use `C:\Users\Ryzen-pc\Desktop\sys-dds\codex-scratch` for temporary files, downloads, extracted tools, logs, caches, and other throwaway execution artifacts.
