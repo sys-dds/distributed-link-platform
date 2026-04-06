@@ -26,15 +26,18 @@ import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import io.micrometer.core.instrument.MeterRegistry;
 
 @SpringBootTest(properties = {
         "link-platform.runtime.mode=redirect",
         "link-platform.runtime.redirect.region=eu-west-1",
         "link-platform.runtime.redirect.failover-region=us-east-1",
+        "link-platform.runtime.redirect.failover-base-url=http://localhost:8082",
         "link-platform.cache.enabled=true",
         "management.endpoint.health.show-details=always",
         "management.endpoint.health.group.readiness.show-details=always"
@@ -49,6 +52,9 @@ class RedirectRuntimeIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @SpyBean
     private com.linkplatform.api.link.application.LinkStore linkStore;
@@ -125,6 +131,7 @@ class RedirectRuntimeIntegrationTest {
                 .andExpect(jsonPath("$.components.redirectRuntime.details.region").value("eu-west-1"))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.failoverConfigured").value(true))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.failoverRegion").value("us-east-1"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.failoverBaseUrl").value("http://localhost:8082"))
                 .andExpect(jsonPath("$.components.redirectRuntime.details.failoverReady").value(true));
     }
 
@@ -146,6 +153,55 @@ class RedirectRuntimeIntegrationTest {
                 .andExpect(header().string("Location", "https://example.com/cached-runtime"));
 
         verify(linkStore, never()).findBySlug(org.mockito.ArgumentMatchers.eq("cached-runtime-link"), any());
+    }
+
+    @Test
+    void redirectRuntimeFailsOverOnPrimaryLookupFailureAndSkipsAnalyticsWrite() throws Exception {
+        doThrow(new DataAccessResourceFailureException("primary unavailable"))
+                .when(linkStore)
+                .findBySlug(org.mockito.ArgumentMatchers.eq("failover-runtime-link"), any());
+
+        mockMvc.perform(get("/failover-runtime-link").queryParam("src", "campaign"))
+                .andExpect(status().isTemporaryRedirect())
+                .andExpect(header().string("Location", "http://localhost:8082/failover-runtime-link?src=campaign"));
+
+        assertEquals(
+                0,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM analytics_outbox WHERE event_key = 'failover-runtime-link'",
+                        Integer.class));
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'REDIRECT_LOOKUP_FAILED'",
+                        Integer.class));
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM owner_security_events WHERE event_type = 'REDIRECT_FAILOVER_ACTIVATED'",
+                        Integer.class));
+        assertEquals(1.0, meterRegistry.get("link.redirect.primary.lookup.failure").counter().count());
+        assertEquals(1.0, meterRegistry.get("link.redirect.failover.activated").counter().count());
+
+        mockMvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.redirectRuntime.details.lastDecision").value("failover"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.lastPrimaryLookupFailureReason")
+                        .value("DataAccessResourceFailureException: primary unavailable"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.lastFailoverAt").exists());
+    }
+
+    private static org.springframework.test.web.servlet.ResultMatcher problemDetail(int status, String title, String detail) {
+        return result -> {
+            status().is(status).match(result);
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                    .contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
+                    .match(result);
+            jsonPath("$.type").value("about:blank").match(result);
+            jsonPath("$.title").value(title).match(result);
+            jsonPath("$.status").value(status).match(result);
+            jsonPath("$.detail").value(detail).match(result);
+        };
     }
 
     private void insertLink(String slug, String originalUrl) {

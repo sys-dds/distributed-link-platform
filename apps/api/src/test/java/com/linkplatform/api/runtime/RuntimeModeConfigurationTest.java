@@ -15,6 +15,7 @@ import com.linkplatform.api.link.application.LinkReadCache;
 import com.linkplatform.api.link.application.LinkLifecycleConsumer;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxRelay;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
+import com.linkplatform.api.link.application.RedirectRuntimeService;
 import com.linkplatform.api.link.application.LinkStore;
 import com.linkplatform.api.link.application.RedirectClickAnalyticsConsumer;
 import com.linkplatform.api.owner.api.MeController;
@@ -337,6 +338,11 @@ class RuntimeModeConfigurationTest {
         @Bean
         LinkApplicationService linkApplicationService() {
             return Mockito.mock(LinkApplicationService.class);
+        }
+
+        @Bean
+        RedirectRuntimeService redirectRuntimeService() {
+            return Mockito.mock(RedirectRuntimeService.class);
         }
 
         @Bean

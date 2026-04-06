@@ -8,6 +8,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.linkplatform.api.link.application.LinkLifecycleEvent;
 import com.linkplatform.api.link.application.LinkLifecycleEventType;
 import com.linkplatform.api.link.application.RedirectClickAnalyticsEvent;
+import com.linkplatform.api.owner.api.MeResponse;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -116,5 +117,18 @@ class ContractCompatibilityTest {
 
         assertThat(json).isEqualTo(
                 "{\"slug\":\"launch-page\",\"originalUrl\":\"https://example.com/launch\",\"clickGrowth\":7,\"currentWindowClicks\":10,\"previousWindowClicks\":3}");
+    }
+
+    @Test
+    void meResponseJsonShapeRemainsCompatible() throws Exception {
+        String json = objectMapper.writeValueAsString(new MeResponse(
+                "free-owner",
+                "Free Owner",
+                "FREE",
+                2L,
+                2L));
+
+        assertThat(json).isEqualTo(
+                "{\"ownerKey\":\"free-owner\",\"displayName\":\"Free Owner\",\"plan\":\"FREE\",\"activeLinkCount\":2,\"activeLinkLimit\":2}");
     }
 }
