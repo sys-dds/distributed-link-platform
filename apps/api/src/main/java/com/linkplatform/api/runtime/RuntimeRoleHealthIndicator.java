@@ -21,6 +21,7 @@ public class RuntimeRoleHealthIndicator extends AbstractHealthIndicator {
                 .withDetail("redirectEnabled", runtimeProperties.redirectEnabled())
                 .withDetail("controlPlaneEnabled", runtimeProperties.controlPlaneEnabled())
                 .withDetail("workerEnabled", runtimeProperties.workerEnabled())
+                .withDetail("redirectRateLimitEnabled", runtimeProperties.getRedirect().getRateLimit().isEnabled())
                 .withDetail("redirectSurfaceExposed", runtimeProperties.redirectEnabled() && runtimeProperties.httpEnabled())
                 .withDetail("controlPlaneSurfaceExposed", runtimeProperties.controlPlaneEnabled() && runtimeProperties.httpEnabled())
                 .withDetail("workerSurfaceExposed", runtimeProperties.workerEnabled() && runtimeProperties.httpEnabled());

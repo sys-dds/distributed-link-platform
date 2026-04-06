@@ -20,6 +20,13 @@ public interface LinkApplicationService {
 
     LinkMutationResult deleteLink(AuthenticatedOwner owner, String slug, long expectedVersion, String idempotencyKey);
 
+    LinkMutationResult changeLifecycle(
+            AuthenticatedOwner owner,
+            String slug,
+            LinkLifecycleState nextState,
+            long expectedVersion,
+            String idempotencyKey);
+
     Link resolveLink(String slug);
 
     void recordRedirectClick(String slug, String userAgent, String referrer, String remoteAddress);

@@ -13,6 +13,7 @@ public record LinkLifecycleEvent(
         List<String> tags,
         String hostname,
         OffsetDateTime expiresAt,
+        LinkLifecycleState lifecycleState,
         long version,
         OffsetDateTime occurredAt) {
 

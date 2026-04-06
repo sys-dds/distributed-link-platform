@@ -4,5 +4,9 @@ public enum LinkLifecycleEventType {
     CREATED,
     UPDATED,
     DELETED,
-    EXPIRATION_UPDATED
+    EXPIRATION_UPDATED,
+    SUSPENDED,
+    RESUMED,
+    ARCHIVED,
+    UNARCHIVED
 }

@@ -21,6 +21,8 @@ public class JdbcOwnerStore implements OwnerStore {
                         FROM owner_api_keys k
                         JOIN owners o ON o.id = k.owner_id
                         WHERE k.key_hash = ?
+                          AND k.revoked_at IS NULL
+                          AND (k.expires_at IS NULL OR k.expires_at > CURRENT_TIMESTAMP)
                         """,
                         (resultSet, rowNum) -> new AuthenticatedOwner(
                                 resultSet.getLong("id"),

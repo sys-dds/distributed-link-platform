@@ -107,12 +107,38 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public boolean transitionLifecycle(
+            String slug,
+            LinkLifecycleState currentState,
+            LinkLifecycleState nextState,
+            long expectedVersion,
+            long nextVersion,
+            long ownerId) {
+        return jdbcTemplate.update(
+                """
+                UPDATE links
+                SET lifecycle_state = ?, version = ?
+                WHERE slug = ?
+                  AND lifecycle_state = ?
+                  AND version = ?
+                  AND owner_id = ?
+                """,
+                nextState.name(),
+                nextVersion,
+                slug,
+                currentState.name(),
+                expectedVersion,
+                ownerId) == 1;
+    }
+
+    @Override
     public long countActiveLinksByOwner(long ownerId) {
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
                 FROM links
                 WHERE owner_id = ?
+                  AND lifecycle_state = 'ACTIVE'
                   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
                 """,
                 Long.class,
@@ -178,6 +204,17 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public Optional<LinkLifecycleState> findLifecycleStateBySlug(String slug, long ownerId) {
+        return jdbcTemplate.query(
+                        "SELECT lifecycle_state FROM links WHERE slug = ? AND owner_id = ?",
+                        (resultSet, rowNum) -> LinkLifecycleState.valueOf(resultSet.getString("lifecycle_state")),
+                        slug,
+                        ownerId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public List<Long> findOwnerIdsWithClickHistory() {
         return jdbcTemplate.query(
                 """
@@ -205,7 +242,7 @@ public class PostgresLinkStore implements LinkStore {
     public void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent) {
         String tagsJson = serializeTags(linkLifecycleEvent.tags());
         switch (linkLifecycleEvent.eventType()) {
-            case CREATED, UPDATED, EXPIRATION_UPDATED -> upsertCatalogProjection(
+            case CREATED, UPDATED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> upsertCatalogProjection(
                     linkLifecycleEvent,
                     tagsJson,
                     null);
@@ -221,7 +258,7 @@ public class PostgresLinkStore implements LinkStore {
         String tagsJson = serializeTags(linkLifecycleEvent.tags());
         String lifecycleState = determineLifecycleState(linkLifecycleEvent, OffsetDateTime.now());
         switch (linkLifecycleEvent.eventType()) {
-            case CREATED, UPDATED, EXPIRATION_UPDATED -> upsertDiscoveryProjection(
+            case CREATED, UPDATED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> upsertDiscoveryProjection(
                     linkLifecycleEvent,
                     tagsJson,
                     null,
@@ -287,12 +324,74 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit) {
+        return findClickHistoryChunkAfter(afterId, limit);
+    }
+
+    @Override
+    public java.util.Map<String, Long> findDailyRollupTotalsBySlugAndDay(java.util.Set<String> slugDayKeys) {
+        java.util.Map<String, Long> results = new java.util.HashMap<>();
+        for (String slugDayKey : slugDayKeys) {
+            int delimiterIndex = slugDayKey.indexOf('|');
+            String slug = slugDayKey.substring(0, delimiterIndex);
+            LocalDate bucketDay = LocalDate.parse(slugDayKey.substring(delimiterIndex + 1));
+            Long count = jdbcTemplate.queryForObject(
+                    """
+                    SELECT click_count
+                    FROM link_click_daily_rollups
+                    WHERE slug = ? AND rollup_date = ?
+                    """,
+                    Long.class,
+                    slug,
+                    bucketDay);
+            results.put(slugDayKey, count == null ? 0L : count);
+        }
+        return results;
+    }
+
+    @Override
+    public void upsertClickRollupReconciliation(ClickRollupDriftRecord driftRecord) {
+        jdbcTemplate.update(
+                """
+                MERGE INTO click_rollup_reconciliation (
+                    owner_id, slug, bucket_day, raw_click_count, rollup_click_count, drift_count,
+                    detected_at, repaired_at, repair_status, repair_note
+                ) KEY (owner_id, slug, bucket_day)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                driftRecord.ownerId(),
+                driftRecord.slug(),
+                driftRecord.bucketDay(),
+                driftRecord.rawClickCount(),
+                driftRecord.rollupClickCount(),
+                driftRecord.driftCount(),
+                driftRecord.detectedAt(),
+                driftRecord.repairedAt(),
+                driftRecord.repairStatus().name(),
+                driftRecord.repairNote());
+    }
+
+    @Override
+    public void repairDailyRollupTotal(String slug, LocalDate bucketDay, long rawClickCount) {
+        jdbcTemplate.update(
+                """
+                MERGE INTO link_click_daily_rollups (slug, rollup_date, click_count)
+                KEY (slug, rollup_date)
+                VALUES (?, ?, ?)
+                """,
+                slug,
+                bucketDay,
+                rawClickCount);
+    }
+
+    @Override
     public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
                         """
                         SELECT slug, original_url
                         FROM links
                         WHERE slug = ?
+                          AND lifecycle_state = 'ACTIVE'
                           AND (expires_at IS NULL OR expires_at > ?)
                         """,
                         (resultSet, rowNum) -> toLink(resultSet.getString("slug"), resultSet.getString("original_url")),
@@ -318,6 +417,7 @@ public class PostgresLinkStore implements LinkStore {
                         FROM links l
                         WHERE l.slug = ?
                           AND l.owner_id = ?
+                          AND l.lifecycle_state <> 'ARCHIVED'
                           AND (expires_at IS NULL OR expires_at > ?)
                         """,
                         (resultSet, rowNum) -> toLinkDetails(
@@ -642,14 +742,24 @@ public class PostgresLinkStore implements LinkStore {
                 sql.append("""
                         
                           AND (expires_at IS NULL OR expires_at > ?)
+                          AND lifecycle_state = 'ACTIVE'
                         """);
                 parameters.add(now);
             }
+            case SUSPENDED -> sql.append("""
+                    
+                      AND lifecycle_state = 'SUSPENDED'
+                    """);
+            case ARCHIVED -> sql.append("""
+                    
+                      AND lifecycle_state = 'ARCHIVED'
+                    """);
             case EXPIRED -> {
                 sql.append("""
                         
                           AND expires_at IS NOT NULL
                           AND expires_at <= ?
+                          AND lifecycle_state = 'ACTIVE'
                         """);
                 parameters.add(now);
             }
@@ -917,6 +1027,7 @@ public class PostgresLinkStore implements LinkStore {
                     tags_json = ?,
                     hostname = ?,
                     expires_at = ?,
+                    lifecycle_state = ?,
                     deleted_at = ?,
                     owner_id = ?,
                     version = ?
@@ -929,6 +1040,7 @@ public class PostgresLinkStore implements LinkStore {
                 tagsJson,
                 linkLifecycleEvent.hostname(),
                 linkLifecycleEvent.expiresAt(),
+                linkLifecycleEvent.lifecycleState().name(),
                 deletedAt,
                 linkLifecycleEvent.ownerId(),
                 linkLifecycleEvent.version(),
@@ -942,8 +1054,8 @@ public class PostgresLinkStore implements LinkStore {
             jdbcTemplate.update(
                     """
                     INSERT INTO link_catalog_projection (
-                        slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, deleted_at, version, owner_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, lifecycle_state, deleted_at, version, owner_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     linkLifecycleEvent.slug(),
                     linkLifecycleEvent.originalUrl(),
@@ -953,6 +1065,7 @@ public class PostgresLinkStore implements LinkStore {
                     tagsJson,
                     linkLifecycleEvent.hostname(),
                     linkLifecycleEvent.expiresAt(),
+                    linkLifecycleEvent.lifecycleState().name(),
                     deletedAt,
                     linkLifecycleEvent.version(),
                     linkLifecycleEvent.ownerId());
@@ -966,6 +1079,7 @@ public class PostgresLinkStore implements LinkStore {
                         tags_json = ?,
                         hostname = ?,
                         expires_at = ?,
+                        lifecycle_state = ?,
                         deleted_at = ?,
                         owner_id = ?,
                         version = ?
@@ -978,6 +1092,7 @@ public class PostgresLinkStore implements LinkStore {
                     tagsJson,
                     linkLifecycleEvent.hostname(),
                     linkLifecycleEvent.expiresAt(),
+                    linkLifecycleEvent.lifecycleState().name(),
                     deletedAt,
                     linkLifecycleEvent.ownerId(),
                     linkLifecycleEvent.version(),
@@ -1155,6 +1270,74 @@ public class PostgresLinkStore implements LinkStore {
                 ownerId);
     }
 
+    @Override
+    public List<DailyClickBucket> findRecentHourlyClickBuckets(String slug, OffsetDateTime since, long ownerId) {
+        return queryJdbcTemplate.query(
+                """
+                SELECT DATE_TRUNC('hour', c.clicked_at) AS bucket_hour, COUNT(*) AS click_total
+                FROM link_clicks c
+                JOIN links l ON l.slug = c.slug
+                WHERE c.slug = ?
+                  AND c.clicked_at >= ?
+                  AND l.owner_id = ?
+                GROUP BY DATE_TRUNC('hour', c.clicked_at)
+                ORDER BY bucket_hour ASC
+                """,
+                (resultSet, rowNum) -> new DailyClickBucket(
+                        resultSet.getObject("bucket_hour", OffsetDateTime.class).toLocalDate(),
+                        resultSet.getLong("click_total")),
+                slug,
+                since,
+                ownerId);
+    }
+
+    @Override
+    public List<TopReferrer> findTopReferrers(String slug, int limit, long ownerId) {
+        return queryJdbcTemplate.query(
+                """
+                SELECT COALESCE(NULLIF(referrer, ''), 'direct') AS referrer, COUNT(*) AS click_total
+                FROM link_clicks c
+                JOIN links l ON l.slug = c.slug
+                WHERE c.slug = ?
+                  AND l.owner_id = ?
+                GROUP BY COALESCE(NULLIF(referrer, ''), 'direct')
+                ORDER BY click_total DESC, referrer ASC
+                LIMIT ?
+                """,
+                (resultSet, rowNum) -> new TopReferrer(
+                        resultSet.getString("referrer"),
+                        resultSet.getLong("click_total")),
+                slug,
+                ownerId,
+                limit);
+    }
+
+    @Override
+    public OwnerTrafficTotals findOwnerTrafficTotals(
+            OffsetDateTime last1HourSince,
+            OffsetDateTime last24HoursSince,
+            LocalDate last7DaysStartDate,
+            long ownerId) {
+        return queryJdbcTemplate.queryForObject(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN c.clicked_at >= ? THEN 1 ELSE 0 END), 0) AS clicks_last_1_hour,
+                    COALESCE(SUM(CASE WHEN c.clicked_at >= ? THEN 1 ELSE 0 END), 0) AS clicks_last_24_hours,
+                    COALESCE(SUM(CASE WHEN CAST(c.clicked_at AS DATE) >= ? THEN 1 ELSE 0 END), 0) AS clicks_last_7_days
+                FROM links l
+                LEFT JOIN link_clicks c ON c.slug = l.slug
+                WHERE l.owner_id = ?
+                """,
+                (resultSet, rowNum) -> new OwnerTrafficTotals(
+                        resultSet.getLong("clicks_last_1_hour"),
+                        resultSet.getLong("clicks_last_24_hours"),
+                        resultSet.getLong("clicks_last_7_days")),
+                last1HourSince,
+                last24HoursSince,
+                last7DaysStartDate,
+                ownerId);
+    }
+
     private List<TrendingLink> findTrendingLinksLast7Days(LocalDate today, int limit, long ownerId) {
         LocalDate currentStart = today.minusDays(6);
         LocalDate previousStart = currentStart.minusDays(7);
@@ -1252,6 +1435,12 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     private String determineLifecycleState(LinkLifecycleEvent event, OffsetDateTime now) {
+        if (event.lifecycleState() == LinkLifecycleState.SUSPENDED) {
+            return LinkDiscoveryLifecycleState.ACTIVE.name();
+        }
+        if (event.lifecycleState() == LinkLifecycleState.ARCHIVED) {
+            return LinkDiscoveryLifecycleState.DELETED.name();
+        }
         return switch (mapLifecycleState(
                 event.eventType() == LinkLifecycleEventType.DELETED ? event.occurredAt() : null,
                 event.expiresAt(),

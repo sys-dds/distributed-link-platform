@@ -9,16 +9,19 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
     private final boolean cacheEnabled;
     private final String publicBaseUrl;
     private final RedirectRuntimeState redirectRuntimeState;
+    private final com.linkplatform.api.link.application.RedirectRateLimitService redirectRateLimitService;
 
     public RedirectRuntimeHealthIndicator(
             LinkPlatformRuntimeProperties runtimeProperties,
             boolean cacheEnabled,
             String publicBaseUrl,
-            RedirectRuntimeState redirectRuntimeState) {
+            RedirectRuntimeState redirectRuntimeState,
+            com.linkplatform.api.link.application.RedirectRateLimitService redirectRateLimitService) {
         this.runtimeProperties = runtimeProperties;
         this.cacheEnabled = cacheEnabled;
         this.publicBaseUrl = publicBaseUrl;
         this.redirectRuntimeState = redirectRuntimeState;
+        this.redirectRateLimitService = redirectRateLimitService;
     }
 
     @Override
@@ -32,6 +35,8 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
                 .withDetail("cacheEnabled", cacheEnabled)
                 .withDetail("cacheRequired", redirectEnabled)
                 .withDetail("failoverConfigured", failoverConfigured)
+                .withDetail("redirectRateLimitEnabled", runtimeProperties.getRedirect().getRateLimit().isEnabled())
+                .withDetail("redirectRateLimitLastStoreMode", redirectRateLimitService.getLastStoreMode())
                 .withDetail("lastDecision", redirectRuntimeState.getLastDecision())
                 .withDetail("lastDegradedPath", redirectRuntimeState.getLastDegradedPath());
         if (!redirectEnabled) {

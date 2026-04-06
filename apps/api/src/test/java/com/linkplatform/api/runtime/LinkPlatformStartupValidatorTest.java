@@ -147,6 +147,19 @@ class LinkPlatformStartupValidatorTest {
                 });
     }
 
+    @Test
+    void redirectRateLimitWindowMustBePositive() {
+        contextRunner.withPropertyValues(
+                        "link-platform.runtime.redirect.rate-limit.enabled=true",
+                        "link-platform.runtime.redirect.rate-limit.window-seconds=0")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining(
+                                    "link-platform.runtime.redirect.rate-limit.window-seconds must be positive");
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     @org.springframework.boot.context.properties.EnableConfigurationProperties({
             LinkPlatformQueryProperties.class,

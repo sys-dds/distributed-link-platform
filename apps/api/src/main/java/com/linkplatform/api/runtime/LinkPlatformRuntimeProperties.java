@@ -41,6 +41,7 @@ public class LinkPlatformRuntimeProperties {
         private String region = "local";
         private String failoverRegion;
         private String failoverBaseUrl;
+        private final RateLimit rateLimit = new RateLimit();
 
         public String getRegion() {
             return region;
@@ -70,12 +71,63 @@ public class LinkPlatformRuntimeProperties {
             return failoverRegion != null && failoverBaseUrl != null;
         }
 
+        public RateLimit getRateLimit() {
+            return rateLimit;
+        }
+
         private String blankToNull(String value) {
             if (value == null) {
                 return null;
             }
             String trimmed = value.trim();
             return trimmed.isEmpty() ? null : trimmed;
+        }
+    }
+
+    public static class RateLimit {
+
+        private boolean enabled = false;
+        private int requestsPerWindow = 10;
+        private int windowSeconds = 60;
+        private int hotSlugRequestsPerWindow = 5;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getRequestsPerWindow() {
+            return requestsPerWindow;
+        }
+
+        public void setRequestsPerWindow(int requestsPerWindow) {
+            this.requestsPerWindow = requestsPerWindow;
+        }
+
+        public int getWindowSeconds() {
+            return windowSeconds;
+        }
+
+        public void setWindowSeconds(int windowSeconds) {
+            this.windowSeconds = windowSeconds;
+        }
+
+        public int getHotSlugRequestsPerWindow() {
+            return hotSlugRequestsPerWindow;
+        }
+
+        public void setHotSlugRequestsPerWindow(int hotSlugRequestsPerWindow) {
+            this.hotSlugRequestsPerWindow = hotSlugRequestsPerWindow;
+        }
+
+        public int effectiveLimitForSlug(String slug) {
+            if (slug == null || slug.isBlank()) {
+                return requestsPerWindow;
+            }
+            return Math.min(requestsPerWindow, hotSlugRequestsPerWindow);
         }
     }
 }

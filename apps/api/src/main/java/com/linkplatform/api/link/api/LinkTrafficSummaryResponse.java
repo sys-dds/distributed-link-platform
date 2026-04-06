@@ -8,5 +8,7 @@ public record LinkTrafficSummaryResponse(
         long totalClicks,
         long clicksLast24Hours,
         long clicksLast7Days,
-        List<DailyClickBucketResponse> recentDailyClicks) {
+        List<DailyClickBucketResponse> recentDailyClicks,
+        List<TopReferrerResponse> topReferrers,
+        LinkTrafficBreakdownResponse trafficBreakdown) {
 }

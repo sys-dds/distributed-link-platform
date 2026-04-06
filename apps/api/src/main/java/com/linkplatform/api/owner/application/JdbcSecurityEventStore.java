@@ -1,5 +1,8 @@
 package com.linkplatform.api.owner.application;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -37,7 +40,7 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
                 apiKeyHash,
                 requestMethod,
                 requestPath,
-                remoteAddress,
+                sanitizeRemoteAddress(remoteAddress),
                 shorten(detailSummary),
                 occurredAt);
     }
@@ -51,5 +54,26 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             return "unspecified";
         }
         return trimmed.length() <= 255 ? trimmed : trimmed.substring(0, 255);
+    }
+
+    private String sanitizeRemoteAddress(String remoteAddress) {
+        if (remoteAddress == null || remoteAddress.isBlank()) {
+            return null;
+        }
+        return sha256(remoteAddress.trim());
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte part : hash) {
+                hex.append(String.format("%02x", part));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 not available", exception);
+        }
     }
 }

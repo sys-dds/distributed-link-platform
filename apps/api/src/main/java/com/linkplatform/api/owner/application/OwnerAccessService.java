@@ -12,15 +12,18 @@ import org.springframework.stereotype.Service;
 public class OwnerAccessService {
 
     private final OwnerStore ownerStore;
+    private final ApiKeyLifecycleService apiKeyLifecycleService;
     private final ControlPlaneRateLimitStore controlPlaneRateLimitStore;
     private final SecurityEventStore securityEventStore;
     private final Clock clock;
 
     public OwnerAccessService(
             OwnerStore ownerStore,
+            ApiKeyLifecycleService apiKeyLifecycleService,
             ControlPlaneRateLimitStore controlPlaneRateLimitStore,
             SecurityEventStore securityEventStore) {
         this.ownerStore = ownerStore;
+        this.apiKeyLifecycleService = apiKeyLifecycleService;
         this.controlPlaneRateLimitStore = controlPlaneRateLimitStore;
         this.securityEventStore = securityEventStore;
         this.clock = Clock.systemUTC();
@@ -75,8 +78,8 @@ public class OwnerAccessService {
         }
 
         String apiKeyHash = sha256(resolvedApiKey);
-        AuthenticatedOwner owner = ownerStore.findByApiKeyHash(apiKeyHash).orElse(null);
-        if (owner == null) {
+        OwnerApiKeyRecord apiKeyRecord = apiKeyLifecycleService.authenticate(resolvedApiKey);
+        if (apiKeyRecord == null) {
             securityEventStore.record(
                     SecurityEventType.INVALID_CREDENTIAL,
                     null,
@@ -88,6 +91,8 @@ public class OwnerAccessService {
                     OffsetDateTime.now(clock));
             throw new ApiKeyAuthenticationException("API credential is invalid");
         }
+        AuthenticatedOwner owner = ownerStore.findByApiKeyHash(apiKeyHash)
+                .orElseThrow(() -> new ApiKeyAuthenticationException("API credential is invalid"));
 
         OffsetDateTime windowStartedAt = OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MINUTES);
         int limit = bucket == ControlPlaneRateLimitBucket.READ
@@ -106,6 +111,7 @@ public class OwnerAccessService {
             throw new ControlPlaneRateLimitExceededException(
                     "Control-plane " + bucket.name().toLowerCase() + " rate limit exceeded");
         }
+        apiKeyLifecycleService.markUsed(apiKeyRecord);
         return owner;
     }
 
@@ -144,7 +150,7 @@ public class OwnerAccessService {
         }
         if (!normalizedAuthorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
             securityEventStore.record(
-                    SecurityEventType.MALFORMED_BEARER_TOKEN,
+                    SecurityEventType.MALFORMED_BEARER,
                     null,
                     null,
                     requestMethod,
@@ -157,7 +163,7 @@ public class OwnerAccessService {
         String bearerToken = trimToNull(normalizedAuthorization.substring(7));
         if (bearerToken == null) {
             securityEventStore.record(
-                    SecurityEventType.MALFORMED_BEARER_TOKEN,
+                    SecurityEventType.MALFORMED_BEARER,
                     null,
                     null,
                     requestMethod,

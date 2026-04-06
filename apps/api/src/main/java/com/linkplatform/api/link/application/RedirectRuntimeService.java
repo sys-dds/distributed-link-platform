@@ -25,6 +25,7 @@ public class RedirectRuntimeService {
 
     private final LinkStore linkStore;
     private final LinkReadCache linkReadCache;
+    private final RedirectRateLimitService redirectRateLimitService;
     private final SecurityEventStore securityEventStore;
     private final LinkPlatformRuntimeProperties runtimeProperties;
     private final RedirectRuntimeState redirectRuntimeState;
@@ -33,12 +34,14 @@ public class RedirectRuntimeService {
     public RedirectRuntimeService(
             LinkStore linkStore,
             LinkReadCache linkReadCache,
+            RedirectRateLimitService redirectRateLimitService,
             SecurityEventStore securityEventStore,
             LinkPlatformRuntimeProperties runtimeProperties,
             RedirectRuntimeState redirectRuntimeState,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
         this.linkStore = linkStore;
         this.linkReadCache = linkReadCache;
+        this.redirectRateLimitService = redirectRateLimitService;
         this.securityEventStore = securityEventStore;
         this.runtimeProperties = runtimeProperties;
         this.redirectRuntimeState = redirectRuntimeState;
@@ -48,6 +51,16 @@ public class RedirectRuntimeService {
 
     public RedirectDecision resolve(String slug, String requestPath, String queryString, String remoteAddress) {
         String validatedSlug = new LinkSlug(slug).value();
+        RedirectRateLimitDecision rateLimitDecision = redirectRateLimitService.check(validatedSlug, requestPath, remoteAddress);
+        if (!rateLimitDecision.allowed()) {
+            recordSecurityEvent(
+                    SecurityEventType.RATE_LIMIT_REJECTED,
+                    requestPath,
+                    remoteAddress,
+                    "Redirect rate limit exceeded for slug " + validatedSlug,
+                    OffsetDateTime.now(clock));
+            throw new RedirectRateLimitExceededException("Public redirect rate limit exceeded");
+        }
         LinkReadCache.PublicRedirectLookupResult cacheLookup = linkReadCache.lookupPublicRedirect(validatedSlug);
         return switch (cacheLookup.outcome()) {
             case GENERATION_UNAVAILABLE -> resolveAfterCacheGenerationUnavailable(

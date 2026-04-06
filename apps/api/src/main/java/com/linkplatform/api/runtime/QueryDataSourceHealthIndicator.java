@@ -25,7 +25,8 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
                 .withDetail("usingPrimaryByDefault", queryRoutingDataSource.isUsingPrimaryByDefault())
                 .withDetail("fallbackPolicy", "primary-on-dedicated-query-failure")
                 .withDetail("route", queryRoutingDataSource.currentRoute())
-                .withDetail("fallbackActive", queryRoutingDataSource.isFallbackActive());
+                .withDetail("fallbackActive", queryRoutingDataSource.isFallbackActive())
+                .withDetail("redirectRateLimitEnabled", runtimeProperties.getRedirect().getRateLimit().isEnabled());
         if (!required) {
             builder.withDetail("reason", "query reads are not served in this runtime mode");
             return;

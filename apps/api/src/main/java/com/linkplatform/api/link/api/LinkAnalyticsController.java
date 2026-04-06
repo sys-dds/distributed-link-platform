@@ -2,8 +2,12 @@ package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.LinkApplicationService;
 import com.linkplatform.api.link.application.LinkActivityEvent;
+import com.linkplatform.api.link.application.LinkDetails;
 import com.linkplatform.api.link.application.LinkTrafficSummary;
 import com.linkplatform.api.link.application.LinkTrafficWindow;
+import com.linkplatform.api.link.application.LinkStore;
+import com.linkplatform.api.link.application.OwnerTrafficTotals;
+import com.linkplatform.api.link.application.TopReferrer;
 import com.linkplatform.api.link.application.TrendingLink;
 import com.linkplatform.api.link.application.TopLinkTraffic;
 import com.linkplatform.api.owner.application.OwnerAccessService;
@@ -28,10 +32,15 @@ public class LinkAnalyticsController {
 
     private final LinkApplicationService linkApplicationService;
     private final OwnerAccessService ownerAccessService;
+    private final LinkStore linkStore;
 
-    public LinkAnalyticsController(LinkApplicationService linkApplicationService, OwnerAccessService ownerAccessService) {
+    public LinkAnalyticsController(
+            LinkApplicationService linkApplicationService,
+            OwnerAccessService ownerAccessService,
+            LinkStore linkStore) {
         this.linkApplicationService = linkApplicationService;
         this.ownerAccessService = ownerAccessService;
+        this.linkStore = linkStore;
     }
 
     @GetMapping("/{slug}/traffic-summary")
@@ -40,14 +49,13 @@ public class LinkAnalyticsController {
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        return toResponse(linkApplicationService.getTrafficSummary(
-                ownerAccessService.authorizeRead(
-                        apiKey,
-                        authorizationHeader,
-                        httpServletRequest.getMethod(),
-                        httpServletRequest.getRequestURI(),
-                        httpServletRequest.getRemoteAddr()),
-                slug));
+        var owner = ownerAccessService.authorizeRead(
+                apiKey,
+                authorizationHeader,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        return toResponse(linkApplicationService.getTrafficSummary(owner, slug), slug, owner.id());
     }
 
     @GetMapping("/traffic/top")
@@ -127,7 +135,15 @@ public class LinkAnalyticsController {
         }
     }
 
-    private LinkTrafficSummaryResponse toResponse(LinkTrafficSummary summary) {
+    private LinkTrafficSummaryResponse toResponse(LinkTrafficSummary summary, String slug, long ownerId) {
+        List<TopReferrerResponse> topReferrers = linkStore.findTopReferrers(slug, 5, ownerId).stream()
+                .map(this::toResponse)
+                .toList();
+        OwnerTrafficTotals ownerTrafficTotals = linkStore.findOwnerTrafficTotals(
+                java.time.OffsetDateTime.now().minusHours(1),
+                java.time.OffsetDateTime.now().minusHours(24),
+                java.time.OffsetDateTime.now().toLocalDate().minusDays(6),
+                ownerId);
         return new LinkTrafficSummaryResponse(
                 summary.slug(),
                 summary.originalUrl(),
@@ -136,7 +152,15 @@ public class LinkAnalyticsController {
                 summary.clicksLast7Days(),
                 summary.recentDailyClicks().stream()
                         .map(bucket -> new DailyClickBucketResponse(bucket.day(), bucket.clickTotal()))
-                        .toList());
+                        .toList(),
+                topReferrers,
+                new LinkTrafficBreakdownResponse(
+                        linkStore.findRecentHourlyClickBuckets(slug, java.time.OffsetDateTime.now().minusHours(24), ownerId).stream()
+                                .map(bucket -> new DailyClickBucketResponse(bucket.day(), bucket.clickTotal()))
+                                .toList(),
+                        ownerTrafficTotals.clicksLast1Hour(),
+                        ownerTrafficTotals.clicksLast24Hours(),
+                        ownerTrafficTotals.clicksLast7Days()));
     }
 
     private TopLinkTrafficResponse toResponse(TopLinkTraffic topLinkTraffic) {
@@ -165,5 +189,9 @@ public class LinkAnalyticsController {
                 trendingLink.clickGrowth(),
                 trendingLink.currentWindowClicks(),
                 trendingLink.previousWindowClicks());
+    }
+
+    private TopReferrerResponse toResponse(TopReferrer topReferrer) {
+        return new TopReferrerResponse(topReferrer.referrer(), topReferrer.clickTotal());
     }
 }

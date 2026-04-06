@@ -30,8 +30,14 @@ public class LinkPlatformRuntimeConfiguration {
             LinkPlatformRuntimeProperties runtimeProperties,
             @org.springframework.beans.factory.annotation.Value("${link-platform.cache.enabled:true}") boolean cacheEnabled,
             @org.springframework.beans.factory.annotation.Value("${link-platform.public-base-url}") String publicBaseUrl,
-            RedirectRuntimeState redirectRuntimeState) {
-        return new RedirectRuntimeHealthIndicator(runtimeProperties, cacheEnabled, publicBaseUrl, redirectRuntimeState);
+            RedirectRuntimeState redirectRuntimeState,
+            com.linkplatform.api.link.application.RedirectRateLimitService redirectRateLimitService) {
+        return new RedirectRuntimeHealthIndicator(
+                runtimeProperties,
+                cacheEnabled,
+                publicBaseUrl,
+                redirectRuntimeState,
+                redirectRateLimitService);
     }
 
     @Bean
