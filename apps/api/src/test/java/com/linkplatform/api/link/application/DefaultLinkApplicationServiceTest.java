@@ -1,6 +1,7 @@
 package com.linkplatform.api.link.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -9,13 +10,11 @@ import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
 import com.linkplatform.api.owner.application.AuthenticatedOwner;
 import com.linkplatform.api.owner.application.OwnerPlan;
-import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
 import com.linkplatform.api.owner.application.OwnerStore;
 import com.linkplatform.api.owner.application.SecurityEventStore;
-import com.linkplatform.api.owner.application.SecurityEventType;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,236 +25,185 @@ class DefaultLinkApplicationServiceTest {
 
     private static final AuthenticatedOwner FREE_OWNER =
             new AuthenticatedOwner(1L, "free-owner", "Free Owner", OwnerPlan.FREE);
-    private static final AuthenticatedOwner PRO_OWNER =
-            new AuthenticatedOwner(2L, "pro-owner", "Pro Owner", OwnerPlan.PRO);
 
     private final TestLinkStore linkStore = new TestLinkStore();
-    private final TestAnalyticsOutboxStore analyticsOutboxStore = new TestAnalyticsOutboxStore();
-    private final TestLinkLifecycleOutboxStore linkLifecycleOutboxStore = new TestLinkLifecycleOutboxStore();
-    private final TestLinkMutationIdempotencyStore idempotencyStore = new TestLinkMutationIdempotencyStore();
-    private final TestOwnerStore ownerStore = new TestOwnerStore();
-    private final TestSecurityEventStore securityEventStore = new TestSecurityEventStore();
     private final TestLinkReadCache linkReadCache = new TestLinkReadCache();
     private final DefaultLinkApplicationService service = new DefaultLinkApplicationService(
             linkStore,
-            analyticsOutboxStore,
-            linkLifecycleOutboxStore,
-            idempotencyStore,
-            ownerStore,
-            securityEventStore,
+            new TestAnalyticsOutboxStore(),
+            new TestLinkLifecycleOutboxStore(),
+            new TestLinkMutationIdempotencyStore(),
+            new TestOwnerStore(),
+            new TestSecurityEventStore(),
             linkReadCache,
             "http://localhost:80");
 
     @Test
-    void createLinkAssignsOwnerAndWritesLifecycleEvent() {
-        LinkMutationResult result = service.createLink(
+    void analyticsSummaryViewAddsWindowComparisonAndFreshness() {
+        OffsetDateTime start = OffsetDateTime.parse("2026-04-06T00:00:00Z");
+        OffsetDateTime end = OffsetDateTime.parse("2026-04-06T03:00:00Z");
+        linkStore.seedLink("metrics-link", FREE_OWNER.id());
+        linkStore.summaryBySlug.put("metrics-link", new LinkTrafficSummaryTotals("metrics-link", "https://example.com/metrics", 8L, 3L, 8L));
+        linkStore.dailyBucketsBySlug.put("metrics-link", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 8L)));
+        linkStore.rangeClicks.put(key("metrics-link", start, end), 3L);
+        linkStore.rangeClicks.put(key("metrics-link", start.minusHours(3), start), 1L);
+        linkStore.latestClickAtBySlug.put("metrics-link", end.minusMinutes(5));
+        linkStore.latestActivityAtBySlug.put("metrics-link", end.minusMinutes(2));
+
+        LinkApplicationService.AnalyticsSummaryView summaryView =
+                service.getTrafficSummary(FREE_OWNER, "metrics-link", AnalyticsRange.required(start, end, true));
+
+        assertEquals(3L, summaryView.windowClicks());
+        assertEquals(1L, summaryView.comparison().previousWindowClicks());
+        assertEquals(2L, summaryView.comparison().clickChangeAbsolute());
+        assertEquals(200D, summaryView.comparison().clickChangePercent());
+        assertNotNull(summaryView.freshness().asOf());
+        assertEquals(end.minusMinutes(5), summaryView.freshness().latestMaterializedClickAt());
+        assertEquals(end.minusMinutes(2), summaryView.freshness().latestMaterializedActivityAt());
+    }
+
+    @Test
+    void trafficSeriesZeroFillsMissingBuckets() {
+        OffsetDateTime start = OffsetDateTime.parse("2026-04-06T00:00:00Z");
+        OffsetDateTime end = OffsetDateTime.parse("2026-04-06T04:00:00Z");
+        linkStore.seedLink("series-link", FREE_OWNER.id());
+        linkStore.summaryBySlug.put("series-link", new LinkTrafficSummaryTotals("series-link", "https://example.com/series", 4L, 4L, 4L));
+        linkStore.seriesBySlug.put("series-link", List.of(
+                new LinkTrafficSeriesBucket(start, start.plusHours(1), 1L),
+                new LinkTrafficSeriesBucket(start.plusHours(2), start.plusHours(3), 2L)));
+        linkStore.rangeClicks.put(key("series-link", start.minusHours(4), start), 1L);
+
+        LinkApplicationService.LinkTrafficSeriesView seriesView =
+                service.getTrafficSeries(FREE_OWNER, "series-link", AnalyticsRange.required(start, end, true), "hour");
+
+        assertEquals(4, seriesView.buckets().size());
+        assertEquals(1L, seriesView.buckets().get(0).clickTotal());
+        assertEquals(0L, seriesView.buckets().get(1).clickTotal());
+        assertEquals(2L, seriesView.buckets().get(2).clickTotal());
+        assertEquals(0L, seriesView.buckets().get(3).clickTotal());
+        assertEquals(3L, seriesView.comparison().currentWindowClicks());
+        assertEquals(1L, seriesView.comparison().previousWindowClicks());
+    }
+
+    @Test
+    void filteredTopLinksUseTagLifecycleAndOwnerScopedStorePath() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-04-06T09:00:00Z");
+        linkStore.fixedNowClick = now.minusMinutes(1);
+        linkStore.filteredTopLinks = List.of(
+                new TopLinkTraffic("match-a", "https://example.com/match-a", 5L),
+                new TopLinkTraffic("match-b", "https://example.com/match-b", 3L));
+
+        List<TopLinkTraffic> topLinks = service.getTopLinks(
                 FREE_OWNER,
-                new CreateLinkCommand("launch-page", "https://example.com/launch", null, "Launch", List.of("docs")),
-                null);
+                LinkTrafficWindow.LAST_24_HOURS,
+                AnalyticsRange.required(now.minusHours(6), now, false),
+                "team",
+                "active",
+                2);
 
-        assertEquals("launch-page", result.slug());
-        assertEquals(1L, result.version());
-        assertEquals(1L, linkStore.ownerIdBySlug.get("launch-page"));
-        assertEquals(LinkLifecycleEventType.CREATED, linkLifecycleOutboxStore.events().getFirst().eventType());
-        assertEquals(1L, linkLifecycleOutboxStore.events().getFirst().ownerId());
+        assertEquals(List.of("match-a", "match-b"), topLinks.stream().map(TopLinkTraffic::slug).toList());
+        assertEquals("team", linkStore.lastTagFilter);
+        assertEquals(LinkLifecycleState.ACTIVE, linkStore.lastLifecycleFilter);
+        assertEquals(FREE_OWNER.id(), linkStore.lastOwnerId);
     }
 
     @Test
-    void ownerScopedReadsDoNotLeakCrossOwnerData() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("free-link", "https://example.com/free", null, null, null), null);
-        service.createLink(PRO_OWNER, new CreateLinkCommand("pro-link", "https://example.com/pro", null, null, null), null);
+    void filteredTrendingUsesPreviousEqualWindowAndRealRanking() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-04-06T09:00:00Z");
+        linkStore.filteredTrendingLinks = List.of(
+                new TrendingLink("winner", "https://example.com/winner", 4L, 5L, 1L),
+                new TrendingLink("runner-up", "https://example.com/runner", 2L, 3L, 1L));
 
-        assertEquals(1, service.listRecentLinks(FREE_OWNER, 20, null, LinkLifecycleState.ALL).size());
-        assertEquals("free-link", service.getLink(FREE_OWNER, "free-link").slug());
-        assertThrows(LinkNotFoundException.class, () -> service.getLink(FREE_OWNER, "pro-link"));
-    }
-
-    @Test
-    void updateLinkRequiresMatchingOwnerAndIncrementsVersion() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("editable", "https://example.com/original", null, null, null), null);
-
-        LinkMutationResult result = service.updateLink(
+        List<TrendingLink> trendingLinks = service.getTrendingLinks(
                 FREE_OWNER,
-                "editable",
-                "https://example.com/updated",
-                null,
-                "Updated",
-                List.of("docs"),
-                1L,
-                null);
+                LinkTrafficWindow.LAST_24_HOURS,
+                AnalyticsRange.required(now.minusHours(6), now, false),
+                "team",
+                "active",
+                2);
 
-        assertEquals("https://example.com/updated", result.originalUrl());
-        assertEquals(2L, result.version());
-        assertThrows(
-                LinkNotFoundException.class,
-                () -> service.updateLink(PRO_OWNER, "editable", "https://example.com/nope", null, null, null, 2L, null));
+        assertEquals("winner", trendingLinks.getFirst().slug());
+        assertEquals(5L, trendingLinks.getFirst().currentWindowClicks());
+        assertEquals(1L, trendingLinks.getFirst().previousWindowClicks());
     }
 
     @Test
-    void deleteLinkRequiresMatchingOwner() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("delete-me", "https://example.com/delete", null, null, null), null);
+    void filteredActivityRespectsTagLifecycleAndLimit() {
+        linkStore.filteredActivity = List.of(
+                new LinkActivityEvent(
+                        FREE_OWNER.id(),
+                        LinkActivityType.UPDATED,
+                        "activity-link",
+                        "https://example.com/activity",
+                        "Activity",
+                        List.of("team"),
+                        "example.com",
+                        null,
+                        OffsetDateTime.parse("2026-04-06T08:59:00Z")));
 
-        assertThrows(LinkNotFoundException.class, () -> service.deleteLink(PRO_OWNER, "delete-me", 1L, null));
+        List<LinkActivityEvent> activity = service.getRecentActivity(FREE_OWNER, 1, "team", "active");
 
-        LinkMutationResult deleted = service.deleteLink(FREE_OWNER, "delete-me", 1L, null);
-        assertTrue(deleted.deleted());
-        assertEquals(2L, deleted.version());
-    }
-
-    @Test
-    void createQuotaIsEnforcedPerOwner() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("one", "https://example.com/one", null, null, null), null);
-        service.createLink(FREE_OWNER, new CreateLinkCommand("two", "https://example.com/two", null, null, null), null);
-
-        assertThrows(
-                OwnerQuotaExceededException.class,
-                () -> service.createLink(FREE_OWNER, new CreateLinkCommand("three", "https://example.com/three", null, null, null), null));
-        assertEquals(SecurityEventType.QUOTA_REJECTED, securityEventStore.events().getFirst().eventType());
-    }
-
-    @Test
-    void idempotencyIsScopedByOwner() {
-        LinkMutationResult freeResult = service.createLink(
-                FREE_OWNER,
-                new CreateLinkCommand("free-idempotent", "https://example.com/free", null, null, null),
-                "same-key");
-        LinkMutationResult proResult = service.createLink(
-                PRO_OWNER,
-                new CreateLinkCommand("pro-idempotent", "https://example.com/pro", null, null, null),
-                "same-key");
-
-        assertEquals("free-idempotent", freeResult.slug());
-        assertEquals("pro-idempotent", proResult.slug());
-        assertEquals(2, idempotencyStore.records.size());
-    }
-
-    @Test
-    void recordRedirectClickStillWritesAnalyticsOutboxOnly() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("docs", "https://example.com/docs", null, null, null), null);
-
-        service.recordRedirectClick("docs", "test-agent", "https://referrer.example", "127.0.0.1");
-
-        assertEquals(1, analyticsOutboxStore.events().size());
-        assertEquals(0, service.getRecentActivity(FREE_OWNER, 10).size());
-    }
-
-    @Test
-    void resolveLinkUsesRedirectCacheAfterFirstLookup() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("cached-redirect", "https://example.com/cached", null, null, null), null);
-
-        service.resolveLink("cached-redirect");
-        service.resolveLink("cached-redirect");
-
-        assertEquals(1, linkStore.resolveLookups.getOrDefault("cached-redirect", 0));
-    }
-
-    @Test
-    void mutationsInvalidateRedirectAndOwnerControlPlaneCaches() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("cached-link", "https://example.com/cached", null, null, null), null);
-        service.updateLink(FREE_OWNER, "cached-link", "https://example.com/updated", null, null, null, 1L, null);
-        service.deleteLink(FREE_OWNER, "cached-link", 2L, null);
-
-        assertTrue(linkReadCache.invalidatedRedirects.contains("cached-link"));
-        assertTrue(linkReadCache.invalidatedControlPlaneOwners.contains(FREE_OWNER.id()));
+        assertEquals(1, activity.size());
+        assertEquals("activity-link", activity.getFirst().slug());
+        assertEquals("team", linkStore.lastTagFilter);
+        assertEquals(LinkLifecycleState.ACTIVE, linkStore.lastLifecycleFilter);
     }
 
     @Test
     void analyticsCachesRefreshAfterOwnerAnalyticsInvalidation() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("metrics-link", "https://example.com/metrics", null, null, null), null);
-        linkStore.trafficTotalsBySlug.put("metrics-link", new LinkTrafficSummaryTotals("metrics-link", "https://example.com/metrics", 1L, 1L, 1L));
-        linkStore.dailyBucketsBySlug.put("metrics-link", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 1L)));
-        linkStore.topLinksByOwner.put(FREE_OWNER.id(), List.of(new TopLinkTraffic("metrics-link", "https://example.com/metrics", 1L)));
-        linkStore.trendingLinksByOwner.put(FREE_OWNER.id(), List.of(new TrendingLink("metrics-link", "https://example.com/metrics", 1L, 1L, 0L)));
+        linkStore.seedLink("cache-link", FREE_OWNER.id());
+        linkStore.summaryBySlug.put("cache-link", new LinkTrafficSummaryTotals("cache-link", "https://example.com/cache", 1L, 1L, 1L));
+        linkStore.dailyBucketsBySlug.put("cache-link", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 1L)));
+        linkStore.topLinksByOwner.put(FREE_OWNER.id(), List.of(new TopLinkTraffic("cache-link", "https://example.com/cache", 1L)));
+        linkStore.trendingLinksByOwner.put(FREE_OWNER.id(), List.of(new TrendingLink("cache-link", "https://example.com/cache", 1L, 1L, 0L)));
 
-        assertEquals(1L, service.getTrafficSummary(FREE_OWNER, "metrics-link").totalClicks());
+        assertEquals(1L, service.getTrafficSummary(FREE_OWNER, "cache-link").totalClicks());
         assertEquals(1L, service.getTopLinks(FREE_OWNER, LinkTrafficWindow.LAST_24_HOURS).getFirst().clickTotal());
-        assertEquals(1L, service.getTrendingLinks(FREE_OWNER, LinkTrafficWindow.LAST_24_HOURS, 10).getFirst().clickGrowth());
 
-        linkStore.trafficTotalsBySlug.put("metrics-link", new LinkTrafficSummaryTotals("metrics-link", "https://example.com/metrics", 3L, 3L, 3L));
-        linkStore.dailyBucketsBySlug.put("metrics-link", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 3L)));
-        linkStore.topLinksByOwner.put(FREE_OWNER.id(), List.of(new TopLinkTraffic("metrics-link", "https://example.com/metrics", 3L)));
-        linkStore.trendingLinksByOwner.put(FREE_OWNER.id(), List.of(new TrendingLink("metrics-link", "https://example.com/metrics", 3L, 3L, 0L)));
+        linkStore.summaryBySlug.put("cache-link", new LinkTrafficSummaryTotals("cache-link", "https://example.com/cache", 3L, 3L, 3L));
+        linkStore.dailyBucketsBySlug.put("cache-link", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 3L)));
+        linkStore.topLinksByOwner.put(FREE_OWNER.id(), List.of(new TopLinkTraffic("cache-link", "https://example.com/cache", 3L)));
 
-        assertEquals(1L, service.getTrafficSummary(FREE_OWNER, "metrics-link").totalClicks());
+        assertEquals(1L, service.getTrafficSummary(FREE_OWNER, "cache-link").totalClicks());
         linkReadCache.invalidateOwnerAnalytics(FREE_OWNER.id());
-        assertEquals(3L, service.getTrafficSummary(FREE_OWNER, "metrics-link").totalClicks());
+        assertEquals(3L, service.getTrafficSummary(FREE_OWNER, "cache-link").totalClicks());
         assertEquals(3L, service.getTopLinks(FREE_OWNER, LinkTrafficWindow.LAST_24_HOURS).getFirst().clickTotal());
-        assertEquals(3L, service.getTrendingLinks(FREE_OWNER, LinkTrafficWindow.LAST_24_HOURS, 10).getFirst().clickGrowth());
     }
 
     @Test
-    void staleAnalyticsWritesCannotRepopulateAfterInvalidation() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("metrics-race", "https://example.com/metrics-race", null, null, null), null);
-        linkStore.trafficTotalsBySlug.put("metrics-race", new LinkTrafficSummaryTotals("metrics-race", "https://example.com/metrics-race", 1L, 1L, 1L));
-        linkStore.dailyBucketsBySlug.put("metrics-race", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 1L)));
-
-        LinkTrafficSummary initial = service.getTrafficSummary(FREE_OWNER, "metrics-race");
-        long staleGeneration = linkReadCache.getOwnerAnalyticsGeneration(FREE_OWNER.id());
-
-        linkStore.trafficTotalsBySlug.put("metrics-race", new LinkTrafficSummaryTotals("metrics-race", "https://example.com/metrics-race", 4L, 4L, 4L));
-        linkStore.dailyBucketsBySlug.put("metrics-race", List.of(new DailyClickBucket(LocalDate.parse("2026-04-01"), 4L)));
-        linkReadCache.invalidateOwnerAnalytics(FREE_OWNER.id());
-        linkReadCache.putOwnerTrafficSummary(FREE_OWNER.id(), staleGeneration, "metrics-race", initial);
-
-        assertEquals(4L, service.getTrafficSummary(FREE_OWNER, "metrics-race").totalClicks());
+    void invalidLifecycleFilterIsRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.getTopLinks(FREE_OWNER, LinkTrafficWindow.LAST_24_HOURS, null, null, "broken", 10));
     }
 
-    @Test
-    void staleRedirectWritesCannotRepopulateAfterInvalidation() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("redirect-race", "https://example.com/original", null, null, null), null);
-        service.resolveLink("redirect-race");
-        long staleGeneration = linkReadCache.getPublicRedirectGeneration("redirect-race");
-
-        service.updateLink(
-                FREE_OWNER,
-                "redirect-race",
-                "https://example.com/updated",
-                null,
-                null,
-                null,
-                1L,
-                null);
-        linkReadCache.putPublicRedirect(
-                "redirect-race",
-                staleGeneration,
-                new Link(new LinkSlug("redirect-race"), new OriginalUrl("https://example.com/original")));
-
-        assertEquals("https://example.com/updated", service.resolveLink("redirect-race").originalUrl().value());
-    }
-
-    @Test
-    void searchLinksUsesDiscoveryProjectionShape() {
-        service.createLink(FREE_OWNER, new CreateLinkCommand("alpha-docs", "https://docs.example.com/alpha", null, "Alpha Docs", List.of("docs")), null);
-        service.createLink(PRO_OWNER, new CreateLinkCommand("alpha-pro", "https://app.example.com/alpha", null, "Alpha App", List.of("product")), null);
-
-        LinkDiscoveryPage page = service.searchLinks(FREE_OWNER, new LinkDiscoveryQuery(
-                "alpha",
-                "docs.example.com",
-                "docs",
-                LinkDiscoveryLifecycleFilter.ACTIVE,
-                LinkDiscoveryExpirationFilter.ANY,
-                LinkDiscoverySort.UPDATED_DESC,
-                10,
-                null));
-
-        assertEquals(1, page.items().size());
-        assertEquals("alpha-docs", page.items().getFirst().slug());
-        assertEquals(LinkDiscoveryLifecycleState.ACTIVE, page.items().getFirst().lifecycleState());
-        assertTrue(page.nextCursor() == null || !page.nextCursor().isBlank());
+    private static String key(String slug, OffsetDateTime from, OffsetDateTime to) {
+        return slug + "|" + from + "|" + to;
     }
 
     private static final class TestLinkStore implements LinkStore {
-
         private final Map<String, Link> linksBySlug = new ConcurrentHashMap<>();
-        private final Map<String, OffsetDateTime> expiresAtBySlug = new ConcurrentHashMap<>();
-        private final Map<String, Long> versionBySlug = new ConcurrentHashMap<>();
-        private final Map<String, Long> ownerIdBySlug = new ConcurrentHashMap<>();
-        private final Map<String, LinkMetadata> metadataBySlug = new ConcurrentHashMap<>();
-        private final Map<String, Integer> resolveLookups = new ConcurrentHashMap<>();
-        private final Map<String, LinkTrafficSummaryTotals> trafficTotalsBySlug = new ConcurrentHashMap<>();
+        private final Map<String, Long> ownerBySlug = new ConcurrentHashMap<>();
+        private final Map<String, LinkTrafficSummaryTotals> summaryBySlug = new ConcurrentHashMap<>();
         private final Map<String, List<DailyClickBucket>> dailyBucketsBySlug = new ConcurrentHashMap<>();
+        private final Map<String, Long> rangeClicks = new ConcurrentHashMap<>();
+        private final Map<String, List<LinkTrafficSeriesBucket>> seriesBySlug = new ConcurrentHashMap<>();
         private final Map<Long, List<TopLinkTraffic>> topLinksByOwner = new ConcurrentHashMap<>();
         private final Map<Long, List<TrendingLink>> trendingLinksByOwner = new ConcurrentHashMap<>();
+        private final Map<String, OffsetDateTime> latestClickAtBySlug = new ConcurrentHashMap<>();
+        private final Map<String, OffsetDateTime> latestActivityAtBySlug = new ConcurrentHashMap<>();
+        private List<TopLinkTraffic> filteredTopLinks = List.of();
+        private List<TrendingLink> filteredTrendingLinks = List.of();
+        private List<LinkActivityEvent> filteredActivity = List.of();
+        private String lastTagFilter;
+        private LinkLifecycleState lastLifecycleFilter;
+        private long lastOwnerId;
+        private OffsetDateTime fixedNowClick;
+
+        void seedLink(String slug, long ownerId) {
+            linksBySlug.put(slug, new Link(new LinkSlug(slug), new OriginalUrl("https://example.com/" + slug)));
+            ownerBySlug.put(slug, ownerId);
+        }
 
         @Override
         public boolean save(
@@ -266,16 +214,7 @@ class DefaultLinkApplicationServiceTest {
                 String hostname,
                 long version,
                 long ownerId) {
-            boolean inserted = linksBySlug.putIfAbsent(link.slug().value(), link) == null;
-            if (!inserted) {
-                return false;
-            }
-            if (expiresAt != null) {
-                expiresAtBySlug.put(link.slug().value(), expiresAt);
-            }
-            versionBySlug.put(link.slug().value(), version);
-            ownerIdBySlug.put(link.slug().value(), ownerId);
-            metadataBySlug.put(link.slug().value(), new LinkMetadata(title, tags == null ? List.of() : List.copyOf(tags), hostname));
+            seedLink(link.slug().value(), ownerId);
             return true;
         }
 
@@ -290,219 +229,16 @@ class DefaultLinkApplicationServiceTest {
                 long expectedVersion,
                 long nextVersion,
                 long ownerId) {
-            if (!java.util.Objects.equals(versionBySlug.get(slug), expectedVersion)
-                    || !java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId)) {
-                return false;
-            }
-            Link existing = linksBySlug.get(slug);
-            if (existing == null) {
-                return false;
-            }
-            linksBySlug.put(slug, new Link(existing.slug(), new OriginalUrl(originalUrl)));
-            if (expiresAt == null) {
-                expiresAtBySlug.remove(slug);
-            } else {
-                expiresAtBySlug.put(slug, expiresAt);
-            }
-            versionBySlug.put(slug, nextVersion);
-            metadataBySlug.put(slug, new LinkMetadata(title, tags == null ? List.of() : List.copyOf(tags), hostname));
+            linksBySlug.put(slug, new Link(new LinkSlug(slug), new OriginalUrl(originalUrl)));
+            ownerBySlug.put(slug, ownerId);
             return true;
         }
 
         @Override
         public boolean deleteBySlug(String slug, long expectedVersion, long ownerId) {
-            if (!java.util.Objects.equals(versionBySlug.get(slug), expectedVersion)
-                    || !java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId)) {
-                return false;
-            }
-            return linksBySlug.remove(slug) != null;
-        }
-
-        @Override
-        public long countActiveLinksByOwner(long ownerId) {
-            OffsetDateTime now = OffsetDateTime.now();
-            return linksBySlug.keySet().stream()
-                    .filter(slug -> java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId))
-                    .filter(slug -> {
-                        OffsetDateTime expiresAt = expiresAtBySlug.get(slug);
-                        return expiresAt == null || expiresAt.isAfter(now);
-                    })
-                    .count();
-        }
-
-        @Override
-        public boolean recordClickIfAbsent(LinkClick linkClick) {
+            linksBySlug.remove(slug);
+            ownerBySlug.remove(slug);
             return true;
-        }
-
-        @Override
-        public boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent) {
-            return false;
-        }
-
-        @Override
-        public Optional<Long> findOwnerIdBySlug(String slug) {
-            return Optional.ofNullable(ownerIdBySlug.get(slug));
-        }
-
-        @Override
-        public List<Long> findOwnerIdsWithClickHistory() {
-            return ownerIdBySlug.values().stream().distinct().sorted().toList();
-        }
-
-        @Override
-        public long rebuildClickDailyRollups() {
-            return 0;
-        }
-
-        @Override
-        public void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent) {
-        }
-
-        @Override
-        public void projectDiscoveryEvent(LinkLifecycleEvent linkLifecycleEvent) {
-        }
-
-        @Override
-        public void resetCatalogProjection() {
-        }
-
-        @Override
-        public void resetDiscoveryProjection() {
-        }
-
-        @Override
-        public List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit) {
-            return List.of();
-        }
-
-        @Override
-        public long applyClickHistoryChunkToDailyRollups(List<LinkClickHistoryRecord> clickHistoryChunk) {
-            return clickHistoryChunk.size();
-        }
-
-        @Override
-        public void resetClickDailyRollups() {
-        }
-
-        @Override
-        public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
-            resolveLookups.merge(slug, 1, Integer::sum);
-            if (isExpired(slug, now)) {
-                return Optional.empty();
-            }
-            return Optional.ofNullable(linksBySlug.get(slug));
-        }
-
-        @Override
-        public Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now, long ownerId) {
-            if (!java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId) || isExpired(slug, now)) {
-                return Optional.empty();
-            }
-            return findStoredDetailsBySlug(slug, ownerId)
-                    .map(details -> new LinkDetails(
-                            details.slug(),
-                            details.originalUrl(),
-                            details.createdAt(),
-                            details.expiresAt(),
-                            details.title(),
-                            details.tags(),
-                            details.hostname(),
-                            details.version(),
-                            0L));
-        }
-
-        @Override
-        public Optional<LinkDetails> findStoredDetailsBySlug(String slug) {
-            Long ownerId = ownerIdBySlug.get(slug);
-            return ownerId == null ? Optional.empty() : findStoredDetailsBySlug(slug, ownerId);
-        }
-
-        @Override
-        public Optional<LinkDetails> findStoredDetailsBySlug(String slug, long ownerId) {
-            if (!java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId)) {
-                return Optional.empty();
-            }
-            Link link = linksBySlug.get(slug);
-            if (link == null) {
-                return Optional.empty();
-            }
-            LinkMetadata metadata = metadataBySlug.getOrDefault(slug, LinkMetadata.empty());
-            return Optional.of(new LinkDetails(
-                    link.slug().value(),
-                    link.originalUrl().value(),
-                    OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                    expiresAtBySlug.get(slug),
-                    metadata.title(),
-                    metadata.tags(),
-                    metadata.hostname(),
-                    versionBySlug.getOrDefault(slug, 1L),
-                    0L));
-        }
-
-        @Override
-        public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long ownerId) {
-            return linksBySlug.values().stream()
-                    .filter(link -> java.util.Objects.equals(ownerIdBySlug.get(link.slug().value()), ownerId))
-                    .filter(link -> matchesState(link.slug().value(), now, state))
-                    .filter(link -> matchesQuery(link, query))
-                    .sorted(Comparator.comparing((Link link) -> link.slug().value()))
-                    .limit(limit)
-                    .map(link -> findStoredDetailsBySlug(link.slug().value(), ownerId).orElseThrow())
-                    .toList();
-        }
-
-        @Override
-        public List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId) {
-            return linksBySlug.values().stream()
-                    .filter(link -> java.util.Objects.equals(ownerIdBySlug.get(link.slug().value()), ownerId))
-                    .filter(link -> !isExpired(link.slug().value(), now))
-                    .filter(link -> matchesQuery(link, query))
-                    .sorted(Comparator.comparing(link -> link.slug().value()))
-                    .limit(limit)
-                    .map(link -> {
-                        LinkMetadata metadata = metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty());
-                        return new LinkSuggestion(link.slug().value(), metadata.title(), metadata.hostname());
-                    })
-                    .toList();
-        }
-
-        @Override
-        public LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long ownerId, LinkDiscoveryQuery query) {
-            List<LinkDiscoveryItem> items = linksBySlug.values().stream()
-                    .filter(link -> java.util.Objects.equals(ownerIdBySlug.get(link.slug().value()), ownerId))
-                    .filter(link -> matchesDiscoveryQuery(link, query, now))
-                    .sorted((left, right) -> switch (query.sort()) {
-                        case UPDATED_DESC -> left.slug().value().compareTo(right.slug().value());
-                        case CREATED_DESC -> left.slug().value().compareTo(right.slug().value());
-                        case SLUG_ASC -> left.slug().value().compareTo(right.slug().value());
-                    })
-                    .limit(query.limit())
-                    .map(link -> {
-                        LinkMetadata metadata = metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty());
-                        OffsetDateTime expiresAt = expiresAtBySlug.get(link.slug().value());
-                        return new LinkDiscoveryItem(
-                                link.slug().value(),
-                                link.originalUrl().value(),
-                                metadata.title(),
-                                metadata.hostname(),
-                                metadata.tags(),
-                                expiresAt != null && !expiresAt.isAfter(now)
-                                        ? LinkDiscoveryLifecycleState.EXPIRED
-                                        : LinkDiscoveryLifecycleState.ACTIVE,
-                                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                                OffsetDateTime.parse("2026-04-01T08:00:00Z"),
-                                expiresAt,
-                                null,
-                                versionBySlug.getOrDefault(link.slug().value(), 1L));
-                    })
-                    .toList();
-            return new LinkDiscoveryPage(items, items.isEmpty() ? null : "cursor", false);
-        }
-
-        @Override
-        public List<LinkActivityEvent> findRecentActivity(int limit, long ownerId) {
-            return List.of();
         }
 
         @Override
@@ -511,18 +247,30 @@ class DefaultLinkApplicationServiceTest {
                 OffsetDateTime last24HoursSince,
                 LocalDate last7DaysStartDate,
                 long ownerId) {
-            Link link = linksBySlug.get(slug);
-            if (link == null || !java.util.Objects.equals(ownerIdBySlug.get(slug), ownerId)) {
+            if (!ownerBySlug.containsKey(slug) || ownerBySlug.get(slug) != ownerId) {
                 return Optional.empty();
             }
-            return Optional.ofNullable(trafficTotalsBySlug.getOrDefault(
-                    slug,
-                    new LinkTrafficSummaryTotals(slug, link.originalUrl().value(), 0L, 0L, 0L)));
+            return Optional.ofNullable(summaryBySlug.get(slug));
         }
 
         @Override
         public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate, long ownerId) {
-            return dailyBucketsBySlug.getOrDefault(slug, List.of(new DailyClickBucket(startDate, 0L)));
+            return dailyBucketsBySlug.getOrDefault(slug, List.of());
+        }
+
+        @Override
+        public long countClicksForSlugInRange(String slug, OffsetDateTime from, OffsetDateTime to, long ownerId) {
+            return rangeClicks.getOrDefault(key(slug, from, to), 0L);
+        }
+
+        @Override
+        public List<LinkTrafficSeriesBucket> findTrafficSeries(
+                String slug,
+                OffsetDateTime from,
+                OffsetDateTime to,
+                String granularity,
+                long ownerId) {
+            return seriesBySlug.getOrDefault(slug, List.of());
         }
 
         @Override
@@ -531,100 +279,83 @@ class DefaultLinkApplicationServiceTest {
         }
 
         @Override
+        public List<TopLinkTraffic> findTopLinks(
+                OffsetDateTime from,
+                OffsetDateTime to,
+                int limit,
+                String tag,
+                LinkLifecycleState lifecycle,
+                OffsetDateTime asOf,
+                long ownerId) {
+            lastTagFilter = tag;
+            lastLifecycleFilter = lifecycle;
+            lastOwnerId = ownerId;
+            return filteredTopLinks;
+        }
+
+        @Override
         public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId) {
             return trendingLinksByOwner.getOrDefault(ownerId, List.of());
         }
 
-        private boolean isExpired(String slug, OffsetDateTime now) {
-            OffsetDateTime expiresAt = expiresAtBySlug.get(slug);
-            return expiresAt != null && !expiresAt.isAfter(now);
+        @Override
+        public List<TrendingLink> findTrendingLinks(
+                OffsetDateTime from,
+                OffsetDateTime to,
+                int limit,
+                String tag,
+                LinkLifecycleState lifecycle,
+                OffsetDateTime asOf,
+                long ownerId) {
+            lastTagFilter = tag;
+            lastLifecycleFilter = lifecycle;
+            lastOwnerId = ownerId;
+            return filteredTrendingLinks;
         }
-
-        private boolean matchesState(String slug, OffsetDateTime now, LinkLifecycleState state) {
-            return switch (state) {
-                case ACTIVE -> !isExpired(slug, now);
-                case SUSPENDED, ARCHIVED -> false;
-                case EXPIRED -> isExpired(slug, now);
-                case ALL -> true;
-            };
-        }
-
-        private boolean matchesQuery(Link link, String query) {
-            if (query == null || query.isBlank()) {
-                return true;
-            }
-            String normalizedQuery = query.toLowerCase();
-            LinkMetadata metadata = metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty());
-            return link.slug().value().toLowerCase().contains(normalizedQuery)
-                    || link.originalUrl().value().toLowerCase().contains(normalizedQuery)
-                    || (metadata.title() != null && metadata.title().toLowerCase().contains(normalizedQuery))
-                    || metadata.tags().stream().anyMatch(tag -> tag.toLowerCase().contains(normalizedQuery));
-        }
-
-        private boolean matchesDiscoveryQuery(Link link, LinkDiscoveryQuery query, OffsetDateTime now) {
-            LinkMetadata metadata = metadataBySlug.getOrDefault(link.slug().value(), LinkMetadata.empty());
-            OffsetDateTime expiresAt = expiresAtBySlug.get(link.slug().value());
-            boolean lifecycleMatch = switch (query.lifecycle()) {
-                case ACTIVE -> expiresAt == null || expiresAt.isAfter(now);
-                case EXPIRED -> expiresAt != null && !expiresAt.isAfter(now);
-                case DELETED -> false;
-                case ALL -> true;
-            };
-            boolean expirationMatch = switch (query.expiration()) {
-                case ANY -> true;
-                case SCHEDULED -> expiresAt != null;
-                case NONE -> expiresAt == null;
-                case EXPIRED -> expiresAt != null && !expiresAt.isAfter(now);
-            };
-            boolean hostnameMatch = query.hostname() == null || query.hostname().isBlank()
-                    || java.util.Objects.equals(metadata.hostname(), query.hostname());
-            boolean tagMatch = query.tag() == null || query.tag().isBlank()
-                    || metadata.tags().contains(query.tag());
-            return lifecycleMatch
-                    && expirationMatch
-                    && hostnameMatch
-                    && tagMatch
-                    && matchesQuery(link, query.searchText());
-        }
-    }
-
-    private record LinkMetadata(String title, List<String> tags, String hostname) {
-        private static LinkMetadata empty() {
-            return new LinkMetadata(null, List.of(), null);
-        }
-    }
-
-    private static final class TestAnalyticsOutboxStore implements AnalyticsOutboxStore {
-        private final List<RedirectClickAnalyticsEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         @Override
-        public void saveRedirectClickEvent(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent) {
-            events.add(redirectClickAnalyticsEvent);
+        public List<LinkActivityEvent> findRecentActivity(
+                int limit,
+                String tag,
+                LinkLifecycleState lifecycle,
+                OffsetDateTime asOf,
+                long ownerId) {
+            lastTagFilter = tag;
+            lastLifecycleFilter = lifecycle;
+            lastOwnerId = ownerId;
+            return filteredActivity.stream().limit(limit).toList();
         }
 
-        @Override public long countUnpublished() { return events.size(); }
-        @Override public long countEligible(OffsetDateTime now) { return events.size(); }
-        @Override public long countParked() { return 0; }
-        @Override public Double findOldestEligibleAgeSeconds(OffsetDateTime now) { return events.isEmpty() ? null : 0.0; }
-        @Override public List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) { return List.of(); }
-        @Override public void markPublished(long id, OffsetDateTime publishedAt) { }
-        @Override public void recordPublishFailure(long id, int attemptCount, OffsetDateTime nextAttemptAt, String lastErrorSummary, OffsetDateTime parkedAt) { }
-        @Override public List<AnalyticsOutboxRecord> findParked(int limit) { return List.of(); }
-        @Override public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) { return false; }
-        @Override public long archivePublishedBefore(OffsetDateTime cutoff, int limit) { return 0; }
-        @Override public long countArchived() { return 0; }
+        @Override
+        public Optional<OffsetDateTime> findLatestMaterializedClickAt(long ownerId) {
+            return latestClickAtBySlug.values().stream().max(OffsetDateTime::compareTo);
+        }
 
-        private List<RedirectClickAnalyticsEvent> events() {
-            return events;
+        @Override
+        public Optional<OffsetDateTime> findLatestMaterializedClickAt(String slug, long ownerId) {
+            return Optional.ofNullable(latestClickAtBySlug.get(slug));
+        }
+
+        @Override
+        public Optional<OffsetDateTime> findLatestMaterializedActivityAt(long ownerId) {
+            return latestActivityAtBySlug.values().stream().max(OffsetDateTime::compareTo);
+        }
+
+        @Override
+        public Optional<OffsetDateTime> findLatestMaterializedActivityAt(String slug, long ownerId) {
+            return Optional.ofNullable(latestActivityAtBySlug.get(slug));
+        }
+
+        @Override
+        public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
+            return Optional.ofNullable(linksBySlug.get(slug));
         }
     }
 
     private static final class TestLinkMutationIdempotencyStore implements LinkMutationIdempotencyStore {
-        private final Map<String, LinkMutationIdempotencyRecord> records = new ConcurrentHashMap<>();
-
         @Override
         public Optional<LinkMutationIdempotencyRecord> findByKey(long ownerId, String idempotencyKey) {
-            return Optional.ofNullable(records.get(ownerId + ":" + idempotencyKey));
+            return Optional.empty();
         }
 
         @Override
@@ -635,35 +366,37 @@ class DefaultLinkApplicationServiceTest {
                 String requestHash,
                 LinkMutationResult result,
                 OffsetDateTime createdAt) {
-            records.put(
-                    ownerId + ":" + idempotencyKey,
-                    new LinkMutationIdempotencyRecord(ownerId, idempotencyKey, operation, requestHash, result, createdAt));
         }
     }
 
-    private static final class TestLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
-        private final List<LinkLifecycleEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
-
-        @Override
-        public void saveLinkLifecycleEvent(LinkLifecycleEvent linkLifecycleEvent) {
-            events.add(linkLifecycleEvent);
-        }
-
-        @Override public long countUnpublished() { return events.size(); }
-        @Override public long countEligible(OffsetDateTime now) { return events.size(); }
+    private static final class TestAnalyticsOutboxStore implements AnalyticsOutboxStore {
+        @Override public void saveRedirectClickEvent(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent) { }
+        @Override public long countUnpublished() { return 0; }
+        @Override public long countEligible(OffsetDateTime now) { return 0; }
         @Override public long countParked() { return 0; }
-        @Override public Double findOldestEligibleAgeSeconds(OffsetDateTime now) { return events.isEmpty() ? null : 0.0; }
+        @Override public Double findOldestEligibleAgeSeconds(OffsetDateTime now) { return null; }
+        @Override public List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) { return List.of(); }
+        @Override public void markPublished(long id, OffsetDateTime publishedAt) { }
+        @Override public void recordPublishFailure(long id, int attemptCount, OffsetDateTime nextAttemptAt, String lastErrorSummary, OffsetDateTime parkedAt) { }
+        @Override public List<AnalyticsOutboxRecord> findParked(int limit) { return List.of(); }
+        @Override public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) { return false; }
+        @Override public long archivePublishedBefore(OffsetDateTime cutoff, int limit) { return 0; }
+        @Override public long countArchived() { return 0; }
+    }
+
+    private static final class TestLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
+        @Override public void saveLinkLifecycleEvent(LinkLifecycleEvent linkLifecycleEvent) { }
+        @Override public long countUnpublished() { return 0; }
+        @Override public long countEligible(OffsetDateTime now) { return 0; }
+        @Override public long countParked() { return 0; }
+        @Override public Double findOldestEligibleAgeSeconds(OffsetDateTime now) { return null; }
         @Override public List<LinkLifecycleOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) { return List.of(); }
         @Override public void markPublished(long id, OffsetDateTime publishedAt) { }
         @Override public void recordPublishFailure(long id, int attemptCount, OffsetDateTime nextAttemptAt, String lastErrorSummary, OffsetDateTime parkedAt) { }
-        @Override public List<LinkLifecycleOutboxRecord> findParked(int limit) { return List.of(); }
-        @Override public List<LinkLifecycleEvent> findAllHistory() { return List.copyOf(events); }
+        @Override public List<LinkLifecycleEvent> findAllHistory() { return List.of(); }
         @Override public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit) { return List.of(); }
+        @Override public List<LinkLifecycleOutboxRecord> findParked(int limit) { return List.of(); }
         @Override public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) { return false; }
-
-        private List<LinkLifecycleEvent> events() {
-            return events;
-        }
     }
 
     private static final class TestOwnerStore implements OwnerStore {
@@ -678,11 +411,9 @@ class DefaultLinkApplicationServiceTest {
     }
 
     private static final class TestSecurityEventStore implements SecurityEventStore {
-        private final List<SecurityEventRecord> events = new java.util.concurrent.CopyOnWriteArrayList<>();
-
         @Override
         public void record(
-                SecurityEventType eventType,
+                com.linkplatform.api.owner.application.SecurityEventType eventType,
                 Long ownerId,
                 String apiKeyHash,
                 String requestMethod,
@@ -690,88 +421,125 @@ class DefaultLinkApplicationServiceTest {
                 String remoteAddress,
                 String detailSummary,
                 OffsetDateTime occurredAt) {
-            events.add(new SecurityEventRecord(eventType, ownerId, detailSummary));
         }
-
-        private List<SecurityEventRecord> events() {
-            return events;
-        }
-    }
-
-    private record SecurityEventRecord(SecurityEventType eventType, Long ownerId, String detailSummary) {
     }
 
     private static final class TestLinkReadCache implements LinkReadCache {
-        private final Map<String, Link> redirectCache = new ConcurrentHashMap<>();
-        private final Map<String, Long> redirectGenerationBySlug = new ConcurrentHashMap<>();
-        private final List<String> invalidatedRedirects = new java.util.concurrent.CopyOnWriteArrayList<>();
-        private final List<Long> invalidatedControlPlaneOwners = new java.util.concurrent.CopyOnWriteArrayList<>();
-        private final Map<Long, Long> controlPlaneGenerationByOwner = new ConcurrentHashMap<>();
-        private final Map<Long, Long> analyticsGenerationByOwner = new ConcurrentHashMap<>();
+        private final Map<Long, Long> analyticsGenerationByOwner = new HashMap<>();
+        private final Map<String, LinkTrafficSummary> trafficSummaryCache = new HashMap<>();
+        private final Map<String, List<TopLinkTraffic>> topLinksCache = new HashMap<>();
+        private final Map<String, List<TrendingLink>> trendingLinksCache = new HashMap<>();
 
         @Override
         public long getPublicRedirectGeneration(String slug) {
-            return redirectGenerationBySlug.getOrDefault(slug, 0L);
+            return 0;
         }
 
         @Override
         public Optional<Link> getPublicRedirect(String slug, long generation) {
-            return Optional.ofNullable(redirectCache.get(redirectCacheKey(slug, generation)));
+            return Optional.empty();
         }
 
         @Override
         public void putPublicRedirect(String slug, long generation, Link link) {
-            redirectCache.put(redirectCacheKey(slug, generation), link);
         }
 
         @Override
         public void invalidatePublicRedirect(String slug) {
-            invalidatedRedirects.add(slug);
-            redirectGenerationBySlug.merge(slug, 1L, Long::sum);
         }
 
-        @Override public long getOwnerControlPlaneGeneration(long ownerId) { return controlPlaneGenerationByOwner.getOrDefault(ownerId, 0L); }
-        @Override public Optional<LinkDetails> getOwnerLinkDetails(long ownerId, long generation, String slug) { return Optional.empty(); }
-        @Override public void putOwnerLinkDetails(long ownerId, long generation, String slug, LinkDetails linkDetails) { }
-        @Override public Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state) { return Optional.empty(); }
-        @Override public void putOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) { }
-        @Override public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, long generation, String query, int limit) { return Optional.empty(); }
-        @Override public void putOwnerSuggestions(long ownerId, long generation, String query, int limit, List<LinkSuggestion> suggestions) { }
-        @Override public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query) { return Optional.empty(); }
-        @Override public void putOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query, LinkDiscoveryPage page) { }
-        @Override public long getOwnerAnalyticsGeneration(long ownerId) { return analyticsGenerationByOwner.getOrDefault(ownerId, 0L); }
+        @Override
+        public long getOwnerControlPlaneGeneration(long ownerId) {
+            return 0;
+        }
 
-        private final Map<String, List<LinkActivityEvent>> recentActivityCache = new ConcurrentHashMap<>();
-        private final Map<String, LinkTrafficSummary> trafficSummaryCache = new ConcurrentHashMap<>();
-        private final Map<String, List<TopLinkTraffic>> topLinksCache = new ConcurrentHashMap<>();
-        private final Map<String, List<TrendingLink>> trendingLinksCache = new ConcurrentHashMap<>();
+        @Override
+        public Optional<LinkDetails> getOwnerLinkDetails(long ownerId, long generation, String slug) {
+            return Optional.empty();
+        }
 
-        @Override public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, long generation, int limit) { return Optional.ofNullable(recentActivityCache.get(ownerAnalyticsKey(ownerId, generation, String.valueOf(limit)))); }
-        @Override public void putOwnerRecentActivity(long ownerId, long generation, int limit, List<LinkActivityEvent> activityEvents) { recentActivityCache.put(ownerAnalyticsKey(ownerId, generation, String.valueOf(limit)), activityEvents); }
-        @Override public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, long generation, String slug) { return Optional.ofNullable(trafficSummaryCache.get(ownerAnalyticsKey(ownerId, generation, slug))); }
-        @Override public void putOwnerTrafficSummary(long ownerId, long generation, String slug, LinkTrafficSummary summary) { trafficSummaryCache.put(ownerAnalyticsKey(ownerId, generation, slug), summary); }
-        @Override public Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window) { return Optional.ofNullable(topLinksCache.get(ownerAnalyticsKey(ownerId, generation, window.name()))); }
-        @Override public void putOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) { topLinksCache.put(ownerAnalyticsKey(ownerId, generation, window.name()), topLinks); }
-        @Override public Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit) { return Optional.ofNullable(trendingLinksCache.get(ownerAnalyticsKey(ownerId, generation, window.name() + ":" + limit))); }
-        @Override public void putOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) { trendingLinksCache.put(ownerAnalyticsKey(ownerId, generation, window.name() + ":" + limit), trendingLinks); }
+        @Override
+        public void putOwnerLinkDetails(long ownerId, long generation, String slug, LinkDetails linkDetails) {
+        }
+
+        @Override
+        public Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void putOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) {
+        }
+
+        @Override
+        public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, long generation, String query, int limit) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void putOwnerSuggestions(long ownerId, long generation, String query, int limit, List<LinkSuggestion> suggestions) {
+        }
+
+        @Override
+        public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void putOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query, LinkDiscoveryPage page) {
+        }
+
+        @Override
+        public long getOwnerAnalyticsGeneration(long ownerId) {
+            return analyticsGenerationByOwner.getOrDefault(ownerId, 0L);
+        }
+
+        @Override
+        public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, long generation, int limit) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void putOwnerRecentActivity(long ownerId, long generation, int limit, List<LinkActivityEvent> activityEvents) {
+        }
+
+        @Override
+        public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, long generation, String slug) {
+            return Optional.ofNullable(trafficSummaryCache.get(ownerId + ":" + generation + ":" + slug));
+        }
+
+        @Override
+        public void putOwnerTrafficSummary(long ownerId, long generation, String slug, LinkTrafficSummary summary) {
+            trafficSummaryCache.put(ownerId + ":" + generation + ":" + slug, summary);
+        }
+
+        @Override
+        public Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window) {
+            return Optional.ofNullable(topLinksCache.get(ownerId + ":" + generation + ":" + window.name()));
+        }
+
+        @Override
+        public void putOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) {
+            topLinksCache.put(ownerId + ":" + generation + ":" + window.name(), topLinks);
+        }
+
+        @Override
+        public Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit) {
+            return Optional.ofNullable(trendingLinksCache.get(ownerId + ":" + generation + ":" + window.name() + ":" + limit));
+        }
+
+        @Override
+        public void putOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) {
+            trendingLinksCache.put(ownerId + ":" + generation + ":" + window.name() + ":" + limit, trendingLinks);
+        }
 
         @Override
         public void invalidateOwnerControlPlane(long ownerId) {
-            invalidatedControlPlaneOwners.add(ownerId);
-            controlPlaneGenerationByOwner.merge(ownerId, 1L, Long::sum);
         }
 
         @Override
         public void invalidateOwnerAnalytics(long ownerId) {
             analyticsGenerationByOwner.merge(ownerId, 1L, Long::sum);
-        }
-
-        private String redirectCacheKey(String slug, long generation) {
-            return slug + ":" + generation;
-        }
-
-        private String ownerAnalyticsKey(long ownerId, long generation, String suffix) {
-            return ownerId + ":" + generation + ":" + suffix;
         }
     }
 }

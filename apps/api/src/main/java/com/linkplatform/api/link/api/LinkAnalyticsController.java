@@ -1,19 +1,16 @@
 package com.linkplatform.api.link.api;
 
+import com.linkplatform.api.link.application.AnalyticsRange;
 import com.linkplatform.api.link.application.LinkApplicationService;
-import com.linkplatform.api.link.application.LinkActivityEvent;
-import com.linkplatform.api.link.application.LinkDetails;
-import com.linkplatform.api.link.application.LinkTrafficSummary;
 import com.linkplatform.api.link.application.LinkTrafficWindow;
 import com.linkplatform.api.link.application.LinkStore;
 import com.linkplatform.api.link.application.OwnerTrafficTotals;
 import com.linkplatform.api.link.application.TopReferrer;
-import com.linkplatform.api.link.application.TrendingLink;
-import com.linkplatform.api.link.application.TopLinkTraffic;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,8 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class LinkAnalyticsController {
 
     private static final int DEFAULT_ACTIVITY_LIMIT = 20;
+    private static final int DEFAULT_TOP_LIMIT = 10;
     private static final int DEFAULT_TRENDING_LIMIT = 10;
-    private static final int MAX_LIMIT = 100;
 
     private final LinkApplicationService linkApplicationService;
     private final OwnerAccessService ownerAccessService;
@@ -46,6 +43,9 @@ public class LinkAnalyticsController {
     @GetMapping("/{slug}/traffic-summary")
     public LinkTrafficSummaryResponse getTrafficSummary(
             @PathVariable String slug,
+            @RequestParam(required = false) OffsetDateTime from,
+            @RequestParam(required = false) OffsetDateTime to,
+            @RequestParam(defaultValue = "false") boolean comparePrevious,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
@@ -55,15 +55,47 @@ public class LinkAnalyticsController {
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
-        return toResponse(linkApplicationService.getTrafficSummary(owner, slug), slug, owner.id());
+        return toResponse(
+                linkApplicationService.getTrafficSummary(owner, slug, AnalyticsRange.optional(from, to, comparePrevious)),
+                slug,
+                owner.id());
+    }
+
+    @GetMapping("/{slug}/traffic-series")
+    public LinkTrafficSeriesResponse getTrafficSeries(
+            @PathVariable String slug,
+            @RequestParam OffsetDateTime from,
+            @RequestParam OffsetDateTime to,
+            @RequestParam String granularity,
+            @RequestParam(defaultValue = "false") boolean comparePrevious,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        var owner = ownerAccessService.authorizeRead(
+                apiKey,
+                authorizationHeader,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        return LinkTrafficSeriesResponse.from(linkApplicationService.getTrafficSeries(
+                owner,
+                slug,
+                AnalyticsRange.required(from, to, comparePrevious),
+                granularity));
     }
 
     @GetMapping("/traffic/top")
     public List<TopLinkTrafficResponse> getTopLinks(
             @RequestParam(defaultValue = "7d") String window,
+            @RequestParam(required = false) OffsetDateTime from,
+            @RequestParam(required = false) OffsetDateTime to,
+            @RequestParam(required = false) String tag,
+            @RequestParam(required = false) String lifecycle,
+            @RequestParam(defaultValue = "" + DEFAULT_TOP_LIMIT) int limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
+        AnalyticsRange range = AnalyticsRange.optional(from, to, false);
         return linkApplicationService.getTopLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
@@ -71,18 +103,23 @@ public class LinkAnalyticsController {
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
-                        parseWindow(window)).stream()
-                .map(this::toResponse)
+                        range == null ? parseWindow(window) : LinkTrafficWindow.LAST_7_DAYS,
+                        range,
+                        tag,
+                        lifecycle,
+                        limit).stream()
+                .map(TopLinkTrafficResponse::from)
                 .toList();
     }
 
     @GetMapping("/activity")
     public List<LinkActivityEventResponse> getRecentActivity(
             @RequestParam(defaultValue = "" + DEFAULT_ACTIVITY_LIMIT) int limit,
+            @RequestParam(required = false) String tag,
+            @RequestParam(required = false) String lifecycle,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        validateLimit(limit);
         return linkApplicationService.getRecentActivity(
                         ownerAccessService.authorizeRead(
                                 apiKey,
@@ -90,19 +127,26 @@ public class LinkAnalyticsController {
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
-                        limit).stream()
-                .map(this::toResponse)
+                        limit,
+                        tag,
+                        lifecycle).stream()
+                .map(LinkActivityEventResponse::from)
                 .toList();
     }
 
     @GetMapping("/traffic/trending")
     public List<TrendingLinkResponse> getTrendingLinks(
             @RequestParam(defaultValue = "7d") String window,
+            @RequestParam(required = false) OffsetDateTime from,
+            @RequestParam(required = false) OffsetDateTime to,
+            @RequestParam(defaultValue = "false") boolean comparePrevious,
             @RequestParam(defaultValue = "" + DEFAULT_TRENDING_LIMIT) int limit,
+            @RequestParam(required = false) String tag,
+            @RequestParam(required = false) String lifecycle,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        validateLimit(limit);
+        AnalyticsRange range = AnalyticsRange.optional(from, to, comparePrevious);
         return linkApplicationService.getTrendingLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
@@ -110,9 +154,12 @@ public class LinkAnalyticsController {
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
-                        parseWindow(window),
+                        range == null ? parseWindow(window) : LinkTrafficWindow.LAST_7_DAYS,
+                        range,
+                        tag,
+                        lifecycle,
                         limit).stream()
-                .map(this::toResponse)
+                .map(TrendingLinkResponse::from)
                 .toList();
     }
 
@@ -129,13 +176,10 @@ public class LinkAnalyticsController {
         return value == null ? "" : value.trim();
     }
 
-    private void validateLimit(int limit) {
-        if (limit < 1 || limit > MAX_LIMIT) {
-            throw new IllegalArgumentException("Limit must be between 1 and " + MAX_LIMIT);
-        }
-    }
-
-    private LinkTrafficSummaryResponse toResponse(LinkTrafficSummary summary, String slug, long ownerId) {
+    private LinkTrafficSummaryResponse toResponse(
+            LinkApplicationService.AnalyticsSummaryView summaryView,
+            String slug,
+            long ownerId) {
         List<TopReferrerResponse> topReferrers = linkStore.findTopReferrers(slug, 5, ownerId).stream()
                 .map(this::toResponse)
                 .toList();
@@ -145,12 +189,12 @@ public class LinkAnalyticsController {
                 java.time.OffsetDateTime.now().toLocalDate().minusDays(6),
                 ownerId);
         return new LinkTrafficSummaryResponse(
-                summary.slug(),
-                summary.originalUrl(),
-                summary.totalClicks(),
-                summary.clicksLast24Hours(),
-                summary.clicksLast7Days(),
-                summary.recentDailyClicks().stream()
+                summaryView.summary().slug(),
+                summaryView.summary().originalUrl(),
+                summaryView.summary().totalClicks(),
+                summaryView.summary().clicksLast24Hours(),
+                summaryView.summary().clicksLast7Days(),
+                summaryView.summary().recentDailyClicks().stream()
                         .map(bucket -> new DailyClickBucketResponse(bucket.day(), bucket.clickTotal()))
                         .toList(),
                 topReferrers,
@@ -160,35 +204,12 @@ public class LinkAnalyticsController {
                                 .toList(),
                         ownerTrafficTotals.clicksLast1Hour(),
                         ownerTrafficTotals.clicksLast24Hours(),
-                        ownerTrafficTotals.clicksLast7Days()));
-    }
-
-    private TopLinkTrafficResponse toResponse(TopLinkTraffic topLinkTraffic) {
-        return new TopLinkTrafficResponse(
-                topLinkTraffic.slug(),
-                topLinkTraffic.originalUrl(),
-                topLinkTraffic.clickTotal());
-    }
-
-    private LinkActivityEventResponse toResponse(LinkActivityEvent linkActivityEvent) {
-        return new LinkActivityEventResponse(
-                linkActivityEvent.type().name().toLowerCase(),
-                linkActivityEvent.slug(),
-                linkActivityEvent.originalUrl(),
-                linkActivityEvent.title(),
-                linkActivityEvent.tags(),
-                linkActivityEvent.hostname(),
-                linkActivityEvent.expiresAt(),
-                linkActivityEvent.occurredAt());
-    }
-
-    private TrendingLinkResponse toResponse(TrendingLink trendingLink) {
-        return new TrendingLinkResponse(
-                trendingLink.slug(),
-                trendingLink.originalUrl(),
-                trendingLink.clickGrowth(),
-                trendingLink.currentWindowClicks(),
-                trendingLink.previousWindowClicks());
+                        ownerTrafficTotals.clicksLast7Days()),
+                summaryView.windowStart(),
+                summaryView.windowEnd(),
+                summaryView.windowClicks(),
+                AnalyticsFreshnessResponse.from(summaryView.freshness()),
+                AnalyticsComparisonResponse.from(summaryView.comparison()));
     }
 
     private TopReferrerResponse toResponse(TopReferrer topReferrer) {

@@ -195,6 +195,15 @@ public interface LinkStore {
         return List.of();
     }
 
+    default List<LinkActivityEvent> findRecentActivity(
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf,
+            long ownerId) {
+        return findRecentActivity(limit, ownerId);
+    }
+
     default Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
             String slug,
             OffsetDateTime last24HoursSince,
@@ -227,7 +236,78 @@ public interface LinkStore {
         return List.of();
     }
 
+    default List<TopLinkTraffic> findTopLinks(
+            LinkTrafficWindow window,
+            OffsetDateTime now,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            long ownerId) {
+        return findTopLinks(window, now, ownerId);
+    }
+
+    default List<TopLinkTraffic> findTopLinks(
+            OffsetDateTime from,
+            OffsetDateTime to,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf,
+            long ownerId) {
+        return List.of();
+    }
+
     default List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId) {
         return List.of();
+    }
+
+    default List<TrendingLink> findTrendingLinks(
+            LinkTrafficWindow window,
+            OffsetDateTime now,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            long ownerId) {
+        return findTrendingLinks(window, now, limit, ownerId);
+    }
+
+    default List<TrendingLink> findTrendingLinks(
+            OffsetDateTime from,
+            OffsetDateTime to,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf,
+            long ownerId) {
+        return List.of();
+    }
+
+    default long countClicksForSlugInRange(String slug, OffsetDateTime from, OffsetDateTime to, long ownerId) {
+        return 0L;
+    }
+
+    default List<LinkTrafficSeriesBucket> findTrafficSeries(
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            String granularity,
+            long ownerId) {
+        return List.of();
+    }
+
+    default Optional<OffsetDateTime> findLatestMaterializedClickAt(long ownerId) {
+        return Optional.empty();
+    }
+
+    default Optional<OffsetDateTime> findLatestMaterializedClickAt(String slug, long ownerId) {
+        return Optional.empty();
+    }
+
+    default Optional<OffsetDateTime> findLatestMaterializedActivityAt(long ownerId) {
+        return Optional.empty();
+    }
+
+    default Optional<OffsetDateTime> findLatestMaterializedActivityAt(String slug, long ownerId) {
+        return Optional.empty();
     }
 }
