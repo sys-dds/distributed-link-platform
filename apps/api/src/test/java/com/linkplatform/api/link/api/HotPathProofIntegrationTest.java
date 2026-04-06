@@ -206,6 +206,9 @@ class HotPathProofIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].slug").value("rebuild-clicks"))
                 .andExpect(jsonPath("$[0].currentWindowClicks").value(1));
+        mockMvc.perform(get("/api/v1/links/rebuild-clicks/traffic-summary").header("X-API-Key", PRO_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalClicks").value(1));
 
         jdbcTemplate.update("DELETE FROM link_click_daily_rollups");
         insertClickWithoutRollup("rebuild-clicks", OffsetDateTime.now().minusHours(1));
@@ -221,6 +224,9 @@ class HotPathProofIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].slug").value("rebuild-clicks"))
                 .andExpect(jsonPath("$[0].currentWindowClicks").value(2));
+        mockMvc.perform(get("/api/v1/links/rebuild-clicks/traffic-summary").header("X-API-Key", PRO_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalClicks").value(2));
     }
 
     private void insertLink(long ownerId, String slug, String originalUrl, OffsetDateTime createdAt) {

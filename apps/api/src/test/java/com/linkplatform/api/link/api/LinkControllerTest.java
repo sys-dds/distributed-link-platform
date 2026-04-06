@@ -190,6 +190,29 @@ class LinkControllerTest {
     }
 
     @Test
+    void frontendFriendlySearchAliasWorksAcrossListSuggestionsAndDiscovery() throws Exception {
+        insertOwnedLink(FREE_OWNER_ID, "alpha-free", "https://docs.example.com/alpha", OffsetDateTime.parse("2026-04-01T08:00:00Z"), null, "Alpha Guide", "[\"docs\"]");
+        insertOwnedLink(PRO_OWNER_ID, "alpha-pro", "https://app.example.com/alpha", OffsetDateTime.parse("2026-04-01T09:00:00Z"), null, "Alpha App", "[\"product\"]");
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links").param("search", "guide"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha-free"));
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links/suggestions").param("search", "alpha"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].slug").value("alpha-free"));
+
+        mockMvc.perform(readGet(FREE_API_KEY, "/api/v1/links/discovery")
+                        .param("search", "guide")
+                        .param("hostname", "docs.example.com"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].slug").value("alpha-free"));
+    }
+
+    @Test
     void meReturnsOwnerPlanAndQuotaSummary() throws Exception {
         createOwnedLink(FREE_API_KEY, "me-one", "https://example.com/me-one");
 

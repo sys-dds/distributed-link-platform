@@ -115,6 +115,7 @@ public class LinkController {
     public List<LinkReadResponse> listLinks(
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "active") String state,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             HttpServletRequest httpServletRequest) {
@@ -126,7 +127,7 @@ public class LinkController {
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
                         limit,
-                        q,
+                        resolveSearchText(q, search),
                         parseState(state)).stream()
                 .map(this::toReadResponse)
                 .toList();
@@ -135,6 +136,7 @@ public class LinkController {
     @GetMapping("/suggestions")
     public List<LinkSuggestionResponse> suggestLinks(
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "" + DEFAULT_SUGGESTION_LIMIT) int limit,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             HttpServletRequest httpServletRequest) {
@@ -145,7 +147,7 @@ public class LinkController {
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
-                        q,
+                        resolveSearchText(q, search),
                         limit).stream()
                 .map(this::toSuggestionResponse)
                 .toList();
@@ -154,6 +156,7 @@ public class LinkController {
     @GetMapping("/discovery")
     public LinkDiscoveryPageResponse discoverLinks(
             @RequestParam(required = false, name = "q") String searchText,
+            @RequestParam(required = false) String search,
             @RequestParam(required = false) String hostname,
             @RequestParam(required = false) String tag,
             @RequestParam(defaultValue = "active") String lifecycle,
@@ -171,7 +174,7 @@ public class LinkController {
                         httpServletRequest.getRequestURI(),
                         httpServletRequest.getRemoteAddr()),
                 new LinkDiscoveryQuery(
-                        searchText,
+                        resolveSearchText(searchText, search),
                         hostname,
                         tag,
                         parseDiscoveryLifecycle(lifecycle),
@@ -279,6 +282,13 @@ public class LinkController {
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("If-Match header must be a plain integer version");
         }
+    }
+
+    private String resolveSearchText(String q, String search) {
+        if (q != null && !q.isBlank()) {
+            return q;
+        }
+        return search;
     }
 
     private LinkResponse toUpdateResponse(LinkMutationResult result) {

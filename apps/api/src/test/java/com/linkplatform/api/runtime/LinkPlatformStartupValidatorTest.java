@@ -85,6 +85,19 @@ class LinkPlatformStartupValidatorTest {
     }
 
     @Test
+    void redirectRuntimeRequiresCacheToStayEnabled() {
+        contextRunner.withPropertyValues(
+                        "link-platform.runtime.mode=redirect",
+                        "link-platform.cache.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining(
+                                    "link-platform.cache.enabled must remain true when link-platform.runtime.mode is redirect");
+                });
+    }
+
+    @Test
     void failoverRegionAndBaseUrlMustBeConfiguredTogether() {
         contextRunner.withPropertyValues("link-platform.runtime.redirect.failover-region=us-east-1")
                 .run(context -> {

@@ -96,6 +96,9 @@ public class ProjectionJobService {
                 .map(linkStore::findOwnerIdBySlug)
                 .flatMap(Optional::stream)
                 .forEach(linkReadCache::invalidateOwnerAnalytics);
+        if (completed) {
+            linkStore.findOwnerIdsWithClickHistory().forEach(linkReadCache::invalidateOwnerAnalytics);
+        }
         return new ProjectionJobChunkResult(
                 completed,
                 processedCount,
