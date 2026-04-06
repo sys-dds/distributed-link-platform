@@ -6,43 +6,121 @@ import java.util.Optional;
 
 public interface LinkReadCache {
 
-    Optional<Link> getPublicRedirect(String slug);
+    long getPublicRedirectGeneration(String slug);
 
-    void putPublicRedirect(String slug, Link link);
+    Optional<Link> getPublicRedirect(String slug, long generation);
+
+    default Optional<Link> getPublicRedirect(String slug) {
+        return getPublicRedirect(slug, getPublicRedirectGeneration(slug));
+    }
+
+    void putPublicRedirect(String slug, long generation, Link link);
+
+    default void putPublicRedirect(String slug, Link link) {
+        putPublicRedirect(slug, getPublicRedirectGeneration(slug), link);
+    }
 
     void invalidatePublicRedirect(String slug);
 
-    Optional<LinkDetails> getOwnerLinkDetails(long ownerId, String slug);
+    long getOwnerControlPlaneGeneration(long ownerId);
 
-    void putOwnerLinkDetails(long ownerId, String slug, LinkDetails linkDetails);
+    Optional<LinkDetails> getOwnerLinkDetails(long ownerId, long generation, String slug);
 
-    Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state);
+    default Optional<LinkDetails> getOwnerLinkDetails(long ownerId, String slug) {
+        return getOwnerLinkDetails(ownerId, getOwnerControlPlaneGeneration(ownerId), slug);
+    }
 
-    void putOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails);
+    void putOwnerLinkDetails(long ownerId, long generation, String slug, LinkDetails linkDetails);
 
-    Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, String query, int limit);
+    default void putOwnerLinkDetails(long ownerId, String slug, LinkDetails linkDetails) {
+        putOwnerLinkDetails(ownerId, getOwnerControlPlaneGeneration(ownerId), slug, linkDetails);
+    }
 
-    void putOwnerSuggestions(long ownerId, String query, int limit, List<LinkSuggestion> suggestions);
+    Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state);
 
-    Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query);
+    default Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state) {
+        return getOwnerRecentLinks(ownerId, getOwnerControlPlaneGeneration(ownerId), limit, query, state);
+    }
 
-    void putOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query, LinkDiscoveryPage page);
+    void putOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails);
 
-    Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, int limit);
+    default void putOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) {
+        putOwnerRecentLinks(ownerId, getOwnerControlPlaneGeneration(ownerId), limit, query, state, linkDetails);
+    }
 
-    void putOwnerRecentActivity(long ownerId, int limit, List<LinkActivityEvent> activityEvents);
+    Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, long generation, String query, int limit);
 
-    Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, String slug);
+    default Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, String query, int limit) {
+        return getOwnerSuggestions(ownerId, getOwnerControlPlaneGeneration(ownerId), query, limit);
+    }
 
-    void putOwnerTrafficSummary(long ownerId, String slug, LinkTrafficSummary summary);
+    void putOwnerSuggestions(long ownerId, long generation, String query, int limit, List<LinkSuggestion> suggestions);
 
-    Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, LinkTrafficWindow window);
+    default void putOwnerSuggestions(long ownerId, String query, int limit, List<LinkSuggestion> suggestions) {
+        putOwnerSuggestions(ownerId, getOwnerControlPlaneGeneration(ownerId), query, limit, suggestions);
+    }
 
-    void putOwnerTopLinks(long ownerId, LinkTrafficWindow window, List<TopLinkTraffic> topLinks);
+    Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query);
 
-    Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit);
+    default Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query) {
+        return getOwnerDiscoveryPage(ownerId, getOwnerControlPlaneGeneration(ownerId), query);
+    }
 
-    void putOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks);
+    void putOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query, LinkDiscoveryPage page);
+
+    default void putOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query, LinkDiscoveryPage page) {
+        putOwnerDiscoveryPage(ownerId, getOwnerControlPlaneGeneration(ownerId), query, page);
+    }
+
+    long getOwnerAnalyticsGeneration(long ownerId);
+
+    Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, long generation, int limit);
+
+    default Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, int limit) {
+        return getOwnerRecentActivity(ownerId, getOwnerAnalyticsGeneration(ownerId), limit);
+    }
+
+    void putOwnerRecentActivity(long ownerId, long generation, int limit, List<LinkActivityEvent> activityEvents);
+
+    default void putOwnerRecentActivity(long ownerId, int limit, List<LinkActivityEvent> activityEvents) {
+        putOwnerRecentActivity(ownerId, getOwnerAnalyticsGeneration(ownerId), limit, activityEvents);
+    }
+
+    Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, long generation, String slug);
+
+    default Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, String slug) {
+        return getOwnerTrafficSummary(ownerId, getOwnerAnalyticsGeneration(ownerId), slug);
+    }
+
+    void putOwnerTrafficSummary(long ownerId, long generation, String slug, LinkTrafficSummary summary);
+
+    default void putOwnerTrafficSummary(long ownerId, String slug, LinkTrafficSummary summary) {
+        putOwnerTrafficSummary(ownerId, getOwnerAnalyticsGeneration(ownerId), slug, summary);
+    }
+
+    Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window);
+
+    default Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, LinkTrafficWindow window) {
+        return getOwnerTopLinks(ownerId, getOwnerAnalyticsGeneration(ownerId), window);
+    }
+
+    void putOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window, List<TopLinkTraffic> topLinks);
+
+    default void putOwnerTopLinks(long ownerId, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) {
+        putOwnerTopLinks(ownerId, getOwnerAnalyticsGeneration(ownerId), window, topLinks);
+    }
+
+    Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit);
+
+    default Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit) {
+        return getOwnerTrendingLinks(ownerId, getOwnerAnalyticsGeneration(ownerId), window, limit);
+    }
+
+    void putOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks);
+
+    default void putOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) {
+        putOwnerTrendingLinks(ownerId, getOwnerAnalyticsGeneration(ownerId), window, limit, trendingLinks);
+    }
 
     void invalidateOwnerControlPlane(long ownerId);
 

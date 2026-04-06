@@ -207,10 +207,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Transactional(readOnly = true)
     public Link resolveLink(String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
-        return linkReadCache.getPublicRedirect(linkSlug.value())
+        long generation = linkReadCache.getPublicRedirectGeneration(linkSlug.value());
+        return linkReadCache.getPublicRedirect(linkSlug.value(), generation)
                 .or(() -> linkStore.findBySlug(linkSlug.value(), now())
                         .map(link -> {
-                            linkReadCache.putPublicRedirect(linkSlug.value(), link);
+                            linkReadCache.putPublicRedirect(linkSlug.value(), generation, link);
                             return link;
                         }))
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
@@ -232,10 +233,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Transactional(readOnly = true)
     public LinkDetails getLink(AuthenticatedOwner owner, String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
-        return linkReadCache.getOwnerLinkDetails(owner.id(), linkSlug.value())
+        long generation = linkReadCache.getOwnerControlPlaneGeneration(owner.id());
+        return linkReadCache.getOwnerLinkDetails(owner.id(), generation, linkSlug.value())
                 .or(() -> linkStore.findDetailsBySlug(linkSlug.value(), now(), owner.id())
                         .map(linkDetails -> {
-                            linkReadCache.putOwnerLinkDetails(owner.id(), linkSlug.value(), linkDetails);
+                            linkReadCache.putOwnerLinkDetails(owner.id(), generation, linkSlug.value(), linkDetails);
                             return linkDetails;
                         }))
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
@@ -244,10 +246,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional(readOnly = true)
     public List<LinkDetails> listRecentLinks(AuthenticatedOwner owner, int limit, String query, LinkLifecycleState state) {
-        return linkReadCache.getOwnerRecentLinks(owner.id(), limit, query, state)
+        long generation = linkReadCache.getOwnerControlPlaneGeneration(owner.id());
+        return linkReadCache.getOwnerRecentLinks(owner.id(), generation, limit, query, state)
                 .orElseGet(() -> {
                     List<LinkDetails> linkDetails = linkStore.findRecent(limit, now(), query, state, owner.id());
-                    linkReadCache.putOwnerRecentLinks(owner.id(), limit, query, state, linkDetails);
+                    linkReadCache.putOwnerRecentLinks(owner.id(), generation, limit, query, state, linkDetails);
                     return linkDetails;
                 });
     }
@@ -258,10 +261,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         if (query == null || query.isBlank()) {
             return List.of();
         }
-        return linkReadCache.getOwnerSuggestions(owner.id(), query, limit)
+        long generation = linkReadCache.getOwnerControlPlaneGeneration(owner.id());
+        return linkReadCache.getOwnerSuggestions(owner.id(), generation, query, limit)
                 .orElseGet(() -> {
                     List<LinkSuggestion> suggestions = linkStore.findSuggestions(limit, now(), query, owner.id());
-                    linkReadCache.putOwnerSuggestions(owner.id(), query, limit, suggestions);
+                    linkReadCache.putOwnerSuggestions(owner.id(), generation, query, limit, suggestions);
                     return suggestions;
                 });
     }
@@ -269,10 +273,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional(readOnly = true)
     public LinkDiscoveryPage searchLinks(AuthenticatedOwner owner, LinkDiscoveryQuery query) {
-        return linkReadCache.getOwnerDiscoveryPage(owner.id(), query)
+        long generation = linkReadCache.getOwnerControlPlaneGeneration(owner.id());
+        return linkReadCache.getOwnerDiscoveryPage(owner.id(), generation, query)
                 .orElseGet(() -> {
                     LinkDiscoveryPage discoveryPage = linkStore.searchDiscovery(now(), owner.id(), query);
-                    linkReadCache.putOwnerDiscoveryPage(owner.id(), query, discoveryPage);
+                    linkReadCache.putOwnerDiscoveryPage(owner.id(), generation, query, discoveryPage);
                     return discoveryPage;
                 });
     }
@@ -286,10 +291,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional(readOnly = true)
     public List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit) {
-        return linkReadCache.getOwnerRecentActivity(owner.id(), limit)
+        long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
+        return linkReadCache.getOwnerRecentActivity(owner.id(), generation, limit)
                 .orElseGet(() -> {
                     List<LinkActivityEvent> activityEvents = linkStore.findRecentActivity(limit, owner.id());
-                    linkReadCache.putOwnerRecentActivity(owner.id(), limit, activityEvents);
+                    linkReadCache.putOwnerRecentActivity(owner.id(), generation, limit, activityEvents);
                     return activityEvents;
                 });
     }
@@ -300,12 +306,18 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
         LocalDate startDate = now.toLocalDate().minusDays(6);
+        long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
 
-        return linkReadCache.getOwnerTrafficSummary(owner.id(), linkSlug.value())
-                .orElseGet(() -> buildTrafficSummary(owner.id(), linkSlug, now, startDate));
+        return linkReadCache.getOwnerTrafficSummary(owner.id(), generation, linkSlug.value())
+                .orElseGet(() -> buildTrafficSummary(owner.id(), generation, linkSlug, now, startDate));
     }
 
-    private LinkTrafficSummary buildTrafficSummary(long ownerId, LinkSlug linkSlug, OffsetDateTime now, LocalDate startDate) {
+    private LinkTrafficSummary buildTrafficSummary(
+            long ownerId,
+            long generation,
+            LinkSlug linkSlug,
+            OffsetDateTime now,
+            LocalDate startDate) {
         LinkTrafficSummaryTotals totals = linkStore.findTrafficSummaryTotals(
                         linkSlug.value(),
                         now.minusHours(24),
@@ -320,17 +332,18 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 totals.clicksLast24Hours(),
                 totals.clicksLast7Days(),
                 fillDailyBuckets(startDate, linkStore.findRecentDailyClickBuckets(linkSlug.value(), startDate, ownerId)));
-        linkReadCache.putOwnerTrafficSummary(ownerId, linkSlug.value(), summary);
+        linkReadCache.putOwnerTrafficSummary(ownerId, generation, linkSlug.value(), summary);
         return summary;
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<TopLinkTraffic> getTopLinks(AuthenticatedOwner owner, LinkTrafficWindow window) {
-        return linkReadCache.getOwnerTopLinks(owner.id(), window)
+        long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
+        return linkReadCache.getOwnerTopLinks(owner.id(), generation, window)
                 .orElseGet(() -> {
                     List<TopLinkTraffic> topLinks = linkStore.findTopLinks(window, now(), owner.id());
-                    linkReadCache.putOwnerTopLinks(owner.id(), window, topLinks);
+                    linkReadCache.putOwnerTopLinks(owner.id(), generation, window, topLinks);
                     return topLinks;
                 });
     }
@@ -338,10 +351,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional(readOnly = true)
     public List<TrendingLink> getTrendingLinks(AuthenticatedOwner owner, LinkTrafficWindow window, int limit) {
-        return linkReadCache.getOwnerTrendingLinks(owner.id(), window, limit)
+        long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
+        return linkReadCache.getOwnerTrendingLinks(owner.id(), generation, window, limit)
                 .orElseGet(() -> {
                     List<TrendingLink> trendingLinks = linkStore.findTrendingLinks(window, now(), limit, owner.id());
-                    linkReadCache.putOwnerTrendingLinks(owner.id(), window, limit, trendingLinks);
+                    linkReadCache.putOwnerTrendingLinks(owner.id(), generation, window, limit, trendingLinks);
                     return trendingLinks;
                 });
     }

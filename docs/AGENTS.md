@@ -1,83 +1,61 @@
-## Anti-drift rules
+@@ -0,0 +1,59 @@
+## Planning rule
 
-- Read `AGENTS.md` before any implementation work.
-- Start with the smallest high-signal inspection set:
-  - controller / API entrypoint
+- Read `AGENTS.md` first.
+- Before coding, create a short execution checklist for:
+  - implementation
+  - verification
+  - prerequisite recovery if needed
+- Work through it item by item.
+
+## Scope rule
+
+- Inspect the smallest high-signal set first:
+  - controller
   - application service
-  - store / repository
+  - store/repository
   - migrations
-  - focused tests for the ticket slice
-- Do not read the whole repo unless the first pass proves it is necessary.
-- Do not broaden the ticket casually or for nice-to-have work.
-- If the repo is missing prerequisite foundation required to deliver the requested ticket correctly, it is allowed to broaden scope **only by the smallest coherent amount needed** to complete the intended end-state.
-- When broadening scope for missing prerequisites:
-  - keep the implementation on the same architectural theme
-  - do not branch into unrelated features
-  - state clearly what prerequisite was missing
-  - include that prerequisite work in the same delivery
-- Do not stop at “blocked by missing prior ticket state” unless the repository is fundamentally unusable or the missing work would require a clearly separate major architectural slice.
-- Do not claim a behavior changed unless you inspected the code path that actually enforces it.
+  - focused tests
+- If prerequisite groundwork is missing, backfill only the smallest coherent amount needed and continue.
+- Only report `blocked` if the repo is fundamentally unusable or the missing work is clearly a separate architectural slice.
 
-## Dependency recovery rule
-
-- If the current workspace is behind the expected ticket sequence, do not stop by default.
-- Inspect the actual repo state and compare it to the requested ticket.
-- If the missing gap is prerequisite groundwork for the same requested outcome, backfill it and continue in one coherent slice.
-- Only report `blocked` when:
-  - the repo is fundamentally inconsistent or unusable, or
-  - the missing prerequisite would require a separate major architectural slice that would make the requested ticket misleading.
-- When recovery broadening happens, state exactly:
-  - what was missing
-  - what prerequisite was backfilled
-  - what requested outcome was completed
-
-## Build and cache discipline
+## Build and verification rule
 
 - Reuse `C:\Users\Ryzen-pc\.m2\repository` and `C:\Users\Ryzen-pc\Desktop\sys-dds\codex-scratch`.
-- Do **not** create project-local Maven repositories.
-- Do **not** clear `.m2`, `codex-scratch`, or large caches unless there is a specific diagnosed corruption or lock issue.
-- Prefer the smallest cleanup that fixes the blocker.
-- If public signatures, DTOs, repository contracts, migrations, or test wiring changed, remove stale module build output first and force a fresh targeted rebuild.
-- Never report compile/test results from stale build outputs.
-
-## Verification discipline
-
+- Do not create project-local Maven repositories.
+- Do not clear caches unless there is a specific diagnosed issue.
+- If signatures, DTOs, repository contracts, migrations, or test wiring changed, remove stale module build output and do a fresh targeted rebuild.
+- Never report results from stale outputs.
 - Prefer targeted compile/test commands first.
-- Do not jump to full-suite runs unless targeted verification passes or the task explicitly requires full-suite validation.
-- Report the exact commands run and the exact result.
-- Separate **real code failures** from **environment/tooling failures**.
-- If verification is blocked by environment issues, state the blocker precisely and say what you ruled out.
-- A ticket is **not complete** unless the required targeted verification actually passed.
+- Separate code failures from environment/tooling failures.
 
-## Repo hygiene
+## Repo hygiene rule
 
-- Do not modify `README`, `docs/tickets.md`, Postman, or other repo-wide docs unless the ticket explicitly requires it.
-- Do not create or commit temporary logs, downloaded tools, extracted archives, local caches, or generated outputs.
-- Update `.gitignore` only when a new generated artifact actually appeared and needs to be ignored.
-- Keep file churn tight. Avoid unrelated renames, formatting passes, or opportunistic cleanup.
+- Do not modify `README`, `docs/tickets.md`, Postman, or repo-wide docs unless explicitly required.
+- Do not commit temp logs, downloads, caches, extracted tools, or generated outputs.
+- Keep file churn tight.
 
-## Behavior preservation
+## Preservation rule
 
-- Preserve public redirect behavior unless the ticket explicitly changes it.
-- Preserve existing async/lifecycle/outbox/projection pipelines unless the ticket explicitly changes them.
-- When changing mutation boundaries, verify replay, idempotency, optimistic concurrency, and public read behavior still match current expectations.
-- Prefer small migrations that fit current schema and runtime wiring instead of speculative abstractions.
+- Preserve public redirect behavior unless explicitly changing it.
+- Preserve existing async/lifecycle/outbox/projection behavior unless explicitly changing it.
+- When changing mutation boundaries, verify replay, idempotency, optimistic concurrency, and public read behavior still hold.
+- Prefer small migrations over speculative abstractions.
 
-## Recovery steps for local verification issues
+## Local recovery rule
 
-- If Maven/Java verification fails because of Windows file-lock or cache access issues, try in this order:
+- If Maven/Java verification fails due to Windows lock/cache issues, try:
   1. fresh module build output cleanup
   2. forked compiler
   3. rerun the same targeted command
-- Do not switch repository layout, invent new cache locations, or do broad cleanup unless the blocker specifically requires it.
 
-## Ticket completion contract
+## Completion contract
 
-A ticket is not done until the return includes all of the following:
+A ticket is not done unless the return includes:
 - completion status: `complete`, `groundwork but incomplete`, or `blocked`
 - changed files
 - exact commands run
 - actual compile/test results
-- blockers clearly separated from code issues
-- short note on remaining risks
-- update to `AGENTS.md` only if a **new recurring executor mistake** was discovered
+- blockers separated from code issues
+- remaining risks
+  No newline at end of file

@@ -31,6 +31,10 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
             throw new IllegalStateException(
                     "link-platform.query.datasource.url must be set when any dedicated query datasource property is configured");
         }
+        if (queryProperties.getUrl() != null && queryProperties.getUsername() == null) {
+            throw new IllegalStateException(
+                    "link-platform.query.datasource.username must be set when link-platform.query.datasource.url is configured");
+        }
 
         boolean redirectEnabled = runtimeProperties.getMode() == RuntimeMode.ALL
                 || runtimeProperties.getMode() == RuntimeMode.REDIRECT;

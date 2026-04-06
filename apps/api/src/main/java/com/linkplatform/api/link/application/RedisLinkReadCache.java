@@ -51,98 +51,127 @@ public class RedisLinkReadCache implements LinkReadCache {
     }
 
     @Override
-    public Optional<Link> getPublicRedirect(String slug) {
-        return readValue("redirect", redirectKey(slug), Link.class);
+    public long getPublicRedirectGeneration(String slug) {
+        return getGeneration(redirectGenerationKey(slug));
     }
 
     @Override
-    public void putPublicRedirect(String slug, Link link) {
-        writeValue("redirect", redirectKey(slug), link, redirectTtl);
+    public Optional<Link> getPublicRedirect(String slug, long generation) {
+        return readValue("redirect", redirectKey(slug, generation), Link.class);
+    }
+
+    @Override
+    public void putPublicRedirect(String slug, long generation, Link link) {
+        writeValue("redirect", redirectKey(slug, generation), link, redirectTtl);
     }
 
     @Override
     public void invalidatePublicRedirect(String slug) {
-        delete("redirect", redirectKey(slug));
+        incrementGeneration("redirect_invalidation", redirectGenerationKey(slug));
     }
 
     @Override
-    public Optional<LinkDetails> getOwnerLinkDetails(long ownerId, String slug) {
-        return readValue("detail", ownerControlPlaneKey(ownerId, "detail", slug), LinkDetails.class);
+    public long getOwnerControlPlaneGeneration(long ownerId) {
+        return getGeneration(ownerControlPlaneGenerationKey(ownerId));
     }
 
     @Override
-    public void putOwnerLinkDetails(long ownerId, String slug, LinkDetails linkDetails) {
-        writeValue("detail", ownerControlPlaneKey(ownerId, "detail", slug), linkDetails, ownerReadTtl);
+    public Optional<LinkDetails> getOwnerLinkDetails(long ownerId, long generation, String slug) {
+        return readValue("detail", ownerControlPlaneKey(ownerId, generation, "detail", slug), LinkDetails.class);
     }
 
     @Override
-    public Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state) {
-        return readValue("list", ownerControlPlaneKey(ownerId, "list", sha256(limit + "|" + state.name() + "|" + normalize(query))), LINK_DETAILS_LIST);
+    public void putOwnerLinkDetails(long ownerId, long generation, String slug, LinkDetails linkDetails) {
+        writeValue("detail", ownerControlPlaneKey(ownerId, generation, "detail", slug), linkDetails, ownerReadTtl);
     }
 
     @Override
-    public void putOwnerRecentLinks(long ownerId, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) {
-        writeValue("list", ownerControlPlaneKey(ownerId, "list", sha256(limit + "|" + state.name() + "|" + normalize(query))), linkDetails, ownerReadTtl);
+    public Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state) {
+        return readValue(
+                "list",
+                ownerControlPlaneKey(ownerId, generation, "list", sha256(limit + "|" + state.name() + "|" + normalize(query))),
+                LINK_DETAILS_LIST);
     }
 
     @Override
-    public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, String query, int limit) {
-        return readValue("suggestions", ownerControlPlaneKey(ownerId, "suggestions", sha256(limit + "|" + normalize(query))), LINK_SUGGESTION_LIST);
+    public void putOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) {
+        writeValue(
+                "list",
+                ownerControlPlaneKey(ownerId, generation, "list", sha256(limit + "|" + state.name() + "|" + normalize(query))),
+                linkDetails,
+                ownerReadTtl);
     }
 
     @Override
-    public void putOwnerSuggestions(long ownerId, String query, int limit, List<LinkSuggestion> suggestions) {
-        writeValue("suggestions", ownerControlPlaneKey(ownerId, "suggestions", sha256(limit + "|" + normalize(query))), suggestions, ownerReadTtl);
+    public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, long generation, String query, int limit) {
+        return readValue(
+                "suggestions",
+                ownerControlPlaneKey(ownerId, generation, "suggestions", sha256(limit + "|" + normalize(query))),
+                LINK_SUGGESTION_LIST);
     }
 
     @Override
-    public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query) {
-        return readValue("discovery", ownerControlPlaneKey(ownerId, "discovery", discoveryHash(query)), DISCOVERY_PAGE);
+    public void putOwnerSuggestions(long ownerId, long generation, String query, int limit, List<LinkSuggestion> suggestions) {
+        writeValue(
+                "suggestions",
+                ownerControlPlaneKey(ownerId, generation, "suggestions", sha256(limit + "|" + normalize(query))),
+                suggestions,
+                ownerReadTtl);
     }
 
     @Override
-    public void putOwnerDiscoveryPage(long ownerId, LinkDiscoveryQuery query, LinkDiscoveryPage page) {
-        writeValue("discovery", ownerControlPlaneKey(ownerId, "discovery", discoveryHash(query)), page, ownerReadTtl);
+    public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query) {
+        return readValue("discovery", ownerControlPlaneKey(ownerId, generation, "discovery", discoveryHash(query)), DISCOVERY_PAGE);
     }
 
     @Override
-    public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, int limit) {
-        return readValue("activity", ownerAnalyticsKey(ownerId, "activity", String.valueOf(limit)), ACTIVITY_LIST);
+    public void putOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query, LinkDiscoveryPage page) {
+        writeValue("discovery", ownerControlPlaneKey(ownerId, generation, "discovery", discoveryHash(query)), page, ownerReadTtl);
     }
 
     @Override
-    public void putOwnerRecentActivity(long ownerId, int limit, List<LinkActivityEvent> activityEvents) {
-        writeValue("activity", ownerAnalyticsKey(ownerId, "activity", String.valueOf(limit)), activityEvents, analyticsTtl);
+    public long getOwnerAnalyticsGeneration(long ownerId) {
+        return getGeneration(ownerAnalyticsGenerationKey(ownerId));
     }
 
     @Override
-    public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, String slug) {
-        return readValue("traffic_summary", ownerAnalyticsKey(ownerId, "traffic_summary", slug), LinkTrafficSummary.class);
+    public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, long generation, int limit) {
+        return readValue("activity", ownerAnalyticsKey(ownerId, generation, "activity", String.valueOf(limit)), ACTIVITY_LIST);
     }
 
     @Override
-    public void putOwnerTrafficSummary(long ownerId, String slug, LinkTrafficSummary summary) {
-        writeValue("traffic_summary", ownerAnalyticsKey(ownerId, "traffic_summary", slug), summary, analyticsTtl);
+    public void putOwnerRecentActivity(long ownerId, long generation, int limit, List<LinkActivityEvent> activityEvents) {
+        writeValue("activity", ownerAnalyticsKey(ownerId, generation, "activity", String.valueOf(limit)), activityEvents, analyticsTtl);
     }
 
     @Override
-    public Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, LinkTrafficWindow window) {
-        return readValue("top_links", ownerAnalyticsKey(ownerId, "top_links", window.name()), TOP_LINK_LIST);
+    public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, long generation, String slug) {
+        return readValue("traffic_summary", ownerAnalyticsKey(ownerId, generation, "traffic_summary", slug), LinkTrafficSummary.class);
     }
 
     @Override
-    public void putOwnerTopLinks(long ownerId, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) {
-        writeValue("top_links", ownerAnalyticsKey(ownerId, "top_links", window.name()), topLinks, analyticsTtl);
+    public void putOwnerTrafficSummary(long ownerId, long generation, String slug, LinkTrafficSummary summary) {
+        writeValue("traffic_summary", ownerAnalyticsKey(ownerId, generation, "traffic_summary", slug), summary, analyticsTtl);
     }
 
     @Override
-    public Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit) {
-        return readValue("trending", ownerAnalyticsKey(ownerId, "trending", window.name() + "|" + limit), TRENDING_LIST);
+    public Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window) {
+        return readValue("top_links", ownerAnalyticsKey(ownerId, generation, "top_links", window.name()), TOP_LINK_LIST);
     }
 
     @Override
-    public void putOwnerTrendingLinks(long ownerId, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) {
-        writeValue("trending", ownerAnalyticsKey(ownerId, "trending", window.name() + "|" + limit), trendingLinks, analyticsTtl);
+    public void putOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) {
+        writeValue("top_links", ownerAnalyticsKey(ownerId, generation, "top_links", window.name()), topLinks, analyticsTtl);
+    }
+
+    @Override
+    public Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit) {
+        return readValue("trending", ownerAnalyticsKey(ownerId, generation, "trending", window.name() + "|" + limit), TRENDING_LIST);
+    }
+
+    @Override
+    public void putOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) {
+        writeValue("trending", ownerAnalyticsKey(ownerId, generation, "trending", window.name() + "|" + limit), trendingLinks, analyticsTtl);
     }
 
     @Override
@@ -209,13 +238,11 @@ public class RedisLinkReadCache implements LinkReadCache {
         }
     }
 
-    private String ownerControlPlaneKey(long ownerId, String area, String suffix) {
-        long generation = getGeneration(ownerControlPlaneGenerationKey(ownerId));
+    private String ownerControlPlaneKey(long ownerId, long generation, String area, String suffix) {
         return "link:owner:" + ownerId + ":cp:v" + generation + ":" + area + ":" + suffix;
     }
 
-    private String ownerAnalyticsKey(long ownerId, String area, String suffix) {
-        long generation = getGeneration(ownerAnalyticsGenerationKey(ownerId));
+    private String ownerAnalyticsKey(long ownerId, long generation, String area, String suffix) {
         return "link:owner:" + ownerId + ":analytics:v" + generation + ":" + area + ":" + suffix;
     }
 
@@ -227,8 +254,12 @@ public class RedisLinkReadCache implements LinkReadCache {
         return "link:owner:" + ownerId + ":analytics:gen";
     }
 
-    private String redirectKey(String slug) {
-        return "link:redirect:" + slug;
+    private String redirectKey(String slug, long generation) {
+        return "link:redirect:" + slug + ":v" + generation;
+    }
+
+    private String redirectGenerationKey(String slug) {
+        return "link:redirect:" + slug + ":gen";
     }
 
     private long getGeneration(String generationKey) {

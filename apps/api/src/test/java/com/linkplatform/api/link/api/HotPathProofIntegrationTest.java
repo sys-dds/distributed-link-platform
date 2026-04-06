@@ -166,6 +166,7 @@ class HotPathProofIntegrationTest {
                 .andExpect(jsonPath("$[0].currentWindowClicks").value(1));
         mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("created"))
                 .andExpect(jsonPath("$[0].slug").value("fresh-clicks"));
 
         redirectClickAnalyticsConsumer.consume(objectMapper.writeValueAsString(new RedirectClickAnalyticsEvent(
@@ -188,6 +189,7 @@ class HotPathProofIntegrationTest {
                 .andExpect(jsonPath("$[0].currentWindowClicks").value(2));
         mockMvc.perform(get("/api/v1/links/activity").header("X-API-Key", PRO_API_KEY))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("clicked"))
                 .andExpect(jsonPath("$[0].slug").value("fresh-clicks"));
     }
 
