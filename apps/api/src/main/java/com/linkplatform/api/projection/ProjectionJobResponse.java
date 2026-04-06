@@ -11,6 +11,8 @@ public record ProjectionJobResponse(
         OffsetDateTime completedAt,
         long processedCount,
         Long checkpointId,
+        Long driftCount,
+        Long repairCount,
         String errorSummary,
         String claimedBy,
         OffsetDateTime claimedUntil) {

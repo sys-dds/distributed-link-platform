@@ -5,6 +5,7 @@ import com.linkplatform.api.link.application.LinkMutationConflictException;
 import com.linkplatform.api.link.application.LinkNotFoundException;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
 import com.linkplatform.api.link.application.RedirectLookupUnavailableException;
+import com.linkplatform.api.link.application.RedirectRateLimitExceededException;
 import com.linkplatform.api.link.application.ReservedLinkSlugException;
 import com.linkplatform.api.link.application.SelfTargetLinkException;
 import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
@@ -79,6 +80,13 @@ public class LinkApiExceptionHandler {
     @ExceptionHandler(RedirectLookupUnavailableException.class)
     public ProblemDetail handleRedirectLookupUnavailable(RedirectLookupUnavailableException exception) {
         return problemDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
+    }
+
+    @ExceptionHandler(RedirectRateLimitExceededException.class)
+    public ProblemDetail handleRedirectRateLimitExceeded(RedirectRateLimitExceededException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.TOO_MANY_REQUESTS, exception.getMessage());
+        problemDetail.setProperty("category", "redirect-rate-limit");
+        return problemDetail;
     }
 
     @ExceptionHandler(ResponseStatusException.class)

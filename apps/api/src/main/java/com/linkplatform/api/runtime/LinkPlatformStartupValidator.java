@@ -50,6 +50,15 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
             throw new IllegalStateException(
                     "link-platform.cache.enabled must remain true when the redirect surface is enabled");
         }
+        if (!redirectEnabled && runtimeProperties.getRedirect().getRateLimit().isEnabled()) {
+            throw new IllegalStateException(
+                    "Redirect rate limiting requires a redirect-enabled runtime mode");
+        }
+        if (runtimeProperties.getRedirect().getRateLimit().isEnabled()
+                && runtimeProperties.getRedirect().getRateLimit().getWindowSeconds() <= 0) {
+            throw new IllegalStateException(
+                    "link-platform.runtime.redirect.rate-limit.window-seconds must be positive");
+        }
         if (!redirectEnabled && (failoverRegion != null || failoverBaseUrl != null)) {
             throw new IllegalStateException(
                     "Redirect failover configuration requires a redirect-enabled runtime mode");

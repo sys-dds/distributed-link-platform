@@ -234,6 +234,28 @@ public class LinkController {
                 idempotencyKey);
     }
 
+    @PostMapping("/{slug}/lifecycle")
+    public LinkResponse changeLifecycle(
+            @PathVariable String slug,
+            @RequestBody ChangeLinkLifecycleRequest request,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        return toUpdateResponse(linkApplicationService.changeLifecycle(
+                ownerAccessService.authorizeMutation(
+                        apiKey,
+                        authorizationHeader,
+                        httpServletRequest.getMethod(),
+                        httpServletRequest.getRequestURI(),
+                        httpServletRequest.getRemoteAddr()),
+                slug,
+                parseLifecycleAction(request.action()),
+                parseIfMatch(ifMatch),
+                idempotencyKey));
+    }
+
     private void validateLimit(int limit) {
         if (limit < 1 || limit > MAX_LIMIT) {
             throw new IllegalArgumentException("Limit must be between 1 and " + MAX_LIMIT);
@@ -257,7 +279,7 @@ public class LinkController {
             String normalized = normalizeToNull(state);
             return LinkLifecycleState.valueOf((normalized == null ? "active" : normalized).toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException("State must be one of: active, expired, all");
+            throw new IllegalArgumentException("State must be one of: active, suspended, archived, expired, all");
         }
     }
 
@@ -317,6 +339,19 @@ public class LinkController {
     private String normalizeToNull(String value) {
         String normalized = normalize(value);
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private LinkLifecycleState parseLifecycleAction(String action) {
+        String normalized = normalizeToNull(action);
+        if (normalized == null) {
+            throw new IllegalArgumentException("Lifecycle action is required");
+        }
+        return switch (normalized.toLowerCase(Locale.ROOT)) {
+            case "suspend" -> LinkLifecycleState.SUSPENDED;
+            case "resume", "unarchive" -> LinkLifecycleState.ACTIVE;
+            case "archive" -> LinkLifecycleState.ARCHIVED;
+            default -> throw new IllegalArgumentException("Lifecycle action must be one of: suspend, resume, archive, unarchive");
+        };
     }
 
     private LinkResponse toUpdateResponse(LinkMutationResult result) {

@@ -29,13 +29,14 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         } finally {
             long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
             log.info(
-                    "http_request method={} path={} status={} outcome={} duration_ms={} auth_mode={}",
+                    "http_request method={} path={} status={} outcome={} duration_ms={} auth_mode={} remote={}",
                     request.getMethod(),
                     request.getRequestURI(),
                     response.getStatus(),
                     requestOutcome(response.getStatus()),
                     durationMillis,
-                    authMode(request));
+                    authMode(request),
+                    anonymizedRemote(request.getRemoteAddr()));
         }
     }
 
@@ -69,5 +70,16 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
             return "redirect";
         }
         return "success";
+    }
+
+    private String anonymizedRemote(String remoteAddress) {
+        if (remoteAddress == null || remoteAddress.isBlank()) {
+            return "unknown";
+        }
+        int lastSeparator = Math.max(remoteAddress.lastIndexOf('.'), remoteAddress.lastIndexOf(':'));
+        if (lastSeparator <= 0) {
+            return "hashed";
+        }
+        return remoteAddress.substring(0, lastSeparator) + ".x";
     }
 }

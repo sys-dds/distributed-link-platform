@@ -29,6 +29,14 @@ public interface LinkStore {
 
     boolean deleteBySlug(String slug, long expectedVersion, long ownerId);
 
+    boolean transitionLifecycle(
+            String slug,
+            LinkLifecycleState currentState,
+            LinkLifecycleState nextState,
+            long expectedVersion,
+            long nextVersion,
+            long ownerId);
+
     long countActiveLinksByOwner(long ownerId);
 
     boolean recordClickIfAbsent(LinkClick linkClick);
@@ -36,6 +44,8 @@ public interface LinkStore {
     boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent);
 
     Optional<Long> findOwnerIdBySlug(String slug);
+
+    Optional<LinkLifecycleState> findLifecycleStateBySlug(String slug, long ownerId);
 
     List<Long> findOwnerIdsWithClickHistory();
 
@@ -54,6 +64,14 @@ public interface LinkStore {
     long applyClickHistoryChunkToDailyRollups(List<LinkClickHistoryRecord> clickHistoryChunk);
 
     void resetClickDailyRollups();
+
+    List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit);
+
+    java.util.Map<String, Long> findDailyRollupTotalsBySlugAndDay(java.util.Set<String> slugDayKeys);
+
+    void upsertClickRollupReconciliation(ClickRollupDriftRecord driftRecord);
+
+    void repairDailyRollupTotal(String slug, java.time.LocalDate bucketDay, long rawClickCount);
 
     Optional<Link> findBySlug(String slug, OffsetDateTime now);
 
@@ -78,6 +96,12 @@ public interface LinkStore {
             long ownerId);
 
     List<DailyClickBucket> findRecentDailyClickBuckets(String slug, java.time.LocalDate startDate, long ownerId);
+
+    List<DailyClickBucket> findRecentHourlyClickBuckets(String slug, OffsetDateTime since, long ownerId);
+
+    List<TopReferrer> findTopReferrers(String slug, int limit, long ownerId);
+
+    OwnerTrafficTotals findOwnerTrafficTotals(OffsetDateTime last1HourSince, OffsetDateTime last24HoursSince, java.time.LocalDate last7DaysStartDate, long ownerId);
 
     List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now, long ownerId);
 

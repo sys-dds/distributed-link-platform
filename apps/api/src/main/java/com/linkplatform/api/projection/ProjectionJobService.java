@@ -8,10 +8,15 @@ import com.linkplatform.api.link.application.LinkLifecycleHistoryRecord;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
 import com.linkplatform.api.link.application.LinkReadCache;
 import com.linkplatform.api.link.application.LinkStore;
+import com.linkplatform.api.owner.application.SecurityEventStore;
+import com.linkplatform.api.owner.application.SecurityEventType;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +30,7 @@ public class ProjectionJobService {
     private final LinkLifecycleOutboxStore linkLifecycleOutboxStore;
     private final LinkStore linkStore;
     private final LinkReadCache linkReadCache;
+    private final SecurityEventStore securityEventStore;
     private final Clock clock;
     private final int chunkSize;
 
@@ -33,11 +39,13 @@ public class ProjectionJobService {
             LinkLifecycleOutboxStore linkLifecycleOutboxStore,
             LinkStore linkStore,
             LinkReadCache linkReadCache,
+            SecurityEventStore securityEventStore,
             @Value("${link-platform.projection-jobs.chunk-size}") int chunkSize) {
         this.projectionJobStore = projectionJobStore;
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
         this.linkStore = linkStore;
         this.linkReadCache = linkReadCache;
+        this.securityEventStore = securityEventStore;
         this.clock = Clock.systemUTC();
         this.chunkSize = chunkSize;
     }
@@ -51,6 +59,7 @@ public class ProjectionJobService {
         ProjectionJobChunkResult result = switch (job.jobType()) {
             case ACTIVITY_FEED_REPLAY -> replayActivityFeedChunk(job);
             case CLICK_ROLLUP_REBUILD -> rebuildClickRollupsChunk(job);
+            case CLICK_ROLLUP_RECONCILE -> reconcileClickRollupsChunk(job);
             case LINK_CATALOG_REBUILD -> rebuildCatalogChunk(job);
             case LINK_DISCOVERY_REBUILD -> rebuildDiscoveryChunk(job);
         };
@@ -125,6 +134,63 @@ public class ProjectionJobService {
                 historyChunk.isEmpty() ? job.checkpointId() : Long.valueOf(historyChunk.getLast().outboxId()));
     }
 
+    private ProjectionJobChunkResult reconcileClickRollupsChunk(ProjectionJob job) {
+        long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
+        List<LinkClickHistoryRecord> fetchedChunk = linkStore.findClickHistoryChunkForReconciliationAfter(afterId, chunkSize + 1);
+        boolean completed = fetchedChunk.size() <= chunkSize;
+        List<LinkClickHistoryRecord> clickHistoryChunk = limitToChunk(fetchedChunk);
+        Map<String, Long> rawCounts = new HashMap<>();
+        Map<String, String> slugByKey = new HashMap<>();
+        Map<String, LocalDate> bucketDayByKey = new HashMap<>();
+        for (LinkClickHistoryRecord record : clickHistoryChunk) {
+            String key = record.slug() + "|" + record.rollupDate();
+            rawCounts.merge(key, 1L, Long::sum);
+            slugByKey.put(key, record.slug());
+            bucketDayByKey.put(key, record.rollupDate());
+        }
+        Map<String, Long> currentRollups = linkStore.findDailyRollupTotalsBySlugAndDay(rawCounts.keySet());
+        long driftCount = 0L;
+        long repairCount = 0L;
+        Set<Long> ownersToInvalidate = new HashSet<>();
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        for (Map.Entry<String, Long> entry : rawCounts.entrySet()) {
+            String key = entry.getKey();
+            String slug = slugByKey.get(key);
+            LocalDate bucketDay = bucketDayByKey.get(key);
+            long rawClickCount = entry.getValue();
+            long rollupClickCount = currentRollups.getOrDefault(key, 0L);
+            if (rawClickCount != rollupClickCount) {
+                Long ownerId = linkStore.findOwnerIdBySlug(slug).orElse(null);
+                driftCount++;
+                linkStore.upsertClickRollupReconciliation(new com.linkplatform.api.link.application.ClickRollupDriftRecord(
+                        ownerId,
+                        slug,
+                        bucketDay,
+                        rawClickCount,
+                        rollupClickCount,
+                        rawClickCount - rollupClickCount,
+                        now,
+                        now,
+                        com.linkplatform.api.link.application.ClickRollupRepairStatus.REPAIRED,
+                        "Rollup overwritten from raw click history"));
+                linkStore.repairDailyRollupTotal(slug, bucketDay, rawClickCount);
+                repairCount++;
+                if (ownerId != null) {
+                    ownersToInvalidate.add(ownerId);
+                }
+                recordSecurityEvent(SecurityEventType.CLICK_ROLLUP_DRIFT_DETECTED, ownerId, slug, now);
+                recordSecurityEvent(SecurityEventType.CLICK_ROLLUP_REPAIRED, ownerId, slug, now);
+            }
+        }
+        invalidateOwnerAnalyticsCaches(ownersToInvalidate);
+        return new ProjectionJobChunkResult(
+                completed,
+                clickHistoryChunk.size(),
+                clickHistoryChunk.isEmpty() ? job.checkpointId() : Long.valueOf(clickHistoryChunk.getLast().clickId()),
+                driftCount,
+                repairCount);
+    }
+
     private ProjectionJobChunkResult rebuildDiscoveryChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
             linkStore.resetDiscoveryProjection();
@@ -155,7 +221,7 @@ public class ProjectionJobService {
     private LinkActivityEvent toActivityEvent(LinkLifecycleEvent lifecycleEvent) {
         LinkActivityType type = switch (lifecycleEvent.eventType()) {
             case CREATED -> LinkActivityType.CREATED;
-            case UPDATED, EXPIRATION_UPDATED -> LinkActivityType.UPDATED;
+            case UPDATED, EXPIRATION_UPDATED, SUSPENDED, RESUMED, ARCHIVED, UNARCHIVED -> LinkActivityType.UPDATED;
             case DELETED -> LinkActivityType.DELETED;
         };
         return new LinkActivityEvent(
@@ -180,5 +246,17 @@ public class ProjectionJobService {
 
     private void invalidateOwnerAnalyticsCaches(Set<Long> ownerIds) {
         ownerIds.forEach(this::invalidateOwnerAnalyticsCaches);
+    }
+
+    private void recordSecurityEvent(SecurityEventType eventType, Long ownerId, String slug, OffsetDateTime occurredAt) {
+        securityEventStore.record(
+                eventType,
+                ownerId,
+                null,
+                "POST",
+                "/api/v1/projection-jobs",
+                null,
+                "Click rollup reconciliation for " + slug,
+                occurredAt);
     }
 }
