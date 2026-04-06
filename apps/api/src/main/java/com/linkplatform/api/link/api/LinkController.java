@@ -254,7 +254,8 @@ public class LinkController {
 
     private LinkLifecycleState parseState(String state) {
         try {
-            return LinkLifecycleState.valueOf(normalize(state).toUpperCase(Locale.ROOT));
+            String normalized = normalizeToNull(state);
+            return LinkLifecycleState.valueOf((normalized == null ? "active" : normalized).toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("State must be one of: active, expired, all");
         }
@@ -262,14 +263,16 @@ public class LinkController {
 
     private LinkDiscoveryLifecycleFilter parseDiscoveryLifecycle(String lifecycle) {
         try {
-            return LinkDiscoveryLifecycleFilter.valueOf(normalize(lifecycle).toUpperCase(Locale.ROOT));
+            String normalized = normalizeToNull(lifecycle);
+            return LinkDiscoveryLifecycleFilter.valueOf((normalized == null ? "active" : normalized).toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("Lifecycle must be one of: active, expired, deleted, all");
         }
     }
 
     private LinkDiscoveryExpirationFilter parseExpiration(String expiration) {
-        return switch (normalize(expiration).toLowerCase(Locale.ROOT)) {
+        String normalized = normalizeToNull(expiration);
+        return switch (normalized == null ? "any" : normalized.toLowerCase(Locale.ROOT)) {
             case "any" -> LinkDiscoveryExpirationFilter.ANY;
             case "scheduled" -> LinkDiscoveryExpirationFilter.SCHEDULED;
             case "none" -> LinkDiscoveryExpirationFilter.NONE;
@@ -279,7 +282,8 @@ public class LinkController {
     }
 
     private LinkDiscoverySort parseSort(String sort) {
-        return switch (normalize(sort).toLowerCase(Locale.ROOT)) {
+        String normalized = normalizeToNull(sort);
+        return switch (normalized == null ? "updated_desc" : normalized.toLowerCase(Locale.ROOT)) {
             case "updated_desc" -> LinkDiscoverySort.UPDATED_DESC;
             case "created_desc" -> LinkDiscoverySort.CREATED_DESC;
             case "slug_asc" -> LinkDiscoverySort.SLUG_ASC;

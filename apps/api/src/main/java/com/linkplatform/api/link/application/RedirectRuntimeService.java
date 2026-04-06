@@ -48,17 +48,60 @@ public class RedirectRuntimeService {
 
     public RedirectDecision resolve(String slug, String requestPath, String queryString, String remoteAddress) {
         String validatedSlug = new LinkSlug(slug).value();
-        long generation = linkReadCache.getPublicRedirectGeneration(validatedSlug);
-        if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            redirectRuntimeState.recordCacheBypass();
-            return resolveFromPrimary(validatedSlug, generation, requestPath, queryString, remoteAddress, false);
-        }
-        return linkReadCache.getPublicRedirect(validatedSlug, generation)
-                .map(link -> {
-                    redirectRuntimeState.recordCacheHit();
-                    return new RedirectDecision(link.originalUrl().value(), true, false);
-                })
-                .orElseGet(() -> resolveFromPrimary(validatedSlug, generation, requestPath, queryString, remoteAddress, true));
+        LinkReadCache.PublicRedirectLookupResult cacheLookup = linkReadCache.lookupPublicRedirect(validatedSlug);
+        return switch (cacheLookup.outcome()) {
+            case GENERATION_UNAVAILABLE -> resolveAfterCacheGenerationUnavailable(
+                    validatedSlug,
+                    requestPath,
+                    queryString,
+                    remoteAddress);
+            case DEGRADED -> resolveAfterCacheDegraded(
+                    validatedSlug,
+                    requestPath,
+                    queryString,
+                    remoteAddress);
+            case HIT -> resolveFromCacheHit(cacheLookup.link().orElseThrow(), validatedSlug);
+            case MISS -> resolveAfterCacheMiss(
+                    validatedSlug,
+                    cacheLookup.generation(),
+                    requestPath,
+                    queryString,
+                    remoteAddress);
+        };
+    }
+
+    private RedirectDecision resolveAfterCacheGenerationUnavailable(
+            String slug,
+            String requestPath,
+            String queryString,
+            String remoteAddress) {
+        redirectRuntimeState.recordCacheBypass();
+        return resolveFromPrimary(slug, LinkReadCache.CACHE_UNAVAILABLE_GENERATION, requestPath, queryString, remoteAddress, false);
+    }
+
+    private RedirectDecision resolveAfterCacheDegraded(
+            String slug,
+            String requestPath,
+            String queryString,
+            String remoteAddress) {
+        redirectRuntimeState.recordCacheDegraded("redirect-cache-degraded");
+        return resolveFromPrimary(slug, LinkReadCache.CACHE_UNAVAILABLE_GENERATION, requestPath, queryString, remoteAddress, false);
+    }
+
+    private RedirectDecision resolveFromCacheHit(Link link, String slug) {
+        redirectRuntimeState.recordCacheHit();
+        log.debug("redirect_runtime branch=cache-hit slug={}", slug);
+        return new RedirectDecision(link.originalUrl().value(), true, false);
+    }
+
+    private RedirectDecision resolveAfterCacheMiss(
+            String slug,
+            long generation,
+            String requestPath,
+            String queryString,
+            String remoteAddress) {
+        redirectRuntimeState.recordCacheMiss();
+        return resolveFromPrimary(slug, generation, requestPath, queryString, remoteAddress, true);
     }
 
     private RedirectDecision resolveFromPrimary(
@@ -92,7 +135,6 @@ public class RedirectRuntimeService {
             DataAccessException exception) {
         String reason = compactReason(exception);
         OffsetDateTime occurredAt = OffsetDateTime.now(clock);
-        redirectRuntimeState.recordPrimaryLookupFailure(reason);
         recordSecurityEvent(
                 SecurityEventType.REDIRECT_LOOKUP_FAILED,
                 requestPath,
@@ -103,6 +145,7 @@ public class RedirectRuntimeService {
         String failoverBaseUrl = runtimeProperties.getRedirect().getFailoverBaseUrl();
         String failoverRegion = runtimeProperties.getRedirect().getFailoverRegion();
         if (failoverBaseUrl != null && failoverRegion != null) {
+            redirectRuntimeState.recordPrimaryFailureFailover(reason);
             redirectRuntimeState.recordFailoverActivated();
             recordSecurityEvent(
                     SecurityEventType.REDIRECT_FAILOVER_ACTIVATED,
@@ -114,6 +157,7 @@ public class RedirectRuntimeService {
             return new RedirectDecision(buildFailoverLocation(slug, queryString), false, true);
         }
 
+        redirectRuntimeState.recordPrimaryFailureUnavailable(reason);
         redirectRuntimeState.recordUnavailable();
         recordSecurityEvent(
                 SecurityEventType.REDIRECT_UNAVAILABLE,

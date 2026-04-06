@@ -23,19 +23,19 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
                 .withDetail("required", required)
                 .withDetail("dedicatedConfigured", queryRoutingDataSource.isDedicatedConfigured())
                 .withDetail("usingPrimaryByDefault", queryRoutingDataSource.isUsingPrimaryByDefault())
-                .withDetail("fallbackPolicy", "primary-on-dedicated-query-failure");
+                .withDetail("fallbackPolicy", "primary-on-dedicated-query-failure")
+                .withDetail("route", queryRoutingDataSource.currentRoute())
+                .withDetail("fallbackActive", queryRoutingDataSource.isFallbackActive());
         if (!required) {
             builder.withDetail("reason", "query reads are not served in this runtime mode");
             return;
         }
         if (!queryRoutingDataSource.isDedicatedConfigured()) {
-            builder.withDetail("route", "primary");
             return;
         }
         boolean dedicatedAvailable = queryRoutingDataSource.isDedicatedAvailable();
-        builder.withDetail("route", dedicatedAvailable ? "dedicated" : "primary-fallback")
-                .withDetail("dedicatedAvailable", dedicatedAvailable);
-        if (!dedicatedAvailable && queryRoutingDataSource.getLastFallbackReason() != null) {
+        builder.withDetail("dedicatedAvailable", dedicatedAvailable);
+        if (queryRoutingDataSource.getLastFallbackReason() != null) {
             builder.withDetail("lastFallbackReason", queryRoutingDataSource.getLastFallbackReason());
             builder.withDetail("lastFallbackAt", queryRoutingDataSource.getLastFallbackAt());
         }

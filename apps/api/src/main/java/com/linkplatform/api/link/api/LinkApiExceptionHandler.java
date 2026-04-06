@@ -10,6 +10,7 @@ import com.linkplatform.api.link.application.SelfTargetLinkException;
 import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
 import com.linkplatform.api.owner.application.ControlPlaneRateLimitExceededException;
 import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
+import java.net.URI;
 import java.util.Locale;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
@@ -96,6 +97,7 @@ public class LinkApiExceptionHandler {
 
     private ProblemDetail problemDetail(HttpStatus status, String detail) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detail);
+        problemDetail.setType(URI.create("about:blank"));
         problemDetail.setTitle(status.getReasonPhrase());
         problemDetail.setProperty("code", status.name().toLowerCase(Locale.ROOT).replace('_', '-'));
         return problemDetail;

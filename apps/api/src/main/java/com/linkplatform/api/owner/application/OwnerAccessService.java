@@ -62,7 +62,7 @@ public class OwnerAccessService {
         String resolvedApiKey = resolveApiKey(apiKey, authorizationHeader, requestMethod, requestPath, remoteAddress);
         if (resolvedApiKey == null) {
             securityEventStore.record(
-                    SecurityEventType.MISSING_API_KEY,
+                    SecurityEventType.MISSING_CREDENTIAL,
                     null,
                     null,
                     requestMethod,
@@ -78,7 +78,7 @@ public class OwnerAccessService {
         AuthenticatedOwner owner = ownerStore.findByApiKeyHash(apiKeyHash).orElse(null);
         if (owner == null) {
             securityEventStore.record(
-                    SecurityEventType.INVALID_API_KEY,
+                    SecurityEventType.INVALID_CREDENTIAL,
                     null,
                     apiKeyHash,
                     requestMethod,
@@ -119,7 +119,7 @@ public class OwnerAccessService {
         String bearerToken = extractBearerToken(authorizationHeader, requestMethod, requestPath, remoteAddress);
         if (normalizedApiKey != null && bearerToken != null && !normalizedApiKey.equals(bearerToken)) {
             securityEventStore.record(
-                    SecurityEventType.CONFLICTING_API_CREDENTIALS,
+                    SecurityEventType.AMBIGUOUS_CREDENTIAL,
                     null,
                     null,
                     requestMethod,
@@ -144,7 +144,7 @@ public class OwnerAccessService {
         }
         if (!normalizedAuthorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
             securityEventStore.record(
-                    SecurityEventType.MALFORMED_AUTHORIZATION_HEADER,
+                    SecurityEventType.MALFORMED_BEARER_TOKEN,
                     null,
                     null,
                     requestMethod,
@@ -157,7 +157,7 @@ public class OwnerAccessService {
         String bearerToken = trimToNull(normalizedAuthorization.substring(7));
         if (bearerToken == null) {
             securityEventStore.record(
-                    SecurityEventType.MALFORMED_AUTHORIZATION_HEADER,
+                    SecurityEventType.MALFORMED_BEARER_TOKEN,
                     null,
                     null,
                     requestMethod,

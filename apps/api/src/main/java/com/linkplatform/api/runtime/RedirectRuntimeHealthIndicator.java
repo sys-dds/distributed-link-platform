@@ -23,33 +23,26 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
 
     @Override
     protected void doHealthCheck(Health.Builder builder) {
-        RuntimeMode mode = runtimeProperties.getMode();
-        boolean redirectEnabled = mode == RuntimeMode.ALL || mode == RuntimeMode.REDIRECT;
+        boolean redirectEnabled = runtimeProperties.redirectEnabled();
+        boolean failoverConfigured = runtimeProperties.getRedirect().failoverConfigured();
         builder.up()
                 .withDetail("required", redirectEnabled)
                 .withDetail("region", runtimeProperties.getRedirect().getRegion())
                 .withDetail("publicBaseUrl", publicBaseUrl)
                 .withDetail("cacheEnabled", cacheEnabled)
                 .withDetail("cacheRequired", redirectEnabled)
-                .withDetail("routeStrategy", "cache-first-primary-lookup")
-                .withDetail("cacheDegradationPolicy", "fallback-to-primary")
-                .withDetail("analyticsWriteMode", "durable-outbox")
-                .withDetail("lastDecision", redirectRuntimeState.getLastDecision());
+                .withDetail("failoverConfigured", failoverConfigured)
+                .withDetail("lastDecision", redirectRuntimeState.getLastDecision())
+                .withDetail("lastDegradedPath", redirectRuntimeState.getLastDegradedPath());
         if (!redirectEnabled) {
             builder.withDetail("reason", "redirect surface is disabled in this runtime mode");
             return;
         }
-        String failoverRegion = runtimeProperties.getRedirect().getFailoverRegion();
-        String failoverBaseUrl = runtimeProperties.getRedirect().getFailoverBaseUrl();
-        builder.withDetail("failoverConfigured", failoverRegion != null)
-                .withDetail("failoverMode", failoverRegion == null ? "single-region" : "regional-fallback")
-                .withDetail(
-                        "primaryFailurePolicy",
-                        failoverRegion == null ? "fail-closed-service-unavailable" : "regional-failover");
-        if (failoverRegion != null) {
-            builder.withDetail("failoverRegion", failoverRegion)
-                    .withDetail("failoverBaseUrl", failoverBaseUrl)
-                    .withDetail("failoverReady", cacheEnabled);
+        builder.withDetail("runtimeState", runtimeStateLabel(failoverConfigured))
+                .withDetail("primaryFailurePolicy", failoverConfigured ? "regional-failover" : "fail-closed-service-unavailable");
+        if (failoverConfigured) {
+            builder.withDetail("failoverRegion", runtimeProperties.getRedirect().getFailoverRegion())
+                    .withDetail("failoverBaseUrl", runtimeProperties.getRedirect().getFailoverBaseUrl());
         }
         if (redirectRuntimeState.getLastPrimaryLookupFailureAt() != null) {
             builder.withDetail("lastPrimaryLookupFailureAt", redirectRuntimeState.getLastPrimaryLookupFailureAt())
@@ -58,5 +51,19 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
         if (redirectRuntimeState.getLastFailoverAt() != null) {
             builder.withDetail("lastFailoverAt", redirectRuntimeState.getLastFailoverAt());
         }
+        if (redirectRuntimeState.getLastDegradedAt() != null) {
+            builder.withDetail("lastDegradedAt", redirectRuntimeState.getLastDegradedAt());
+        }
+    }
+
+    private String runtimeStateLabel(boolean failoverConfigured) {
+        if ("cache-bypass".equals(redirectRuntimeState.getLastDegradedPath())
+                || "cache-degraded".equals(redirectRuntimeState.getLastDegradedPath())) {
+            return "degraded-cache-primary-only";
+        }
+        if (failoverConfigured) {
+            return "failover-ready";
+        }
+        return "single-region";
     }
 }

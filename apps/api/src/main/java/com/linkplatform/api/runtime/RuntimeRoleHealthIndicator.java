@@ -16,9 +16,13 @@ public class RuntimeRoleHealthIndicator extends AbstractHealthIndicator {
         RuntimeMode mode = runtimeProperties.getMode();
         builder.up()
                 .withDetail("mode", mode.name())
-                .withDetail("httpEnabled", mode.webServerEnabled())
-                .withDetail("redirectEnabled", mode == RuntimeMode.ALL || mode == RuntimeMode.REDIRECT)
-                .withDetail("controlPlaneEnabled", mode == RuntimeMode.ALL || mode == RuntimeMode.CONTROL_PLANE_API)
-                .withDetail("workerEnabled", mode == RuntimeMode.ALL || mode == RuntimeMode.WORKER);
+                .withDetail("httpEnabled", runtimeProperties.httpEnabled())
+                .withDetail("shouldServeHttp", runtimeProperties.httpEnabled())
+                .withDetail("redirectEnabled", runtimeProperties.redirectEnabled())
+                .withDetail("controlPlaneEnabled", runtimeProperties.controlPlaneEnabled())
+                .withDetail("workerEnabled", runtimeProperties.workerEnabled())
+                .withDetail("redirectSurfaceExposed", runtimeProperties.redirectEnabled() && runtimeProperties.httpEnabled())
+                .withDetail("controlPlaneSurfaceExposed", runtimeProperties.controlPlaneEnabled() && runtimeProperties.httpEnabled())
+                .withDetail("workerSurfaceExposed", runtimeProperties.workerEnabled() && runtimeProperties.httpEnabled());
     }
 }

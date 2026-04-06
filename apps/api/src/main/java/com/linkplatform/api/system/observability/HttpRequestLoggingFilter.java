@@ -29,13 +29,13 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         } finally {
             long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
             log.info(
-                    "http_request method={} path={} status={} duration_ms={} auth_mode={} api_key={}",
+                    "http_request method={} path={} status={} outcome={} duration_ms={} auth_mode={}",
                     request.getMethod(),
                     request.getRequestURI(),
                     response.getStatus(),
+                    requestOutcome(response.getStatus()),
                     durationMillis,
-                    authMode(request),
-                    redactApiKey(request.getHeader(API_KEY_HEADER)));
+                    authMode(request));
         }
     }
 
@@ -58,7 +58,16 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         return value != null && !value.isBlank();
     }
 
-    private String redactApiKey(String apiKeyHeader) {
-        return apiKeyHeader == null || apiKeyHeader.isBlank() ? "absent" : "[REDACTED]";
+    private String requestOutcome(int status) {
+        if (status >= 500) {
+            return "server_error";
+        }
+        if (status >= 400) {
+            return "client_error";
+        }
+        if (status >= 300) {
+            return "redirect";
+        }
+        return "success";
     }
 }

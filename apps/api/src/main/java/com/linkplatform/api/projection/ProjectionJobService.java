@@ -73,7 +73,7 @@ public class ProjectionJobService {
             linkStore.recordActivityIfAbsent(lifecycleEvent.eventId(), toActivityEvent(lifecycleEvent));
             ownerIds.add(lifecycleEvent.ownerId());
         }
-        ownerIds.forEach(linkReadCache::invalidateOwnerAnalytics);
+        invalidateOwnerAnalyticsCaches(ownerIds);
         return new ProjectionJobChunkResult(
                 completed,
                 historyChunk.size(),
@@ -82,10 +82,7 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildClickRollupsChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
-            linkStore.findOwnerIdsWithClickHistory().forEach(ownerId -> {
-                linkReadCache.invalidateOwnerControlPlane(ownerId);
-                linkReadCache.invalidateOwnerAnalytics(ownerId);
-            });
+            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory()));
             linkStore.resetClickDailyRollups();
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
@@ -98,15 +95,9 @@ public class ProjectionJobService {
                 .distinct()
                 .map(linkStore::findOwnerIdBySlug)
                 .flatMap(Optional::stream)
-                .forEach(ownerId -> {
-                    linkReadCache.invalidateOwnerControlPlane(ownerId);
-                    linkReadCache.invalidateOwnerAnalytics(ownerId);
-                });
+                .forEach(this::invalidateOwnerAnalyticsCaches);
         if (completed) {
-            linkStore.findOwnerIdsWithClickHistory().forEach(ownerId -> {
-                linkReadCache.invalidateOwnerControlPlane(ownerId);
-                linkReadCache.invalidateOwnerAnalytics(ownerId);
-            });
+            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory()));
         }
         return new ProjectionJobChunkResult(
                 completed,
@@ -177,5 +168,17 @@ public class ProjectionJobService {
                 lifecycleEvent.hostname(),
                 lifecycleEvent.expiresAt(),
                 lifecycleEvent.occurredAt());
+    }
+
+    private void invalidateOwnerAnalyticsCaches(Long ownerId) {
+        if (ownerId == null) {
+            return;
+        }
+        linkReadCache.invalidateOwnerControlPlane(ownerId);
+        linkReadCache.invalidateOwnerAnalytics(ownerId);
+    }
+
+    private void invalidateOwnerAnalyticsCaches(Set<Long> ownerIds) {
+        ownerIds.forEach(this::invalidateOwnerAnalyticsCaches);
     }
 }

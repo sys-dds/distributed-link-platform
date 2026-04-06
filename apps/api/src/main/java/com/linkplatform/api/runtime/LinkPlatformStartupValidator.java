@@ -26,7 +26,8 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
     public void afterSingletonsInstantiated() {
         boolean partialQueryDatasourceConfig = queryProperties.getUrl() == null
                 && (queryProperties.getUsername() != null
-                        || (queryProperties.getPassword() != null && !queryProperties.getPassword().isBlank()));
+                        || queryProperties.getPassword() != null
+                        || queryProperties.getDriverClassName() != null);
         if (partialQueryDatasourceConfig) {
             throw new IllegalStateException(
                     "link-platform.query.datasource.url must be set when any dedicated query datasource property is configured");
@@ -36,8 +37,7 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
                     "link-platform.query.datasource.username must be set when link-platform.query.datasource.url is configured");
         }
 
-        boolean redirectEnabled = runtimeProperties.getMode() == RuntimeMode.ALL
-                || runtimeProperties.getMode() == RuntimeMode.REDIRECT;
+        boolean redirectEnabled = runtimeProperties.redirectEnabled();
         String region = runtimeProperties.getRedirect().getRegion();
         String failoverRegion = runtimeProperties.getRedirect().getFailoverRegion();
         String failoverBaseUrl = runtimeProperties.getRedirect().getFailoverBaseUrl();
@@ -77,6 +77,9 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
         if (queryDatasourceDisallowed) {
             throw new IllegalStateException(
                     "Dedicated query datasource configuration is only valid for all or control-plane-api runtime modes");
+        }
+        if (!runtimeProperties.controlPlaneEnabled() && runtimeProperties.getMode() == RuntimeMode.WORKER && runtimeProperties.httpEnabled()) {
+            throw new IllegalStateException("Worker-only runtime must not expose HTTP surfaces");
         }
     }
 

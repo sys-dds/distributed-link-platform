@@ -12,6 +12,16 @@ public interface LinkReadCache {
 
     Optional<Link> getPublicRedirect(String slug, long generation);
 
+    default PublicRedirectLookupResult lookupPublicRedirect(String slug) {
+        long generation = getPublicRedirectGeneration(slug);
+        if (!isCacheGenerationAvailable(generation)) {
+            return new PublicRedirectLookupResult(PublicRedirectLookupOutcome.GENERATION_UNAVAILABLE, generation, Optional.empty());
+        }
+        return getPublicRedirect(slug, generation)
+                .map(link -> new PublicRedirectLookupResult(PublicRedirectLookupOutcome.HIT, generation, Optional.of(link)))
+                .orElseGet(() -> new PublicRedirectLookupResult(PublicRedirectLookupOutcome.MISS, generation, Optional.empty()));
+    }
+
     default Optional<Link> getPublicRedirect(String slug) {
         return getPublicRedirect(slug, getPublicRedirectGeneration(slug));
     }
@@ -130,5 +140,18 @@ public interface LinkReadCache {
 
     default boolean isCacheGenerationAvailable(long generation) {
         return generation >= 0;
+    }
+
+    enum PublicRedirectLookupOutcome {
+        HIT,
+        MISS,
+        GENERATION_UNAVAILABLE,
+        DEGRADED
+    }
+
+    record PublicRedirectLookupResult(
+            PublicRedirectLookupOutcome outcome,
+            long generation,
+            Optional<Link> link) {
     }
 }

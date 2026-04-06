@@ -38,7 +38,18 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
                 requestMethod,
                 requestPath,
                 remoteAddress,
-                detailSummary,
+                shorten(detailSummary),
                 occurredAt);
+    }
+
+    private String shorten(String detailSummary) {
+        if (detailSummary == null) {
+            return "unspecified";
+        }
+        String trimmed = detailSummary.trim();
+        if (trimmed.isEmpty()) {
+            return "unspecified";
+        }
+        return trimmed.length() <= 255 ? trimmed : trimmed.substring(0, 255);
     }
 }

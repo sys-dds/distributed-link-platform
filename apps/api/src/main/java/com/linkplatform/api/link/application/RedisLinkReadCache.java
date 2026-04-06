@@ -56,6 +56,31 @@ public class RedisLinkReadCache implements LinkReadCache {
     }
 
     @Override
+    public PublicRedirectLookupResult lookupPublicRedirect(String slug) {
+        long generation = getPublicRedirectGeneration(slug);
+        if (!isCacheGenerationAvailable(generation)) {
+            return new PublicRedirectLookupResult(PublicRedirectLookupOutcome.GENERATION_UNAVAILABLE, generation, Optional.empty());
+        }
+        String key = redirectKey(slug, generation);
+        try {
+            String value = redisTemplate.opsForValue().get(key);
+            if (value == null) {
+                meterRegistry.counter("link.cache.miss", "area", "redirect").increment();
+                return new PublicRedirectLookupResult(PublicRedirectLookupOutcome.MISS, generation, Optional.empty());
+            }
+            Link link = objectMapper.readValue(value, Link.class);
+            meterRegistry.counter("link.cache.hit", "area", "redirect").increment();
+            return new PublicRedirectLookupResult(PublicRedirectLookupOutcome.HIT, generation, Optional.of(link));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException corruption) {
+            handlePayloadCorruption("redirect", key, corruption);
+            return new PublicRedirectLookupResult(PublicRedirectLookupOutcome.DEGRADED, generation, Optional.empty());
+        } catch (Exception exception) {
+            handleDegraded("read", "redirect", key, exception);
+            return new PublicRedirectLookupResult(PublicRedirectLookupOutcome.DEGRADED, generation, Optional.empty());
+        }
+    }
+
+    @Override
     public Optional<Link> getPublicRedirect(String slug, long generation) {
         if (!isCacheGenerationAvailable(generation)) {
             return Optional.empty();
@@ -248,8 +273,11 @@ public class RedisLinkReadCache implements LinkReadCache {
             T parsed = objectMapper.readValue(value, type);
             meterRegistry.counter("link.cache.hit", "area", area).increment();
             return Optional.of(parsed);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException corruption) {
+            handlePayloadCorruption(area, key, corruption);
+            return Optional.empty();
         } catch (Exception exception) {
-            handleReadFailure(area, key, exception);
+            handleDegraded("read", area, key, exception);
             return Optional.empty();
         }
     }
@@ -264,8 +292,11 @@ public class RedisLinkReadCache implements LinkReadCache {
             T parsed = objectMapper.readValue(value, typeReference);
             meterRegistry.counter("link.cache.hit", "area", area).increment();
             return Optional.of(parsed);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException corruption) {
+            handlePayloadCorruption(area, key, corruption);
+            return Optional.empty();
         } catch (Exception exception) {
-            handleReadFailure(area, key, exception);
+            handleDegraded("read", area, key, exception);
             return Optional.empty();
         }
     }
@@ -274,7 +305,7 @@ public class RedisLinkReadCache implements LinkReadCache {
         try {
             redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(value), ttl);
         } catch (Exception exception) {
-            handleFailure("write", area, exception);
+            handleDegraded("write", area, key, exception);
         }
     }
 
@@ -282,7 +313,7 @@ public class RedisLinkReadCache implements LinkReadCache {
         try {
             redisTemplate.delete(key);
         } catch (Exception exception) {
-            handleFailure("invalidate", area, exception);
+            handleDegraded("delete", area, key, exception);
         }
     }
 
@@ -290,7 +321,7 @@ public class RedisLinkReadCache implements LinkReadCache {
         try {
             redisTemplate.opsForValue().increment(generationKey);
         } catch (Exception exception) {
-            handleFailure("invalidate", area, exception);
+            handleDegraded("generation", area, generationKey, exception);
         }
     }
 
@@ -327,25 +358,30 @@ public class RedisLinkReadCache implements LinkReadCache {
             try {
                 return Long.parseLong(stored);
             } catch (NumberFormatException invalidGeneration) {
-                // Corrupted generation data should not permanently force cache bypass.
-                delete("generation", generationKey);
-                meterRegistry.counter("link.cache.miss", "area", "generation").increment();
-                return 0L;
+                handleGenerationCorruption(generationKey, invalidGeneration);
+                return CACHE_UNAVAILABLE_GENERATION;
             }
         } catch (Exception exception) {
-            handleFailure("read_generation", "generation", exception);
+            handleDegraded("generation", "generation", generationKey, exception);
             return CACHE_UNAVAILABLE_GENERATION;
         }
     }
 
-    private void handleReadFailure(String area, String key, Exception exception) {
-        handleFailure("read", area, exception);
+    private void handleGenerationCorruption(String generationKey, Exception exception) {
+        meterRegistry.counter("link.cache.payload.corruption", "area", "generation").increment();
+        log.warn("link_cache_payload_corruption area=generation key={} reason={}", generationKey, exception.getClass().getSimpleName());
+        delete("generation", generationKey);
+    }
+
+    private void handlePayloadCorruption(String area, String key, Exception exception) {
+        meterRegistry.counter("link.cache.payload.corruption", "area", area).increment();
+        log.warn("link_cache_payload_corruption area={} key={} reason={}", area, key, exception.getClass().getSimpleName());
         delete(area, key);
     }
 
-    private void handleFailure(String operation, String area, Exception exception) {
+    private void handleDegraded(String operation, String area, String key, Exception exception) {
         meterRegistry.counter("link.cache.degraded", "area", area, "operation", operation).increment();
-        log.warn("link_cache_{} area={} reason={}", operation, area, exception.getClass().getSimpleName());
+        log.warn("link_cache_degraded operation={} area={} key={} reason={}", operation, area, key, exception.getClass().getSimpleName());
     }
 
     private String normalize(String value) {
