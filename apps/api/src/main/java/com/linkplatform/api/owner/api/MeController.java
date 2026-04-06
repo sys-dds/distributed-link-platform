@@ -6,6 +6,7 @@ import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Locale;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,7 +39,7 @@ public class MeController {
         return new MeResponse(
                 owner.ownerKey(),
                 owner.displayName(),
-                owner.plan().name(),
+                owner.plan().name().toLowerCase(Locale.ROOT),
                 linkApplicationService.countActiveLinks(owner),
                 owner.plan().activeLinkLimit());
     }

@@ -87,7 +87,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         }
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(link.slug().value(), owner.id())
                 .orElseThrow(() -> new LinkNotFoundException(link.slug().value()));
-        linkLifecycleOutboxStore.saveLinkLifecycleEvent(new LinkLifecycleEvent(
+        LinkLifecycleEvent lifecycleEvent = new LinkLifecycleEvent(
                 UUID.randomUUID().toString(),
                 LinkLifecycleEventType.CREATED,
                 owner.id(),
@@ -98,7 +98,9 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 storedDetails.hostname(),
                 storedDetails.expiresAt(),
                 storedDetails.version(),
-                now));
+                now);
+        linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
+        applyLifecycleReadModels(lifecycleEvent);
         LinkMutationResult result = LinkMutationResult.fromDetails(storedDetails);
         saveIdempotentResult(owner.id(), idempotencyKey, CREATE_OPERATION, requestHash, result, now);
         invalidateWriteCaches(owner.id(), link.slug().value());
@@ -153,11 +155,13 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
-        linkLifecycleOutboxStore.saveLinkLifecycleEvent(toLifecycleEvent(
+        LinkLifecycleEvent lifecycleEvent = toLifecycleEvent(
                 determineUpdateEventType(beforeUpdate, storedDetails),
                 owner.id(),
                 storedDetails,
-                now));
+                now);
+        linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
+        applyLifecycleReadModels(lifecycleEvent);
         LinkDetails visibleDetails = linkStore.findDetailsBySlug(linkSlug.value(), now, owner.id())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         LinkMutationResult result = LinkMutationResult.fromDetails(visibleDetails);
@@ -193,11 +197,13 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 storedDetails.hostname(),
                 storedDetails.version() + 1,
                 true);
-        linkLifecycleOutboxStore.saveLinkLifecycleEvent(toLifecycleEvent(
+        LinkLifecycleEvent lifecycleEvent = toLifecycleEvent(
                 LinkLifecycleEventType.DELETED,
                 owner.id(),
                 result,
-                now));
+                now);
+        linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
+        applyLifecycleReadModels(lifecycleEvent);
         saveIdempotentResult(owner.id(), idempotencyKey, DELETE_OPERATION, requestHash, result, now);
         invalidateWriteCaches(owner.id(), linkSlug.value());
         return result;
@@ -601,5 +607,30 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private void invalidateWriteCaches(long ownerId, String slug) {
         linkReadCache.invalidatePublicRedirect(slug);
         linkReadCache.invalidateOwnerControlPlane(ownerId);
+        linkReadCache.invalidateOwnerAnalytics(ownerId);
+    }
+
+    private void applyLifecycleReadModels(LinkLifecycleEvent lifecycleEvent) {
+        linkStore.recordActivityIfAbsent(lifecycleEvent.eventId(), toActivityEvent(lifecycleEvent));
+        linkStore.projectCatalogEvent(lifecycleEvent);
+        linkStore.projectDiscoveryEvent(lifecycleEvent);
+    }
+
+    private LinkActivityEvent toActivityEvent(LinkLifecycleEvent lifecycleEvent) {
+        LinkActivityType activityType = switch (lifecycleEvent.eventType()) {
+            case CREATED -> LinkActivityType.CREATED;
+            case UPDATED, EXPIRATION_UPDATED -> LinkActivityType.UPDATED;
+            case DELETED -> LinkActivityType.DELETED;
+        };
+        return new LinkActivityEvent(
+                lifecycleEvent.ownerId(),
+                activityType,
+                lifecycleEvent.slug(),
+                lifecycleEvent.originalUrl(),
+                lifecycleEvent.title(),
+                lifecycleEvent.tags(),
+                lifecycleEvent.hostname(),
+                lifecycleEvent.expiresAt(),
+                lifecycleEvent.occurredAt());
     }
 }

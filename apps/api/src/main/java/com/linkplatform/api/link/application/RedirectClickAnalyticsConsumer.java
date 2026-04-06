@@ -61,6 +61,7 @@ public class RedirectClickAnalyticsConsumer {
                                                 linkDetails.hostname(),
                                                 linkDetails.expiresAt(),
                                                 redirectClickAnalyticsEvent.clickedAt())));
+                        linkReadCache.invalidateOwnerControlPlane(ownerId);
                         linkReadCache.invalidateOwnerAnalytics(ownerId);
                     });
             processedCounter.increment();

@@ -425,7 +425,7 @@ public class PostgresLinkStore implements LinkStore {
 
         sql.append("""
                 
-                ORDER BY created_at DESC, slug ASC
+                ORDER BY updated_at DESC, created_at DESC, slug ASC
                 LIMIT ?
                 """);
         parameters.add(limit);
