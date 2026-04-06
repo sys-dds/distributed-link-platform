@@ -7,6 +7,25 @@ import java.util.List;
 
 public interface LinkApplicationService {
 
+    record AnalyticsSummaryView(
+            LinkTrafficSummary summary,
+            OffsetDateTime windowStart,
+            OffsetDateTime windowEnd,
+            Long windowClicks,
+            AnalyticsFreshness freshness,
+            AnalyticsComparison comparison) {
+    }
+
+    record LinkTrafficSeriesView(
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            String granularity,
+            List<LinkTrafficSeriesBucket> buckets,
+            AnalyticsFreshness freshness,
+            AnalyticsComparison comparison) {
+    }
+
     LinkMutationResult createLink(AuthenticatedOwner owner, CreateLinkCommand command, String idempotencyKey);
 
     LinkMutationResult updateLink(
@@ -53,11 +72,41 @@ public interface LinkApplicationService {
 
     List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit);
 
+    List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit, String tag, String lifecycle);
+
     LinkTrafficSummary getTrafficSummary(AuthenticatedOwner owner, String slug);
+
+    AnalyticsSummaryView getTrafficSummary(AuthenticatedOwner owner, String slug, AnalyticsRange range);
+
+    LinkTrafficSeriesView getTrafficSeries(
+            AuthenticatedOwner owner,
+            String slug,
+            AnalyticsRange range,
+            String granularity);
 
     List<TopLinkTraffic> getTopLinks(AuthenticatedOwner owner, LinkTrafficWindow window);
 
+    List<TopLinkTraffic> getTopLinks(
+            AuthenticatedOwner owner,
+            LinkTrafficWindow window,
+            AnalyticsRange range,
+            String tag,
+            String lifecycle,
+            int limit);
+
     List<TrendingLink> getTrendingLinks(AuthenticatedOwner owner, LinkTrafficWindow window, int limit);
+
+    List<TrendingLink> getTrendingLinks(
+            AuthenticatedOwner owner,
+            LinkTrafficWindow window,
+            AnalyticsRange range,
+            String tag,
+            String lifecycle,
+            int limit);
+
+    AnalyticsFreshness getAnalyticsFreshness(AuthenticatedOwner owner);
+
+    AnalyticsFreshness getAnalyticsFreshness(AuthenticatedOwner owner, String slug);
 
     record BulkLinkActionResult(
             String slug,

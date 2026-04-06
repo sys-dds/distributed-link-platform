@@ -799,6 +799,43 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public List<LinkActivityEvent> findRecentActivity(
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf,
+            long ownerId) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT a.owner_id, a.event_type, a.slug, a.original_url, a.title, a.tags_json, a.hostname, a.expires_at, a.occurred_at
+                FROM link_activity_events a
+                JOIN link_catalog_projection p ON p.slug = a.slug AND p.owner_id = a.owner_id
+                WHERE a.owner_id = ?
+                """);
+        List<Object> parameters = new ArrayList<>(List.of(ownerId));
+        appendCatalogTagClause(sql, parameters, tag);
+        appendCatalogLifecycleClause(sql, parameters, asOf, lifecycle);
+        sql.append("""
+                
+                ORDER BY a.occurred_at DESC, a.id DESC
+                LIMIT ?
+                """);
+        parameters.add(limit);
+        return queryJdbcTemplate.query(
+                sql.toString(),
+                (resultSet, rowNum) -> new LinkActivityEvent(
+                        resultSet.getLong("owner_id"),
+                        LinkActivityType.valueOf(resultSet.getString("event_type")),
+                        resultSet.getString("slug"),
+                        resultSet.getString("original_url"),
+                        resultSet.getString("title"),
+                        deserializeTags(resultSet.getString("tags_json")),
+                        resultSet.getString("hostname"),
+                        resultSet.getObject("expires_at", OffsetDateTime.class),
+                        resultSet.getObject("occurred_at", OffsetDateTime.class)),
+                parameters.toArray());
+    }
+
+    @Override
     public Optional<LinkTrafficSummaryTotals> findTrafficSummaryTotals(
             String slug,
             OffsetDateTime last24HoursSince,
@@ -860,17 +897,238 @@ public class PostgresLinkStore implements LinkStore {
     @Override
     public List<TopLinkTraffic> findTopLinks(LinkTrafficWindow window, OffsetDateTime now, long ownerId) {
         return switch (window) {
-            case LAST_24_HOURS -> findTopLinksLast24Hours(now.minusHours(24), ownerId);
-            case LAST_7_DAYS -> findTopLinksLast7Days(now.toLocalDate().minusDays(6), ownerId);
+            case LAST_24_HOURS -> findTopLinksLast24Hours(now.minusHours(24), ownerId, Integer.MAX_VALUE, null, null, now);
+            case LAST_7_DAYS -> findTopLinksLast7Days(now.toLocalDate().minusDays(6), ownerId, Integer.MAX_VALUE, null, null, now);
         };
     }
 
     @Override
     public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId) {
         return switch (window) {
-            case LAST_24_HOURS -> findTrendingLinksLast24Hours(now, limit, ownerId);
-            case LAST_7_DAYS -> findTrendingLinksLast7Days(now.toLocalDate(), limit, ownerId);
+            case LAST_24_HOURS -> findTrendingLinksLast24Hours(now, limit, ownerId, null, null, now);
+            case LAST_7_DAYS -> findTrendingLinksLast7Days(now.toLocalDate(), limit, ownerId, null, null, now);
         };
+    }
+
+    @Override
+    public List<TopLinkTraffic> findTopLinks(
+            LinkTrafficWindow window,
+            OffsetDateTime now,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            long ownerId) {
+        return switch (window) {
+            case LAST_24_HOURS -> findTopLinksLast24Hours(now.minusHours(24), ownerId, limit, tag, lifecycle, now);
+            case LAST_7_DAYS -> findTopLinksLast7Days(now.toLocalDate().minusDays(6), ownerId, limit, tag, lifecycle, now);
+        };
+    }
+
+    @Override
+    public List<TopLinkTraffic> findTopLinks(
+            OffsetDateTime from,
+            OffsetDateTime to,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf,
+            long ownerId) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT p.slug, p.original_url, COUNT(*) AS click_total
+                FROM link_catalog_projection p
+                JOIN link_clicks c ON c.slug = p.slug
+                WHERE p.owner_id = ?
+                  AND c.clicked_at >= ?
+                  AND c.clicked_at < ?
+                """);
+        List<Object> parameters = new ArrayList<>(List.of(ownerId, from, to));
+        appendCatalogTagClause(sql, parameters, tag);
+        appendCatalogLifecycleClause(sql, parameters, asOf, lifecycle);
+        sql.append("""
+                
+                GROUP BY p.slug, p.original_url
+                ORDER BY click_total DESC, p.slug ASC
+                LIMIT ?
+                """);
+        parameters.add(limit);
+        return queryJdbcTemplate.query(
+                sql.toString(),
+                (resultSet, rowNum) -> new TopLinkTraffic(
+                        resultSet.getString("slug"),
+                        resultSet.getString("original_url"),
+                        resultSet.getLong("click_total")),
+                parameters.toArray());
+    }
+
+    @Override
+    public List<TrendingLink> findTrendingLinks(
+            LinkTrafficWindow window,
+            OffsetDateTime now,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            long ownerId) {
+        return switch (window) {
+            case LAST_24_HOURS -> findTrendingLinksLast24Hours(now, limit, ownerId, tag, lifecycle, now);
+            case LAST_7_DAYS -> findTrendingLinksLast7Days(now.toLocalDate(), limit, ownerId, tag, lifecycle, now);
+        };
+    }
+
+    @Override
+    public List<TrendingLink> findTrendingLinks(
+            OffsetDateTime from,
+            OffsetDateTime to,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf,
+            long ownerId) {
+        OffsetDateTime previousStart = from.minus(java.time.Duration.between(from, to));
+        return queryRangeTrendingLinks(
+                """
+                SELECT p.slug,
+                       p.original_url,
+                       COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) AS click_growth,
+                       COALESCE(current_window.click_total, 0) AS current_window_clicks,
+                       COALESCE(previous_window.click_total, 0) AS previous_window_clicks
+                FROM link_catalog_projection p
+                LEFT JOIN (
+                    SELECT c.slug, COUNT(*) AS click_total
+                    FROM link_clicks c
+                    JOIN link_catalog_projection p_current ON p_current.slug = c.slug
+                    WHERE p_current.owner_id = ?
+                      AND c.clicked_at >= ?
+                      AND c.clicked_at < ?
+                    GROUP BY c.slug
+                ) current_window ON current_window.slug = p.slug
+                LEFT JOIN (
+                    SELECT c.slug, COUNT(*) AS click_total
+                    FROM link_clicks c
+                    JOIN link_catalog_projection p_previous ON p_previous.slug = c.slug
+                    WHERE p_previous.owner_id = ?
+                      AND c.clicked_at >= ?
+                      AND c.clicked_at < ?
+                    GROUP BY c.slug
+                ) previous_window ON previous_window.slug = p.slug
+                WHERE p.owner_id = ?
+                """,
+                List.of(ownerId, from, to, ownerId, previousStart, from, ownerId),
+                limit,
+                tag,
+                lifecycle,
+                asOf);
+    }
+
+    @Override
+    public long countClicksForSlugInRange(String slug, OffsetDateTime from, OffsetDateTime to, long ownerId) {
+        Long clickCount = queryJdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM link_clicks c
+                JOIN links l ON l.slug = c.slug
+                WHERE c.slug = ?
+                  AND l.owner_id = ?
+                  AND c.clicked_at >= ?
+                  AND c.clicked_at < ?
+                """,
+                Long.class,
+                slug,
+                ownerId,
+                from,
+                to);
+        return clickCount == null ? 0L : clickCount;
+    }
+
+    @Override
+    public List<LinkTrafficSeriesBucket> findTrafficSeries(
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            String granularity,
+            long ownerId) {
+        String bucketExpression = switch (granularity) {
+            case "hour" -> "DATE_TRUNC('hour', c.clicked_at)";
+            case "day" -> "DATE_TRUNC('day', c.clicked_at)";
+            default -> throw new IllegalArgumentException("granularity must be one of: hour, day");
+        };
+        String sql = """
+                SELECT %s AS bucket_start, COUNT(*) AS click_total
+                FROM link_clicks c
+                JOIN links l ON l.slug = c.slug
+                WHERE c.slug = ?
+                  AND l.owner_id = ?
+                  AND c.clicked_at >= ?
+                  AND c.clicked_at < ?
+                GROUP BY %s
+                ORDER BY bucket_start ASC
+                """.formatted(bucketExpression, bucketExpression);
+        return queryJdbcTemplate.query(
+                sql,
+                (resultSet, rowNum) -> {
+                    OffsetDateTime bucketStart = resultSet.getObject("bucket_start", OffsetDateTime.class);
+                    return new LinkTrafficSeriesBucket(
+                            bucketStart,
+                            "hour".equals(granularity) ? bucketStart.plusHours(1) : bucketStart.plusDays(1),
+                            resultSet.getLong("click_total"));
+                },
+                slug,
+                ownerId,
+                from,
+                to);
+    }
+
+    @Override
+    public Optional<OffsetDateTime> findLatestMaterializedClickAt(long ownerId) {
+        return Optional.ofNullable(queryJdbcTemplate.queryForObject(
+                """
+                SELECT MAX(c.clicked_at)
+                FROM link_clicks c
+                JOIN links l ON l.slug = c.slug
+                WHERE l.owner_id = ?
+                """,
+                OffsetDateTime.class,
+                ownerId));
+    }
+
+    @Override
+    public Optional<OffsetDateTime> findLatestMaterializedClickAt(String slug, long ownerId) {
+        return Optional.ofNullable(queryJdbcTemplate.queryForObject(
+                """
+                SELECT MAX(c.clicked_at)
+                FROM link_clicks c
+                JOIN links l ON l.slug = c.slug
+                WHERE l.owner_id = ?
+                  AND c.slug = ?
+                """,
+                OffsetDateTime.class,
+                ownerId,
+                slug));
+    }
+
+    @Override
+    public Optional<OffsetDateTime> findLatestMaterializedActivityAt(long ownerId) {
+        return Optional.ofNullable(queryJdbcTemplate.queryForObject(
+                """
+                SELECT MAX(occurred_at)
+                FROM link_activity_events
+                WHERE owner_id = ?
+                """,
+                OffsetDateTime.class,
+                ownerId));
+    }
+
+    @Override
+    public Optional<OffsetDateTime> findLatestMaterializedActivityAt(String slug, long ownerId) {
+        return Optional.ofNullable(queryJdbcTemplate.queryForObject(
+                """
+                SELECT MAX(occurred_at)
+                FROM link_activity_events
+                WHERE owner_id = ?
+                  AND slug = ?
+                """,
+                OffsetDateTime.class,
+                ownerId,
+                slug));
     }
 
     private void appendLifecycleClause(
@@ -931,6 +1189,61 @@ public class PostgresLinkStore implements LinkStore {
         parameters.add(pattern);
         parameters.add(pattern);
         parameters.add(pattern);
+    }
+
+    private void appendCatalogTagClause(StringBuilder sql, List<Object> parameters, String tag) {
+        if (tag == null || tag.isBlank()) {
+            return;
+        }
+        sql.append("""
+                
+                  AND LOWER(COALESCE(p.tags_json, '')) LIKE ?
+                """);
+        parameters.add("%\"" + tag + "\"%");
+    }
+
+    private void appendCatalogLifecycleClause(
+            StringBuilder sql,
+            List<Object> parameters,
+            OffsetDateTime asOf,
+            LinkLifecycleState lifecycle) {
+        if (lifecycle == null || lifecycle == LinkLifecycleState.ALL) {
+            return;
+        }
+        sql.append("""
+                
+                  AND p.deleted_at IS NULL
+                """);
+        switch (lifecycle) {
+            case ACTIVE -> {
+                sql.append("""
+                        
+                          AND p.lifecycle_state = 'ACTIVE'
+                          AND (p.expires_at IS NULL OR p.expires_at > ?)
+                        """);
+                parameters.add(asOf);
+            }
+            case SUSPENDED -> sql.append("""
+                    
+                      AND p.lifecycle_state = 'SUSPENDED'
+                    """);
+            case ARCHIVED -> sql.append("""
+                    
+                      AND p.lifecycle_state = 'ARCHIVED'
+                    """);
+            case EXPIRED -> {
+                sql.append("""
+                        
+                          AND p.lifecycle_state = 'ACTIVE'
+                          AND p.expires_at IS NOT NULL
+                          AND p.expires_at <= ?
+                        """);
+                parameters.add(asOf);
+            }
+            case ALL -> {
+                // no-op
+            }
+        }
     }
 
     private void appendDiscoverySearchClause(StringBuilder sql, List<Object> parameters, String query) {
@@ -1348,85 +1661,113 @@ public class PostgresLinkStore implements LinkStore {
         jdbcTemplate.update(sql.toString(), parameters.toArray());
     }
 
-    private List<TopLinkTraffic> findTopLinksLast24Hours(OffsetDateTime since, long ownerId) {
-        return queryJdbcTemplate.query(
-                """
-                SELECT l.slug, l.original_url, COUNT(*) AS click_total
-                FROM links l
-                JOIN link_clicks c ON c.slug = l.slug
+    private List<TopLinkTraffic> findTopLinksLast24Hours(
+            OffsetDateTime since,
+            long ownerId,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT p.slug, p.original_url, COUNT(*) AS click_total
+                FROM link_catalog_projection p
+                JOIN link_clicks c ON c.slug = p.slug
                 WHERE c.clicked_at >= ?
-                  AND l.owner_id = ?
-                GROUP BY l.slug, l.original_url
-                ORDER BY click_total DESC, l.slug ASC
-                """,
+                  AND p.owner_id = ?
+                """);
+        List<Object> parameters = new ArrayList<>(List.of(since, ownerId));
+        appendCatalogTagClause(sql, parameters, tag);
+        appendCatalogLifecycleClause(sql, parameters, asOf, lifecycle);
+        sql.append("""
+                
+                GROUP BY p.slug, p.original_url
+                ORDER BY click_total DESC, p.slug ASC
+                LIMIT ?
+                """);
+        parameters.add(limit);
+        return queryJdbcTemplate.query(
+                sql.toString(),
                 (resultSet, rowNum) -> new TopLinkTraffic(
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
                         resultSet.getLong("click_total")),
-                since,
-                ownerId);
+                parameters.toArray());
     }
 
-    private List<TrendingLink> findTrendingLinksLast24Hours(OffsetDateTime now, int limit, long ownerId) {
+    private List<TrendingLink> findTrendingLinksLast24Hours(
+            OffsetDateTime now,
+            int limit,
+            long ownerId,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf) {
         OffsetDateTime currentStart = now.minusHours(24);
         OffsetDateTime previousStart = now.minusHours(48);
 
-        return queryJdbcTemplate.query(
+        return queryRangeTrendingLinks(
                 """
-                SELECT l.slug,
-                       l.original_url,
+                SELECT p.slug,
+                       p.original_url,
                        COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) AS click_growth,
                        COALESCE(current_window.click_total, 0) AS current_window_clicks,
                        COALESCE(previous_window.click_total, 0) AS previous_window_clicks
-                FROM links l
+                FROM link_catalog_projection p
                 LEFT JOIN (
-                    SELECT slug, COUNT(*) AS click_total
-                    FROM link_clicks
-                    WHERE clicked_at >= ? AND clicked_at < ?
-                    GROUP BY slug
-                ) current_window ON current_window.slug = l.slug
+                    SELECT c.slug, COUNT(*) AS click_total
+                    FROM link_clicks c
+                    JOIN link_catalog_projection p_current ON p_current.slug = c.slug
+                    WHERE p_current.owner_id = ?
+                      AND c.clicked_at >= ? AND c.clicked_at < ?
+                    GROUP BY c.slug
+                ) current_window ON current_window.slug = p.slug
                 LEFT JOIN (
-                    SELECT slug, COUNT(*) AS click_total
-                    FROM link_clicks
-                    WHERE clicked_at >= ? AND clicked_at < ?
-                    GROUP BY slug
-                ) previous_window ON previous_window.slug = l.slug
-                WHERE COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) > 0
-                  AND l.owner_id = ?
-                ORDER BY click_growth DESC, current_window_clicks DESC, l.slug ASC
-                LIMIT ?
+                    SELECT c.slug, COUNT(*) AS click_total
+                    FROM link_clicks c
+                    JOIN link_catalog_projection p_previous ON p_previous.slug = c.slug
+                    WHERE p_previous.owner_id = ?
+                      AND c.clicked_at >= ? AND c.clicked_at < ?
+                    GROUP BY c.slug
+                ) previous_window ON previous_window.slug = p.slug
+                WHERE p.owner_id = ?
                 """,
-                (resultSet, rowNum) -> new TrendingLink(
-                        resultSet.getString("slug"),
-                        resultSet.getString("original_url"),
-                        resultSet.getLong("click_growth"),
-                        resultSet.getLong("current_window_clicks"),
-                        resultSet.getLong("previous_window_clicks")),
-                currentStart,
-                now,
-                previousStart,
-                currentStart,
-                ownerId,
-                limit);
+                List.of(ownerId, currentStart, now, ownerId, previousStart, currentStart, ownerId),
+                limit,
+                tag,
+                lifecycle,
+                asOf);
     }
 
-    private List<TopLinkTraffic> findTopLinksLast7Days(LocalDate startDate, long ownerId) {
-        return queryJdbcTemplate.query(
-                """
-                SELECT l.slug, l.original_url, SUM(r.click_count) AS click_total
-                FROM links l
-                JOIN link_click_daily_rollups r ON r.slug = l.slug
+    private List<TopLinkTraffic> findTopLinksLast7Days(
+            LocalDate startDate,
+            long ownerId,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT p.slug, p.original_url, SUM(r.click_count) AS click_total
+                FROM link_catalog_projection p
+                JOIN link_click_daily_rollups r ON r.slug = p.slug
                 WHERE r.rollup_date >= ?
-                  AND l.owner_id = ?
-                GROUP BY l.slug, l.original_url
-                ORDER BY click_total DESC, l.slug ASC
-                """,
+                  AND p.owner_id = ?
+                """);
+        List<Object> parameters = new ArrayList<>(List.of(startDate, ownerId));
+        appendCatalogTagClause(sql, parameters, tag);
+        appendCatalogLifecycleClause(sql, parameters, asOf, lifecycle);
+        sql.append("""
+                
+                GROUP BY p.slug, p.original_url
+                ORDER BY click_total DESC, p.slug ASC
+                LIMIT ?
+                """);
+        parameters.add(limit);
+        return queryJdbcTemplate.query(
+                sql.toString(),
                 (resultSet, rowNum) -> new TopLinkTraffic(
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
                         resultSet.getLong("click_total")),
-                startDate,
-                ownerId);
+                parameters.toArray());
     }
 
     @Override
@@ -1497,46 +1838,77 @@ public class PostgresLinkStore implements LinkStore {
                 ownerId);
     }
 
-    private List<TrendingLink> findTrendingLinksLast7Days(LocalDate today, int limit, long ownerId) {
+    private List<TrendingLink> findTrendingLinksLast7Days(
+            LocalDate today,
+            int limit,
+            long ownerId,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf) {
         LocalDate currentStart = today.minusDays(6);
         LocalDate previousStart = currentStart.minusDays(7);
 
-        return queryJdbcTemplate.query(
+        return queryRangeTrendingLinks(
                 """
-                SELECT l.slug,
-                       l.original_url,
+                SELECT p.slug,
+                       p.original_url,
                        COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) AS click_growth,
                        COALESCE(current_window.click_total, 0) AS current_window_clicks,
                        COALESCE(previous_window.click_total, 0) AS previous_window_clicks
-                FROM links l
+                FROM link_catalog_projection p
                 LEFT JOIN (
-                    SELECT slug, SUM(click_count) AS click_total
-                    FROM link_click_daily_rollups
-                    WHERE rollup_date >= ?
-                    GROUP BY slug
-                ) current_window ON current_window.slug = l.slug
+                    SELECT r.slug, SUM(r.click_count) AS click_total
+                    FROM link_click_daily_rollups r
+                    JOIN link_catalog_projection p_current ON p_current.slug = r.slug
+                    WHERE p_current.owner_id = ?
+                      AND r.rollup_date >= ?
+                    GROUP BY r.slug
+                ) current_window ON current_window.slug = p.slug
                 LEFT JOIN (
-                    SELECT slug, SUM(click_count) AS click_total
-                    FROM link_click_daily_rollups
-                    WHERE rollup_date >= ? AND rollup_date < ?
-                    GROUP BY slug
-                ) previous_window ON previous_window.slug = l.slug
-                WHERE COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) > 0
-                  AND l.owner_id = ?
-                ORDER BY click_growth DESC, current_window_clicks DESC, l.slug ASC
-                LIMIT ?
+                    SELECT r.slug, SUM(r.click_count) AS click_total
+                    FROM link_click_daily_rollups r
+                    JOIN link_catalog_projection p_previous ON p_previous.slug = r.slug
+                    WHERE p_previous.owner_id = ?
+                      AND r.rollup_date >= ?
+                      AND r.rollup_date < ?
+                    GROUP BY r.slug
+                ) previous_window ON previous_window.slug = p.slug
+                WHERE p.owner_id = ?
                 """,
+                List.of(ownerId, currentStart, ownerId, previousStart, currentStart, ownerId),
+                limit,
+                tag,
+                lifecycle,
+                asOf);
+    }
+
+    private List<TrendingLink> queryRangeTrendingLinks(
+            String baseSql,
+            List<Object> baseParameters,
+            int limit,
+            String tag,
+            LinkLifecycleState lifecycle,
+            OffsetDateTime asOf) {
+        StringBuilder sql = new StringBuilder(baseSql);
+        List<Object> parameters = new ArrayList<>(baseParameters);
+        appendCatalogTagClause(sql, parameters, tag);
+        appendCatalogLifecycleClause(sql, parameters, asOf, lifecycle);
+        sql.append("""
+                
+                  AND COALESCE(current_window.click_total, 0) - COALESCE(previous_window.click_total, 0) > 0
+                ORDER BY click_growth DESC, current_window_clicks DESC, p.slug ASC
+                LIMIT ?
+                """);
+        parameters.add(limit);
+        return queryJdbcTemplate.query(
+                sql.toString(),
                 (resultSet, rowNum) -> new TrendingLink(
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
                         resultSet.getLong("click_growth"),
                         resultSet.getLong("current_window_clicks"),
                         resultSet.getLong("previous_window_clicks")),
-                currentStart,
-                previousStart,
-                currentStart,
-                ownerId,
-                limit);
+                parameters.toArray());
     }
 
     private Link toLink(String slug, String originalUrl) {

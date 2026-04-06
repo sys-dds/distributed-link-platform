@@ -35,6 +35,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private static final String DELETE_OPERATION = "DELETE";
     private static final String LIFECYCLE_OPERATION = "LIFECYCLE";
     private static final String BULK_OPERATION_PREFIX = "BULK:";
+    private static final int MAX_ANALYTICS_LIMIT = 100;
 
     private final LinkStore linkStore;
     private final AnalyticsOutboxStore analyticsOutboxStore;
@@ -469,6 +470,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional(readOnly = true)
     public List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit) {
+        validateAnalyticsLimit(limit);
         long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
             return linkStore.findRecentActivity(limit, owner.id());
@@ -479,6 +481,16 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                     linkReadCache.putOwnerRecentActivity(owner.id(), generation, limit, activityEvents);
                     return activityEvents;
                 });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit, String tag, String lifecycle) {
+        validateAnalyticsLimit(limit);
+        if (isBlank(tag) && isBlank(lifecycle)) {
+            return getRecentActivity(owner, limit);
+        }
+        return linkStore.findRecentActivity(limit, normalizeTag(tag), parseLifecycleFilter(lifecycle), now(), owner.id());
     }
 
     @Override
@@ -524,6 +536,67 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     @Override
     @Transactional(readOnly = true)
+    public AnalyticsSummaryView getTrafficSummary(AuthenticatedOwner owner, String slug, AnalyticsRange range) {
+        LinkTrafficSummary summary = getTrafficSummary(owner, slug);
+        AnalyticsFreshness freshness = getAnalyticsFreshness(owner, slug);
+        if (range == null) {
+            return new AnalyticsSummaryView(summary, null, null, null, freshness, null);
+        }
+        long currentWindowClicks = linkStore.countClicksForSlugInRange(slug, range.start(), range.end(), owner.id());
+        AnalyticsComparison comparison = range.comparePrevious()
+                ? AnalyticsComparison.of(
+                        range,
+                        currentWindowClicks,
+                        linkStore.countClicksForSlugInRange(slug, range.previousStart(), range.previousEnd(), owner.id()))
+                : null;
+        return new AnalyticsSummaryView(
+                summary,
+                range.start(),
+                range.end(),
+                currentWindowClicks,
+                freshness,
+                comparison);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public LinkTrafficSeriesView getTrafficSeries(
+            AuthenticatedOwner owner,
+            String slug,
+            AnalyticsRange range,
+            String granularity) {
+        LinkSlug linkSlug = new LinkSlug(slug);
+        String normalizedGranularity = range.validateGranularity(granularity);
+        linkStore.findTrafficSummaryTotals(
+                        linkSlug.value(),
+                        now().minusHours(24),
+                        now().toLocalDate().minusDays(6),
+                        owner.id())
+                .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
+
+        List<LinkTrafficSeriesBucket> buckets = zeroFillBuckets(
+                range,
+                normalizedGranularity,
+                linkStore.findTrafficSeries(linkSlug.value(), range.start(), range.end(), normalizedGranularity, owner.id()));
+        long currentWindowClicks = buckets.stream().mapToLong(LinkTrafficSeriesBucket::clickTotal).sum();
+        AnalyticsComparison comparison = range.comparePrevious()
+                ? AnalyticsComparison.of(
+                        range,
+                        currentWindowClicks,
+                        linkStore.countClicksForSlugInRange(linkSlug.value(), range.previousStart(), range.previousEnd(), owner.id()))
+                : null;
+        return new LinkTrafficSeriesView(
+                linkSlug.value(),
+                range.start(),
+                range.end(),
+                normalizedGranularity,
+                buckets,
+                getAnalyticsFreshness(owner, linkSlug.value()),
+                comparison);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<TopLinkTraffic> getTopLinks(AuthenticatedOwner owner, LinkTrafficWindow window) {
         long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
@@ -539,7 +612,37 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<TopLinkTraffic> getTopLinks(
+            AuthenticatedOwner owner,
+            LinkTrafficWindow window,
+            AnalyticsRange range,
+            String tag,
+            String lifecycle,
+            int limit) {
+        validateAnalyticsLimit(limit);
+        if (range == null && isBlank(tag) && isBlank(lifecycle)) {
+            return getTopLinks(owner, window).stream().limit(limit).toList();
+        }
+        LinkLifecycleState lifecycleFilter = parseLifecycleFilter(lifecycle);
+        String normalizedTag = normalizeTag(tag);
+        OffsetDateTime asOf = now();
+        if (range != null) {
+            return linkStore.findTopLinks(
+                    range.start(),
+                    range.end(),
+                    limit,
+                    normalizedTag,
+                    lifecycleFilter,
+                    asOf,
+                    owner.id());
+        }
+        return linkStore.findTopLinks(window, asOf, limit, normalizedTag, lifecycleFilter, owner.id());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<TrendingLink> getTrendingLinks(AuthenticatedOwner owner, LinkTrafficWindow window, int limit) {
+        validateAnalyticsLimit(limit);
         long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
             return linkStore.findTrendingLinks(window, now(), limit, owner.id());
@@ -550,6 +653,55 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                     linkReadCache.putOwnerTrendingLinks(owner.id(), generation, window, limit, trendingLinks);
                     return trendingLinks;
                 });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TrendingLink> getTrendingLinks(
+            AuthenticatedOwner owner,
+            LinkTrafficWindow window,
+            AnalyticsRange range,
+            String tag,
+            String lifecycle,
+            int limit) {
+        validateAnalyticsLimit(limit);
+        if (range == null && isBlank(tag) && isBlank(lifecycle)) {
+            return getTrendingLinks(owner, window, limit);
+        }
+        LinkLifecycleState lifecycleFilter = parseLifecycleFilter(lifecycle);
+        String normalizedTag = normalizeTag(tag);
+        OffsetDateTime asOf = now();
+        if (range != null) {
+            return linkStore.findTrendingLinks(
+                    range.start(),
+                    range.end(),
+                    limit,
+                    normalizedTag,
+                    lifecycleFilter,
+                    asOf,
+                    owner.id());
+        }
+        return linkStore.findTrendingLinks(window, asOf, limit, normalizedTag, lifecycleFilter, owner.id());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AnalyticsFreshness getAnalyticsFreshness(AuthenticatedOwner owner) {
+        OffsetDateTime asOf = now();
+        return toFreshness(
+                asOf,
+                linkStore.findLatestMaterializedClickAt(owner.id()).orElse(null),
+                linkStore.findLatestMaterializedActivityAt(owner.id()).orElse(null));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AnalyticsFreshness getAnalyticsFreshness(AuthenticatedOwner owner, String slug) {
+        OffsetDateTime asOf = now();
+        return toFreshness(
+                asOf,
+                linkStore.findLatestMaterializedClickAt(slug, owner.id()).orElse(null),
+                linkStore.findLatestMaterializedActivityAt(slug, owner.id()).orElse(null));
     }
 
     private void rejectReservedSlug(LinkSlug slug) {
@@ -856,6 +1008,85 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 .mapToObj(startDate::plusDays)
                 .map(day -> new DailyClickBucket(day, clickTotalsByDay.getOrDefault(day, 0L)))
                 .toList();
+    }
+
+    private List<LinkTrafficSeriesBucket> zeroFillBuckets(
+            AnalyticsRange range,
+            String granularity,
+            List<LinkTrafficSeriesBucket> buckets) {
+        Map<OffsetDateTime, Long> totalsByBucketStart = new HashMap<>();
+        for (LinkTrafficSeriesBucket bucket : buckets) {
+            totalsByBucketStart.put(bucket.bucketStart(), bucket.clickTotal());
+        }
+        List<LinkTrafficSeriesBucket> filledBuckets = new ArrayList<>();
+        OffsetDateTime bucketStart = range.start();
+        while (bucketStart.isBefore(range.end())) {
+            OffsetDateTime bucketEnd = nextBucketStart(bucketStart, granularity);
+            filledBuckets.add(new LinkTrafficSeriesBucket(
+                    bucketStart,
+                    bucketEnd.isAfter(range.end()) ? range.end() : bucketEnd,
+                    totalsByBucketStart.getOrDefault(bucketStart, 0L)));
+            bucketStart = bucketEnd;
+        }
+        return List.copyOf(filledBuckets);
+    }
+
+    private OffsetDateTime nextBucketStart(OffsetDateTime bucketStart, String granularity) {
+        return switch (granularity) {
+            case "hour" -> bucketStart.plusHours(1);
+            case "day" -> bucketStart.plusDays(1);
+            default -> throw new IllegalArgumentException("granularity must be one of: hour, day");
+        };
+    }
+
+    private AnalyticsFreshness toFreshness(
+            OffsetDateTime asOf,
+            OffsetDateTime latestMaterializedClickAt,
+            OffsetDateTime latestMaterializedActivityAt) {
+        return new AnalyticsFreshness(
+                asOf,
+                latestMaterializedClickAt,
+                latestMaterializedActivityAt,
+                lagSeconds(asOf, latestMaterializedClickAt),
+                lagSeconds(asOf, latestMaterializedActivityAt));
+    }
+
+    private Long lagSeconds(OffsetDateTime asOf, OffsetDateTime latestTimestamp) {
+        if (latestTimestamp == null) {
+            return null;
+        }
+        return java.time.Duration.between(latestTimestamp, asOf).getSeconds();
+    }
+
+    private void validateAnalyticsLimit(int limit) {
+        if (limit < 1 || limit > MAX_ANALYTICS_LIMIT) {
+            throw new IllegalArgumentException("Limit must be between 1 and " + MAX_ANALYTICS_LIMIT);
+        }
+    }
+
+    private LinkLifecycleState parseLifecycleFilter(String lifecycle) {
+        if (isBlank(lifecycle)) {
+            return null;
+        }
+        return switch (lifecycle.trim().toLowerCase(Locale.ROOT)) {
+            case "active" -> LinkLifecycleState.ACTIVE;
+            case "suspended" -> LinkLifecycleState.SUSPENDED;
+            case "archived" -> LinkLifecycleState.ARCHIVED;
+            case "expired" -> LinkLifecycleState.EXPIRED;
+            case "all" -> LinkLifecycleState.ALL;
+            default -> throw new IllegalArgumentException("Lifecycle must be one of: active, suspended, archived, expired, all");
+        };
+    }
+
+    private String normalizeTag(String tag) {
+        if (isBlank(tag)) {
+            return null;
+        }
+        return tag.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private LinkMutationResult findReplayIfPresent(long ownerId, String idempotencyKey, String operation, String requestHash) {
