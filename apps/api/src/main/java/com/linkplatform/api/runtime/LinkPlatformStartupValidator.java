@@ -46,9 +46,9 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
             throw new IllegalStateException(
                     "link-platform.runtime.redirect.region must be set when the redirect surface is enabled");
         }
-        if (runtimeProperties.getMode() == RuntimeMode.REDIRECT && !cacheEnabled) {
+        if (redirectEnabled && !cacheEnabled) {
             throw new IllegalStateException(
-                    "link-platform.cache.enabled must remain true when link-platform.runtime.mode is redirect");
+                    "link-platform.cache.enabled must remain true when the redirect surface is enabled");
         }
         if (!redirectEnabled && (failoverRegion != null || failoverBaseUrl != null)) {
             throw new IllegalStateException(
@@ -61,10 +61,6 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
         if ((failoverRegion == null) != (failoverBaseUrl == null)) {
             throw new IllegalStateException(
                     "link-platform.runtime.redirect.failover-region and link-platform.runtime.redirect.failover-base-url must be configured together");
-        }
-        if (failoverRegion != null && !cacheEnabled) {
-            throw new IllegalStateException(
-                    "link-platform.cache.enabled must remain true when link-platform.runtime.redirect.failover-region is configured");
         }
         if (redirectEnabled) {
             validateAbsoluteHttpUrl(publicBaseUrl, "link-platform.public-base-url");

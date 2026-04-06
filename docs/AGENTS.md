@@ -1,4 +1,7 @@
 ## Repo-local rules
+Do not fall back to PowerShell-native search yet.
+- Get-Command rg -All
+- rg --version
 - Use `C:\Users\Ryzen-pc\Desktop\sys-dds\codex-scratch` for temporary files, downloads, extracted tools, logs, caches, and other throwaway execution artifacts.
 - Do not leave temporary artifacts in this repo.
 

@@ -30,6 +30,7 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
                 .withDetail("region", runtimeProperties.getRedirect().getRegion())
                 .withDetail("publicBaseUrl", publicBaseUrl)
                 .withDetail("cacheEnabled", cacheEnabled)
+                .withDetail("cacheRequired", redirectEnabled)
                 .withDetail("routeStrategy", "cache-first-primary-lookup")
                 .withDetail("cacheDegradationPolicy", "fallback-to-primary")
                 .withDetail("analyticsWriteMode", "durable-outbox")
