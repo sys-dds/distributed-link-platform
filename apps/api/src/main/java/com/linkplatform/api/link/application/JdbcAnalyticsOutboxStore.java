@@ -251,6 +251,58 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 id) == 1;
     }
 
+    @Override
+    public long archivePublishedBefore(OffsetDateTime cutoff, int limit) {
+        return transactionTemplate.execute(status -> {
+            List<Long> ids = jdbcTemplate.query(
+                    """
+                    SELECT id
+                    FROM analytics_outbox
+                    WHERE published_at IS NOT NULL
+                      AND published_at < ?
+                    ORDER BY published_at ASC, id ASC
+                    LIMIT ?
+                    """,
+                    (resultSet, rowNum) -> resultSet.getLong("id"),
+                    cutoff,
+                    limit);
+            if (ids.isEmpty()) {
+                return 0L;
+            }
+
+            String placeholders = ids.stream().map(ignored -> "?").collect(Collectors.joining(", "));
+            List<Object> insertParameters = new ArrayList<>();
+            insertParameters.add(OffsetDateTime.now(clock));
+            insertParameters.addAll(ids);
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO analytics_outbox_archive (
+                        original_id, event_id, event_type, event_key, payload_json, created_at, published_at,
+                        attempt_count, next_attempt_at, last_error_summary, parked_at, archived_at
+                    )
+                    SELECT id, event_id, event_type, event_key, payload_json, created_at, published_at,
+                           attempt_count, next_attempt_at, last_error_summary, parked_at, ?
+                    FROM analytics_outbox
+                    WHERE id IN (%s)
+                    """.formatted(placeholders),
+                    insertParameters.toArray());
+
+            jdbcTemplate.update(
+                    """
+                    DELETE FROM analytics_outbox
+                    WHERE id IN (%s)
+                    """.formatted(placeholders),
+                    ids.toArray());
+            return (long) ids.size();
+        });
+    }
+
+    @Override
+    public long countArchived() {
+        Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM analytics_outbox_archive", Long.class);
+        return count == null ? 0L : count;
+    }
+
     private AnalyticsOutboxRecord mapRecord(ResultSet resultSet) throws SQLException {
         return new AnalyticsOutboxRecord(
                 resultSet.getLong("id"),

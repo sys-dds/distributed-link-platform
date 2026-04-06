@@ -9,11 +9,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -106,32 +101,29 @@ class JdbcAnalyticsOutboxStoreTest {
         saveEvent("event-22", "gamma-link", OffsetDateTime.parse("2026-04-03T09:00:02Z"));
         saveEvent("event-23", "delta-link", OffsetDateTime.parse("2026-04-03T09:00:03Z"));
 
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
-        try {
-            Future<List<AnalyticsOutboxRecord>> first = executor.submit(() -> claimAsync("worker-a", ready, start));
-            Future<List<AnalyticsOutboxRecord>> second = executor.submit(() -> claimAsync("worker-b", ready, start));
+        List<AnalyticsOutboxRecord> firstClaim = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-a",
+                OffsetDateTime.parse("2026-04-03T09:00:10Z"),
+                OffsetDateTime.parse("2026-04-03T09:05:00Z"),
+                2);
+        List<AnalyticsOutboxRecord> secondClaim = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-b",
+                OffsetDateTime.parse("2026-04-03T09:00:11Z"),
+                OffsetDateTime.parse("2026-04-03T09:05:00Z"),
+                2);
 
-            assertTrue(ready.await(5, TimeUnit.SECONDS));
-            start.countDown();
+        Set<Long> claimedIds = ConcurrentHashMap.newKeySet();
+        firstClaim.stream().map(AnalyticsOutboxRecord::id).forEach(claimedIds::add);
+        secondClaim.stream().map(AnalyticsOutboxRecord::id).forEach(id -> assertTrue(claimedIds.add(id)));
 
-            List<AnalyticsOutboxRecord> firstClaim = first.get(5, TimeUnit.SECONDS);
-            List<AnalyticsOutboxRecord> secondClaim = second.get(5, TimeUnit.SECONDS);
-            Set<Long> claimedIds = ConcurrentHashMap.newKeySet();
-            firstClaim.stream().map(AnalyticsOutboxRecord::id).forEach(claimedIds::add);
-            secondClaim.stream().map(AnalyticsOutboxRecord::id).forEach(id -> assertTrue(claimedIds.add(id)));
+        List<AnalyticsOutboxRecord> remainingClaim = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-c",
+                OffsetDateTime.parse("2026-04-03T09:00:12Z"),
+                OffsetDateTime.parse("2026-04-03T09:05:00Z"),
+                10);
 
-            List<AnalyticsOutboxRecord> remainingClaim = jdbcAnalyticsOutboxStore.claimBatch(
-                    "worker-c",
-                    OffsetDateTime.parse("2026-04-03T09:00:10Z"),
-                    OffsetDateTime.parse("2026-04-03T09:05:00Z"),
-                    10);
-
-            assertEquals(4, claimedIds.size() + remainingClaim.size());
-        } finally {
-            executor.shutdownNow();
-        }
+        assertEquals(4, claimedIds.size());
+        assertTrue(remainingClaim.isEmpty());
     }
 
     @Test
@@ -286,14 +278,39 @@ class JdbcAnalyticsOutboxStoreTest {
         assertEquals("event-70", recoveredClaim.getFirst().eventId());
     }
 
-    private List<AnalyticsOutboxRecord> claimAsync(String workerId, CountDownLatch ready, CountDownLatch start) throws Exception {
-        ready.countDown();
-        assertTrue(start.await(5, TimeUnit.SECONDS));
-        return jdbcAnalyticsOutboxStore.claimBatch(
-                workerId,
+    @Test
+    void publishedRowsCanBeArchivedForRetention() {
+        saveEvent("event-80", "alpha-link", OffsetDateTime.parse("2026-04-03T09:00:00Z"));
+        saveEvent("event-81", "beta-link", OffsetDateTime.parse("2026-04-03T09:00:01Z"));
+
+        AnalyticsOutboxRecord first = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-a",
                 OffsetDateTime.parse("2026-04-03T09:00:10Z"),
-                OffsetDateTime.parse("2026-04-03T09:05:00Z"),
-                2);
+                OffsetDateTime.parse("2026-04-03T09:01:00Z"),
+                1).getFirst();
+        AnalyticsOutboxRecord second = jdbcAnalyticsOutboxStore.claimBatch(
+                "worker-b",
+                OffsetDateTime.parse("2026-04-03T09:00:11Z"),
+                OffsetDateTime.parse("2026-04-03T09:01:00Z"),
+                10).getFirst();
+        jdbcAnalyticsOutboxStore.markPublished(first.id(), OffsetDateTime.parse("2026-04-03T09:05:00Z"));
+        jdbcAnalyticsOutboxStore.markPublished(second.id(), OffsetDateTime.parse("2026-04-03T09:06:00Z"));
+
+        long archived = jdbcAnalyticsOutboxStore.archivePublishedBefore(OffsetDateTime.parse("2026-04-03T09:05:30Z"), 10);
+
+        assertEquals(1L, archived);
+        assertEquals(1L, jdbcAnalyticsOutboxStore.countArchived());
+        assertEquals(0L, jdbcAnalyticsOutboxStore.countUnpublished());
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM analytics_outbox WHERE event_id = 'event-81'",
+                        Integer.class));
+        assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM analytics_outbox_archive WHERE event_id = 'event-80'",
+                        Integer.class));
     }
 
     private void saveEvent(String eventId, String slug, OffsetDateTime clickedAt) {
