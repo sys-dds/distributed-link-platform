@@ -230,9 +230,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional
     public void recordRedirectClick(String slug, String userAgent, String referrer, String remoteAddress) {
+        Long ownerId = linkStore.findOwnerIdBySlug(slug).orElse(null);
         analyticsOutboxStore.saveRedirectClickEvent(new RedirectClickAnalyticsEvent(
                 UUID.randomUUID().toString(),
                 slug,
+                ownerId,
                 now(),
                 userAgent,
                 referrer,

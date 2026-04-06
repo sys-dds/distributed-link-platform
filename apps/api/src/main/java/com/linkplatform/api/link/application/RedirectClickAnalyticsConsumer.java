@@ -46,7 +46,7 @@ public class RedirectClickAnalyticsConsumer {
                 redirectClickAnalyticsEvent.referrer(),
                 redirectClickAnalyticsEvent.remoteAddress()));
         if (persisted) {
-            linkStore.findOwnerIdBySlug(redirectClickAnalyticsEvent.slug())
+            resolveOwnerId(redirectClickAnalyticsEvent)
                     .ifPresent(ownerId -> {
                         linkStore.findStoredDetailsBySlug(redirectClickAnalyticsEvent.slug(), ownerId)
                                 .ifPresent(linkDetails -> linkStore.recordActivityIfAbsent(
@@ -68,6 +68,13 @@ public class RedirectClickAnalyticsConsumer {
             return;
         }
         duplicateCounter.increment();
+    }
+
+    private java.util.Optional<Long> resolveOwnerId(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent) {
+        if (redirectClickAnalyticsEvent.ownerId() != null) {
+            return java.util.Optional.of(redirectClickAnalyticsEvent.ownerId());
+        }
+        return linkStore.findOwnerIdBySlug(redirectClickAnalyticsEvent.slug());
     }
 
     private RedirectClickAnalyticsEvent deserialize(String payloadJson) {
