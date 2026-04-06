@@ -77,7 +77,7 @@ public class ProjectionJobService {
         return new ProjectionJobChunkResult(
                 completed,
                 historyChunk.size(),
-                historyChunk.isEmpty() ? job.checkpointId() : historyChunk.getLast().outboxId());
+                historyChunk.isEmpty() ? job.checkpointId() : Long.valueOf(historyChunk.getLast().outboxId()));
     }
 
     private ProjectionJobChunkResult rebuildClickRollupsChunk(ProjectionJob job) {
@@ -102,7 +102,7 @@ public class ProjectionJobService {
         return new ProjectionJobChunkResult(
                 completed,
                 processedCount,
-                clickHistoryChunk.isEmpty() ? job.checkpointId() : clickHistoryChunk.getLast().clickId());
+                clickHistoryChunk.isEmpty() ? job.checkpointId() : Long.valueOf(clickHistoryChunk.getLast().clickId()));
     }
 
     private ProjectionJobChunkResult rebuildCatalogChunk(ProjectionJob job) {
@@ -122,7 +122,7 @@ public class ProjectionJobService {
         return new ProjectionJobChunkResult(
                 completed,
                 historyChunk.size(),
-                historyChunk.isEmpty() ? job.checkpointId() : historyChunk.getLast().outboxId());
+                historyChunk.isEmpty() ? job.checkpointId() : Long.valueOf(historyChunk.getLast().outboxId()));
     }
 
     private ProjectionJobChunkResult rebuildDiscoveryChunk(ProjectionJob job) {
@@ -142,7 +142,7 @@ public class ProjectionJobService {
         return new ProjectionJobChunkResult(
                 completed,
                 historyChunk.size(),
-                historyChunk.isEmpty() ? job.checkpointId() : historyChunk.getLast().outboxId());
+                historyChunk.isEmpty() ? job.checkpointId() : Long.valueOf(historyChunk.getLast().outboxId()));
     }
 
     private <T> List<T> limitToChunk(List<T> fetchedChunk) {
