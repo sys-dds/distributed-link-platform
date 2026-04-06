@@ -10,6 +10,8 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,6 +20,8 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.WORKER})
 public class ProjectionJobRunner {
+
+    private static final Logger log = LoggerFactory.getLogger(ProjectionJobRunner.class);
 
     private final ProjectionJobStore projectionJobStore;
     private final ProjectionJobService projectionJobService;
@@ -89,6 +93,7 @@ public class ProjectionJobRunner {
         } catch (RuntimeException exception) {
             projectionJobStore.markFailed(job.id(), OffsetDateTime.now(clock), compactErrorSummary(exception));
             failedCounter.increment();
+            log.warn("projection_job_failed id={} type={} reason={}", job.id(), job.jobType(), compactErrorSummary(exception));
             throw exception;
         } finally {
             sample.stop(durationTimer);

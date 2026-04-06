@@ -109,12 +109,16 @@ public class LinkAnalyticsController {
     }
 
     private LinkTrafficWindow parseWindow(String window) {
-        String normalized = window == null ? "" : window.trim().toLowerCase();
+        String normalized = normalize(window).toLowerCase();
         return switch (normalized) {
             case "24h" -> LinkTrafficWindow.LAST_24_HOURS;
             case "7d" -> LinkTrafficWindow.LAST_7_DAYS;
             default -> throw new IllegalArgumentException("Window must be one of: 24h, 7d");
         };
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private void validateLimit(int limit) {

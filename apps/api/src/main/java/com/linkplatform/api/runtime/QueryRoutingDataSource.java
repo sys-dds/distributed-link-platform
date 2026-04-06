@@ -91,6 +91,17 @@ public class QueryRoutingDataSource extends AbstractDataSource {
         }
     }
 
+    public boolean isFallbackActive() {
+        return lastFallbackAt != null;
+    }
+
+    public String currentRoute() {
+        if (!dedicatedConfigured || dedicatedQueryDataSource == null) {
+            return "primary";
+        }
+        return isDedicatedAvailable() ? "dedicated" : "primary-fallback";
+    }
+
     @Override
     public PrintWriter getLogWriter() {
         try {

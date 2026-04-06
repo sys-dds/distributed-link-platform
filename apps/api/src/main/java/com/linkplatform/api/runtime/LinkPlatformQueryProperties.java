@@ -31,7 +31,7 @@ public class LinkPlatformQueryProperties {
     }
 
     public void setPassword(String password) {
-        this.password = password;
+        this.password = blankToNull(password);
     }
 
     public String getDriverClassName() {
@@ -44,6 +44,10 @@ public class LinkPlatformQueryProperties {
 
     public boolean isDedicatedConfigured() {
         return url != null;
+    }
+
+    public boolean hasAnyConfiguredValue() {
+        return url != null || username != null || password != null || driverClassName != null;
     }
 
     private String blankToNull(String value) {

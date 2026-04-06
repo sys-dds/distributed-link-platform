@@ -18,8 +18,10 @@ public class QueryReadConfiguration {
     QueryRoutingDataSourceHolder queryRoutingDataSourceHolder(
             @Qualifier("dataSource") DataSource dataSource,
             LinkPlatformQueryProperties queryProperties,
+            LinkPlatformRuntimeProperties runtimeProperties,
             MeterRegistry meterRegistry,
             SecurityEventStore securityEventStore) {
+        runtimeProperties.getMode();
         return new QueryRoutingDataSourceHolder(new QueryRoutingDataSource(
                 dataSource,
                 dedicatedQueryDataSource(queryProperties),

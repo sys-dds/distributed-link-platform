@@ -12,6 +12,7 @@ public class NoOpLinkReadCache implements LinkReadCache {
 
     @Override public long getPublicRedirectGeneration(String slug) { return 0L; }
     @Override public Optional<Link> getPublicRedirect(String slug, long generation) { return Optional.empty(); }
+    @Override public PublicRedirectLookupResult lookupPublicRedirect(String slug) { return new PublicRedirectLookupResult(PublicRedirectLookupOutcome.MISS, 0L, Optional.empty()); }
     @Override public void putPublicRedirect(String slug, long generation, Link link) { }
     @Override public void invalidatePublicRedirect(String slug) { }
     @Override public long getOwnerControlPlaneGeneration(long ownerId) { return 0L; }

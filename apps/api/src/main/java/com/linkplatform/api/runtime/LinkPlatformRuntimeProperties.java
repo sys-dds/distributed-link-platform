@@ -20,6 +20,22 @@ public class LinkPlatformRuntimeProperties {
         return redirect;
     }
 
+    public boolean redirectEnabled() {
+        return mode == RuntimeMode.ALL || mode == RuntimeMode.REDIRECT;
+    }
+
+    public boolean controlPlaneEnabled() {
+        return mode == RuntimeMode.ALL || mode == RuntimeMode.CONTROL_PLANE_API;
+    }
+
+    public boolean workerEnabled() {
+        return mode == RuntimeMode.ALL || mode == RuntimeMode.WORKER;
+    }
+
+    public boolean httpEnabled() {
+        return mode.webServerEnabled();
+    }
+
     public static class Redirect {
 
         private String region = "local";
@@ -48,6 +64,10 @@ public class LinkPlatformRuntimeProperties {
 
         public void setFailoverBaseUrl(String failoverBaseUrl) {
             this.failoverBaseUrl = blankToNull(failoverBaseUrl);
+        }
+
+        public boolean failoverConfigured() {
+            return failoverRegion != null && failoverBaseUrl != null;
         }
 
         private String blankToNull(String value) {
