@@ -23,6 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class AnalyticsPipelineControllerTest {
 
+    private static final String FREE_API_KEY = "free-owner-api-key";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -41,7 +43,7 @@ class AnalyticsPipelineControllerTest {
                 "RuntimeException: Permanent failure",
                 OffsetDateTime.now().minusMinutes(1));
 
-        mockMvc.perform(get("/api/v1/analytics/pipeline"))
+        mockMvc.perform(get("/api/v1/analytics/pipeline").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.eligibleBacklogCount").value(1))
@@ -60,7 +62,7 @@ class AnalyticsPipelineControllerTest {
                 "RuntimeException: Permanent failure",
                 OffsetDateTime.now().minusMinutes(2));
 
-        mockMvc.perform(get("/api/v1/analytics/pipeline/parked"))
+        mockMvc.perform(get("/api/v1/analytics/pipeline/parked").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(parkedId))
                 .andExpect(jsonPath("$[0].eventId").value("event-3"))
@@ -68,17 +70,30 @@ class AnalyticsPipelineControllerTest {
                 .andExpect(jsonPath("$[0].attemptCount").value(5))
                 .andExpect(jsonPath("$[0].lastErrorSummary").value("RuntimeException: Permanent failure"));
 
-        mockMvc.perform(post("/api/v1/analytics/pipeline/parked/{id}/requeue", parkedId))
+        mockMvc.perform(post("/api/v1/analytics/pipeline/parked/{id}/requeue", parkedId)
+                        .header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/v1/analytics/pipeline/parked"))
+        mockMvc.perform(get("/api/v1/analytics/pipeline/parked").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test
-    void requeueReturnsNotFoundForMissingParkedRow() throws Exception {
+    void pipelineEndpointsRequireApiKey() throws Exception {
+        mockMvc.perform(get("/api/v1/analytics/pipeline"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("X-API-Key header is required"));
+
         mockMvc.perform(post("/api/v1/analytics/pipeline/parked/999/requeue"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("X-API-Key header is required"));
+    }
+
+    @Test
+    void requeueReturnsNotFoundForMissingParkedRow() throws Exception {
+        mockMvc.perform(post("/api/v1/analytics/pipeline/parked/999/requeue")
+                        .header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isNotFound());
     }
 

@@ -1,7 +1,9 @@
 package com.linkplatform.api.projection;
 
+import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,26 +25,55 @@ public class ProjectionJobsController {
 
     private final ProjectionJobService projectionJobService;
     private final ProjectionJobStore projectionJobStore;
+    private final OwnerAccessService ownerAccessService;
 
-    public ProjectionJobsController(ProjectionJobService projectionJobService, ProjectionJobStore projectionJobStore) {
+    public ProjectionJobsController(
+            ProjectionJobService projectionJobService,
+            ProjectionJobStore projectionJobStore,
+            OwnerAccessService ownerAccessService) {
         this.projectionJobService = projectionJobService;
         this.projectionJobStore = projectionJobStore;
+        this.ownerAccessService = ownerAccessService;
     }
 
     @PostMapping
-    public ProjectionJobResponse createJob(@RequestBody CreateProjectionJobRequest request) {
+    public ProjectionJobResponse createJob(
+            @RequestBody CreateProjectionJobRequest request,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeMutation(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         return toResponse(projectionJobService.createJob(request.jobType()));
     }
 
     @GetMapping("/{id}")
-    public ProjectionJobResponse getJob(@PathVariable long id) {
+    public ProjectionJobResponse getJob(
+            @PathVariable long id,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeRead(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         return projectionJobStore.findById(id)
                 .map(this::toResponse)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Projection job not found: " + id));
     }
 
     @GetMapping
-    public List<ProjectionJobResponse> listJobs(@RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
+    public List<ProjectionJobResponse> listJobs(
+            @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeRead(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         validateLimit(limit);
         return projectionJobStore.findRecent(limit).stream()
                 .map(this::toResponse)

@@ -2,8 +2,10 @@ package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.AnalyticsOutboxRecord;
 import com.linkplatform.api.link.application.AnalyticsOutboxStore;
+import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -26,15 +28,26 @@ public class AnalyticsPipelineController {
     private static final int MAX_LIMIT = 100;
 
     private final AnalyticsOutboxStore analyticsOutboxStore;
+    private final OwnerAccessService ownerAccessService;
     private final Clock clock;
 
-    public AnalyticsPipelineController(AnalyticsOutboxStore analyticsOutboxStore) {
+    public AnalyticsPipelineController(
+            AnalyticsOutboxStore analyticsOutboxStore,
+            OwnerAccessService ownerAccessService) {
         this.analyticsOutboxStore = analyticsOutboxStore;
+        this.ownerAccessService = ownerAccessService;
         this.clock = Clock.systemUTC();
     }
 
     @GetMapping
-    public AnalyticsPipelineStatusResponse getStatus() {
+    public AnalyticsPipelineStatusResponse getStatus(
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeRead(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         OffsetDateTime now = OffsetDateTime.now(clock);
         return new AnalyticsPipelineStatusResponse(
                 analyticsOutboxStore.countEligible(now),
@@ -44,7 +57,14 @@ public class AnalyticsPipelineController {
 
     @GetMapping("/parked")
     public List<AnalyticsPipelineParkedRecordResponse> getParked(
-            @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
+            @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeRead(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         validateLimit(limit);
         return analyticsOutboxStore.findParked(limit).stream()
                 .map(this::toResponse)
@@ -52,7 +72,15 @@ public class AnalyticsPipelineController {
     }
 
     @PostMapping("/parked/{id}/requeue")
-    public ResponseEntity<Void> requeueParked(@PathVariable long id) {
+    public ResponseEntity<Void> requeueParked(
+            @PathVariable long id,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeMutation(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         if (!analyticsOutboxStore.requeueParked(id, OffsetDateTime.now(clock))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Parked analytics outbox row not found: " + id);
         }

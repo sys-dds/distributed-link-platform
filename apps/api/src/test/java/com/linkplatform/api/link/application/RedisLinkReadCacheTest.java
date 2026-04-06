@@ -37,7 +37,8 @@ class RedisLinkReadCacheTest {
                 Duration.ofSeconds(15));
 
         Link link = new Link(new LinkSlug("launch"), new OriginalUrl("https://example.com/launch"));
-        when(valueOperations.get("link:redirect:launch"))
+        when(valueOperations.get("link:redirect:launch:gen")).thenReturn(null);
+        when(valueOperations.get("link:redirect:launch:v0"))
                 .thenReturn(objectMapper.writeValueAsString(link))
                 .thenReturn(null);
 

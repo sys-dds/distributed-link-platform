@@ -2,8 +2,10 @@ package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.LinkLifecycleOutboxRecord;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
+import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -26,15 +28,26 @@ public class LifecyclePipelineController {
     private static final int MAX_LIMIT = 100;
 
     private final LinkLifecycleOutboxStore linkLifecycleOutboxStore;
+    private final OwnerAccessService ownerAccessService;
     private final Clock clock;
 
-    public LifecyclePipelineController(LinkLifecycleOutboxStore linkLifecycleOutboxStore) {
+    public LifecyclePipelineController(
+            LinkLifecycleOutboxStore linkLifecycleOutboxStore,
+            OwnerAccessService ownerAccessService) {
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
+        this.ownerAccessService = ownerAccessService;
         this.clock = Clock.systemUTC();
     }
 
     @GetMapping
-    public LifecyclePipelineStatusResponse getStatus() {
+    public LifecyclePipelineStatusResponse getStatus(
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeRead(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         OffsetDateTime now = OffsetDateTime.now(clock);
         return new LifecyclePipelineStatusResponse(
                 linkLifecycleOutboxStore.countEligible(now),
@@ -44,7 +57,14 @@ public class LifecyclePipelineController {
 
     @GetMapping("/parked")
     public List<LifecyclePipelineParkedRecordResponse> getParked(
-            @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
+            @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeRead(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         validateLimit(limit);
         return linkLifecycleOutboxStore.findParked(limit).stream()
                 .map(this::toResponse)
@@ -52,7 +72,15 @@ public class LifecyclePipelineController {
     }
 
     @PostMapping("/parked/{id}/requeue")
-    public ResponseEntity<Void> requeueParked(@PathVariable long id) {
+    public ResponseEntity<Void> requeueParked(
+            @PathVariable long id,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            HttpServletRequest httpServletRequest) {
+        ownerAccessService.authorizeMutation(
+                apiKey,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
         if (!linkLifecycleOutboxStore.requeueParked(id, OffsetDateTime.now(clock))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Parked lifecycle outbox row not found: " + id);
         }

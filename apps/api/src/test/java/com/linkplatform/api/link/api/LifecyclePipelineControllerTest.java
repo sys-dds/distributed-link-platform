@@ -23,6 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class LifecyclePipelineControllerTest {
 
+    private static final String FREE_API_KEY = "free-owner-api-key";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -35,7 +37,7 @@ class LifecyclePipelineControllerTest {
         insertOutboxRow("event-2", "DELETED", "gone-link", OffsetDateTime.now().minusMinutes(10), 5, null,
                 "RuntimeException: Permanent failure", OffsetDateTime.now().minusMinutes(1));
 
-        mockMvc.perform(get("/api/v1/lifecycle/pipeline"))
+        mockMvc.perform(get("/api/v1/lifecycle/pipeline").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.eligibleBacklogCount").value(1))
@@ -55,18 +57,30 @@ class LifecyclePipelineControllerTest {
                 "RuntimeException: Permanent failure",
                 OffsetDateTime.now().minusMinutes(2));
 
-        mockMvc.perform(get("/api/v1/lifecycle/pipeline/parked"))
+        mockMvc.perform(get("/api/v1/lifecycle/pipeline/parked").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(parkedId))
                 .andExpect(jsonPath("$[0].eventType").value("DELETED"))
                 .andExpect(jsonPath("$[0].eventKey").value("gone-link"));
 
-        mockMvc.perform(post("/api/v1/lifecycle/pipeline/parked/{id}/requeue", parkedId))
+        mockMvc.perform(post("/api/v1/lifecycle/pipeline/parked/{id}/requeue", parkedId)
+                        .header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/v1/lifecycle/pipeline/parked"))
+        mockMvc.perform(get("/api/v1/lifecycle/pipeline/parked").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void lifecyclePipelineEndpointsRequireApiKey() throws Exception {
+        mockMvc.perform(get("/api/v1/lifecycle/pipeline"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("X-API-Key header is required"));
+
+        mockMvc.perform(post("/api/v1/lifecycle/pipeline/parked/999/requeue"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("X-API-Key header is required"));
     }
 
     private long insertOutboxRow(
