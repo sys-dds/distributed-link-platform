@@ -42,7 +42,7 @@ public interface ProjectionJobStore {
     }
 
     default void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
-        markFailed(id, completedAt, 1L, errorSummary);
+        markFailed(id, completedAt, 0L, errorSummary);
     }
 
     default long countQueued() {

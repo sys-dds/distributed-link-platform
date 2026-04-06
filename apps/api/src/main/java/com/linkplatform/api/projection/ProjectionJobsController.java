@@ -101,13 +101,13 @@ public class ProjectionJobsController {
                 job.startedAt(),
                 job.lastChunkAt(),
                 job.completedAt(),
-                job.processedCount(),
+                job.processedItems(), // processedCount (alias)
                 job.processedItems(),
                 job.failedItems(),
                 job.checkpointId(),
                 null,
                 null,
-                job.errorSummary(),
+                job.lastError(), // errorSummary (alias)
                 job.lastError(),
                 job.claimedBy(),
                 job.claimedUntil(),

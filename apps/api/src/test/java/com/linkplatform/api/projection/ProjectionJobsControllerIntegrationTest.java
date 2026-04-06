@@ -114,7 +114,7 @@ class ProjectionJobsControllerIntegrationTest {
         mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId).header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.startedAt").isNotEmpty())
-                .andExpect(jsonPath("$.failedItems").value(1))
+                .andExpect(jsonPath("$.failedItems").value(0))
                 .andExpect(jsonPath("$.lastError").isNotEmpty());
     }
 

@@ -91,7 +91,7 @@ public class ProjectionJobRunner {
                 completedCounter.increment();
             }
         } catch (RuntimeException exception) {
-            projectionJobStore.markFailed(job.id(), OffsetDateTime.now(clock), 1L, compactErrorSummary(exception));
+            projectionJobStore.markFailed(job.id(), OffsetDateTime.now(clock), 0L, compactErrorSummary(exception));
             failedCounter.increment();
             log.warn("projection_job_failed id={} type={} reason={}", job.id(), job.jobType(), compactErrorSummary(exception));
             throw exception;

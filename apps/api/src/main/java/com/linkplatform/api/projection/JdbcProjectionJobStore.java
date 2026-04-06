@@ -131,7 +131,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                                 started_at = COALESCE(started_at, ?),
                                 completed_at = NULL,
                                 error_summary = NULL,
-                                last_error = NULL,
                                 claimed_by = ?,
                                 claimed_until = ?
                             WHERE id = ?
