@@ -57,10 +57,12 @@ public class LinkController {
             @RequestBody CreateLinkRequest request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         LinkMutationResult result = linkApplicationService.createLink(
                 ownerAccessService.authorizeMutation(
                         apiKey,
+                        authorizationHeader,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
                         httpServletRequest.getRemoteAddr()),
@@ -81,10 +83,12 @@ public class LinkController {
             @RequestHeader(value = "If-Match", required = false) String ifMatch,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         return toUpdateResponse(linkApplicationService.updateLink(
                 ownerAccessService.authorizeMutation(
                         apiKey,
+                        authorizationHeader,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
                         httpServletRequest.getRemoteAddr()),
@@ -101,10 +105,12 @@ public class LinkController {
     public LinkReadResponse getLink(
             @PathVariable String slug,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         return toReadResponse(linkApplicationService.getLink(
                 ownerAccessService.authorizeRead(
                         apiKey,
+                        authorizationHeader,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
                         httpServletRequest.getRemoteAddr()),
@@ -118,11 +124,13 @@ public class LinkController {
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "active") String state,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         validateLimit(limit);
         return linkApplicationService.listRecentLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
+                                authorizationHeader,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
@@ -139,11 +147,13 @@ public class LinkController {
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "" + DEFAULT_SUGGESTION_LIMIT) int limit,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         validateSuggestionLimit(limit);
         return linkApplicationService.suggestLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
+                                authorizationHeader,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
@@ -165,11 +175,13 @@ public class LinkController {
             @RequestParam(defaultValue = "" + DEFAULT_DISCOVERY_LIMIT) int limit,
             @RequestParam(required = false) String cursor,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         validateDiscoveryLimit(limit);
         LinkDiscoveryPage page = linkApplicationService.searchLinks(
                 ownerAccessService.authorizeRead(
                         apiKey,
+                        authorizationHeader,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
                         httpServletRequest.getRemoteAddr()),
@@ -208,10 +220,12 @@ public class LinkController {
             @RequestHeader(value = "If-Match", required = false) String ifMatch,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         linkApplicationService.deleteLink(
                 ownerAccessService.authorizeMutation(
                         apiKey,
+                        authorizationHeader,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
                         httpServletRequest.getRemoteAddr()),

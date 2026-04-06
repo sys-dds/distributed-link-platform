@@ -45,12 +45,16 @@ public class RedirectRuntimeService {
     public RedirectDecision resolve(String slug, String requestPath, String queryString, String remoteAddress) {
         String validatedSlug = new LinkSlug(slug).value();
         long generation = linkReadCache.getPublicRedirectGeneration(validatedSlug);
+        if (!linkReadCache.isCacheGenerationAvailable(generation)) {
+            redirectRuntimeState.recordCacheBypass();
+            return resolveFromPrimary(validatedSlug, generation, requestPath, queryString, remoteAddress, false);
+        }
         return linkReadCache.getPublicRedirect(validatedSlug, generation)
                 .map(link -> {
                     redirectRuntimeState.recordCacheHit();
                     return new RedirectDecision(link.originalUrl().value(), true, false);
                 })
-                .orElseGet(() -> resolveFromPrimary(validatedSlug, generation, requestPath, queryString, remoteAddress));
+                .orElseGet(() -> resolveFromPrimary(validatedSlug, generation, requestPath, queryString, remoteAddress, true));
     }
 
     private RedirectDecision resolveFromPrimary(
@@ -58,12 +62,17 @@ public class RedirectRuntimeService {
             long generation,
             String requestPath,
             String queryString,
-            String remoteAddress) {
-        redirectRuntimeState.recordCacheMiss();
+            String remoteAddress,
+            boolean recordCacheMiss) {
+        if (recordCacheMiss) {
+            redirectRuntimeState.recordCacheMiss();
+        }
         try {
             Link link = linkStore.findBySlug(slug, OffsetDateTime.now(clock))
                     .orElseThrow(() -> new LinkNotFoundException(slug));
-            linkReadCache.putPublicRedirect(slug, generation, link);
+            if (linkReadCache.isCacheGenerationAvailable(generation)) {
+                linkReadCache.putPublicRedirect(slug, generation, link);
+            }
             redirectRuntimeState.recordPrimaryLookupSuccess();
             return new RedirectDecision(link.originalUrl().value(), true, false);
         } catch (DataAccessException exception) {

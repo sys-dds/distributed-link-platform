@@ -40,9 +40,11 @@ public class ProjectionJobsController {
     public ProjectionJobResponse createJob(
             @RequestBody CreateProjectionJobRequest request,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeMutation(
                 apiKey,
+                authorizationHeader,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
@@ -53,9 +55,11 @@ public class ProjectionJobsController {
     public ProjectionJobResponse getJob(
             @PathVariable long id,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeRead(
                 apiKey,
+                authorizationHeader,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
@@ -68,9 +72,11 @@ public class ProjectionJobsController {
     public List<ProjectionJobResponse> listJobs(
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeRead(
                 apiKey,
+                authorizationHeader,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());

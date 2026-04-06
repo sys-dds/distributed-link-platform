@@ -42,9 +42,11 @@ public class LifecyclePipelineController {
     @GetMapping
     public LifecyclePipelineStatusResponse getStatus(
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeRead(
                 apiKey,
+                authorizationHeader,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
@@ -59,9 +61,11 @@ public class LifecyclePipelineController {
     public List<LifecyclePipelineParkedRecordResponse> getParked(
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeRead(
                 apiKey,
+                authorizationHeader,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
@@ -75,9 +79,11 @@ public class LifecyclePipelineController {
     public ResponseEntity<Void> requeueParked(
             @PathVariable long id,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeMutation(
                 apiKey,
+                authorizationHeader,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());

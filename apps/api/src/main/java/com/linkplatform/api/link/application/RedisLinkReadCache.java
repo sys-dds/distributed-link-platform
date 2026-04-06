@@ -57,11 +57,17 @@ public class RedisLinkReadCache implements LinkReadCache {
 
     @Override
     public Optional<Link> getPublicRedirect(String slug, long generation) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue("redirect", redirectKey(slug, generation), Link.class);
     }
 
     @Override
     public void putPublicRedirect(String slug, long generation, Link link) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue("redirect", redirectKey(slug, generation), link, redirectTtl);
     }
 
@@ -77,16 +83,25 @@ public class RedisLinkReadCache implements LinkReadCache {
 
     @Override
     public Optional<LinkDetails> getOwnerLinkDetails(long ownerId, long generation, String slug) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue("detail", ownerControlPlaneKey(ownerId, generation, "detail", slug), LinkDetails.class);
     }
 
     @Override
     public void putOwnerLinkDetails(long ownerId, long generation, String slug, LinkDetails linkDetails) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue("detail", ownerControlPlaneKey(ownerId, generation, "detail", slug), linkDetails, ownerReadTtl);
     }
 
     @Override
     public Optional<List<LinkDetails>> getOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue(
                 "list",
                 ownerControlPlaneKey(ownerId, generation, "list", sha256(limit + "|" + state.name() + "|" + normalize(query))),
@@ -95,6 +110,9 @@ public class RedisLinkReadCache implements LinkReadCache {
 
     @Override
     public void putOwnerRecentLinks(long ownerId, long generation, int limit, String query, LinkLifecycleState state, List<LinkDetails> linkDetails) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue(
                 "list",
                 ownerControlPlaneKey(ownerId, generation, "list", sha256(limit + "|" + state.name() + "|" + normalize(query))),
@@ -104,6 +122,9 @@ public class RedisLinkReadCache implements LinkReadCache {
 
     @Override
     public Optional<List<LinkSuggestion>> getOwnerSuggestions(long ownerId, long generation, String query, int limit) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue(
                 "suggestions",
                 ownerControlPlaneKey(ownerId, generation, "suggestions", sha256(limit + "|" + normalize(query))),
@@ -112,6 +133,9 @@ public class RedisLinkReadCache implements LinkReadCache {
 
     @Override
     public void putOwnerSuggestions(long ownerId, long generation, String query, int limit, List<LinkSuggestion> suggestions) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue(
                 "suggestions",
                 ownerControlPlaneKey(ownerId, generation, "suggestions", sha256(limit + "|" + normalize(query))),
@@ -121,11 +145,17 @@ public class RedisLinkReadCache implements LinkReadCache {
 
     @Override
     public Optional<LinkDiscoveryPage> getOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue("discovery", ownerControlPlaneKey(ownerId, generation, "discovery", discoveryHash(query)), DISCOVERY_PAGE);
     }
 
     @Override
     public void putOwnerDiscoveryPage(long ownerId, long generation, LinkDiscoveryQuery query, LinkDiscoveryPage page) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue("discovery", ownerControlPlaneKey(ownerId, generation, "discovery", discoveryHash(query)), page, ownerReadTtl);
     }
 
@@ -136,41 +166,65 @@ public class RedisLinkReadCache implements LinkReadCache {
 
     @Override
     public Optional<List<LinkActivityEvent>> getOwnerRecentActivity(long ownerId, long generation, int limit) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue("activity", ownerAnalyticsKey(ownerId, generation, "activity", String.valueOf(limit)), ACTIVITY_LIST);
     }
 
     @Override
     public void putOwnerRecentActivity(long ownerId, long generation, int limit, List<LinkActivityEvent> activityEvents) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue("activity", ownerAnalyticsKey(ownerId, generation, "activity", String.valueOf(limit)), activityEvents, analyticsTtl);
     }
 
     @Override
     public Optional<LinkTrafficSummary> getOwnerTrafficSummary(long ownerId, long generation, String slug) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue("traffic_summary", ownerAnalyticsKey(ownerId, generation, "traffic_summary", slug), LinkTrafficSummary.class);
     }
 
     @Override
     public void putOwnerTrafficSummary(long ownerId, long generation, String slug, LinkTrafficSummary summary) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue("traffic_summary", ownerAnalyticsKey(ownerId, generation, "traffic_summary", slug), summary, analyticsTtl);
     }
 
     @Override
     public Optional<List<TopLinkTraffic>> getOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue("top_links", ownerAnalyticsKey(ownerId, generation, "top_links", window.name()), TOP_LINK_LIST);
     }
 
     @Override
     public void putOwnerTopLinks(long ownerId, long generation, LinkTrafficWindow window, List<TopLinkTraffic> topLinks) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue("top_links", ownerAnalyticsKey(ownerId, generation, "top_links", window.name()), topLinks, analyticsTtl);
     }
 
     @Override
     public Optional<List<TrendingLink>> getOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return Optional.empty();
+        }
         return readValue("trending", ownerAnalyticsKey(ownerId, generation, "trending", window.name() + "|" + limit), TRENDING_LIST);
     }
 
     @Override
     public void putOwnerTrendingLinks(long ownerId, long generation, LinkTrafficWindow window, int limit, List<TrendingLink> trendingLinks) {
+        if (!isCacheGenerationAvailable(generation)) {
+            return;
+        }
         writeValue("trending", ownerAnalyticsKey(ownerId, generation, "trending", window.name() + "|" + limit), trendingLinks, analyticsTtl);
     }
 
@@ -268,7 +322,7 @@ public class RedisLinkReadCache implements LinkReadCache {
             return stored == null ? 0L : Long.parseLong(stored);
         } catch (Exception exception) {
             handleFailure("read_generation", "generation", exception);
-            return 0L;
+            return CACHE_UNAVAILABLE_GENERATION;
         }
     }
 

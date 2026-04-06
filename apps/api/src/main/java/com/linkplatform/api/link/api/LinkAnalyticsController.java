@@ -38,10 +38,12 @@ public class LinkAnalyticsController {
     public LinkTrafficSummaryResponse getTrafficSummary(
             @PathVariable String slug,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         return toResponse(linkApplicationService.getTrafficSummary(
                 ownerAccessService.authorizeRead(
                         apiKey,
+                        authorizationHeader,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
                         httpServletRequest.getRemoteAddr()),
@@ -52,10 +54,12 @@ public class LinkAnalyticsController {
     public List<TopLinkTrafficResponse> getTopLinks(
             @RequestParam(defaultValue = "7d") String window,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         return linkApplicationService.getTopLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
+                                authorizationHeader,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
@@ -68,11 +72,13 @@ public class LinkAnalyticsController {
     public List<LinkActivityEventResponse> getRecentActivity(
             @RequestParam(defaultValue = "" + DEFAULT_ACTIVITY_LIMIT) int limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         validateLimit(limit);
         return linkApplicationService.getRecentActivity(
                         ownerAccessService.authorizeRead(
                                 apiKey,
+                                authorizationHeader,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),
@@ -86,11 +92,13 @@ public class LinkAnalyticsController {
             @RequestParam(defaultValue = "7d") String window,
             @RequestParam(defaultValue = "" + DEFAULT_TRENDING_LIMIT) int limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
         validateLimit(limit);
         return linkApplicationService.getTrendingLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
+                                authorizationHeader,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr()),

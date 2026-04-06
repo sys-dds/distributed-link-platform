@@ -6,6 +6,8 @@ import java.util.Optional;
 
 public interface LinkReadCache {
 
+    long CACHE_UNAVAILABLE_GENERATION = -1L;
+
     long getPublicRedirectGeneration(String slug);
 
     Optional<Link> getPublicRedirect(String slug, long generation);
@@ -125,4 +127,8 @@ public interface LinkReadCache {
     void invalidateOwnerControlPlane(long ownerId);
 
     void invalidateOwnerAnalytics(long ownerId);
+
+    default boolean isCacheGenerationAvailable(long generation) {
+        return generation >= 0;
+    }
 }
