@@ -1,0 +1,42 @@
+package com.linkplatform.api.runtime;
+
+import org.springframework.boot.actuate.health.AbstractHealthIndicator;
+import org.springframework.boot.actuate.health.Health;
+
+public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
+
+    private final QueryRoutingDataSource queryRoutingDataSource;
+    private final LinkPlatformRuntimeProperties runtimeProperties;
+
+    public QueryDataSourceHealthIndicator(
+            QueryRoutingDataSource queryRoutingDataSource,
+            LinkPlatformRuntimeProperties runtimeProperties) {
+        this.queryRoutingDataSource = queryRoutingDataSource;
+        this.runtimeProperties = runtimeProperties;
+    }
+
+    @Override
+    protected void doHealthCheck(Health.Builder builder) {
+        boolean required = runtimeProperties.getMode() == RuntimeMode.ALL
+                || runtimeProperties.getMode() == RuntimeMode.CONTROL_PLANE_API;
+        builder.up()
+                .withDetail("required", required)
+                .withDetail("dedicatedConfigured", queryRoutingDataSource.isDedicatedConfigured())
+                .withDetail("usingPrimaryByDefault", queryRoutingDataSource.isUsingPrimaryByDefault());
+        if (!required) {
+            builder.withDetail("reason", "query reads are not served in this runtime mode");
+            return;
+        }
+        if (!queryRoutingDataSource.isDedicatedConfigured()) {
+            builder.withDetail("route", "primary");
+            return;
+        }
+        boolean dedicatedAvailable = queryRoutingDataSource.isDedicatedAvailable();
+        builder.withDetail("route", dedicatedAvailable ? "dedicated" : "primary-fallback")
+                .withDetail("dedicatedAvailable", dedicatedAvailable);
+        if (!dedicatedAvailable && queryRoutingDataSource.getLastFallbackReason() != null) {
+            builder.withDetail("lastFallbackReason", queryRoutingDataSource.getLastFallbackReason());
+            builder.withDetail("lastFallbackAt", queryRoutingDataSource.getLastFallbackAt());
+        }
+    }
+}
