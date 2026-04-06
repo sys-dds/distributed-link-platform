@@ -1,151 +1,128 @@
-🚀 TICKET-034
-title[]
 
-Extract the redirect runtime, harden worker/projection execution, and isolate owner query reads with replica-aware posture
+### 🚀 TICKET-035
 
-technical_detail[]
+#### title[]
 
-From TICKET-034 onward, tickets should be larger and more destination-oriented.
+Build real read-scaling and SRE hardening: actual query-datasource routing, deterministic analytics freshness, role-aware health/metrics, and performance/degradation proof
 
-This ticket intentionally combines the old “dedicated redirect runtime,” “worker/projection hardening,” and “read/query isolation” trajectory into one major platform jump.
+#### technical_detail[]
 
-The platform now has:
+PR 29 created the right seam, but it stopped at **runtime separation + query groundwork**.
 
-safe writes
-async relays/projections
-owner-authenticated control-plane APIs
-owner discovery/search read models
-Redis read caching
-rate limiting/security events
+TICKET-035 should turn that into a much more production-shaped slice by combining:
 
-The next best move is to turn this into a more production-shaped multi-runtime architecture inside one codebase.
+### Part 1 — finish the missing TICKET-034 hardening
 
-Bundle all of this together:
+* close the still-open analytics freshness gap
+* make click/rollup-driven analytics cache invalidation deterministic
+* prove discovery/search/analytics rebuild and cache behavior still converge correctly
 
-Part 1 — dedicated redirect runtime boundary
+### Part 2 — promote the query seam into real read-scaling posture
 
-Create a true redirect runtime role that serves only the hot public redirect path and its minimal supporting concerns.
+* replace the “same-DataSource query template” setup with a **real query-datasource configuration**
+* keep primary write datasource and query datasource explicitly separate in configuration
+* default query datasource to primary when a dedicated query source is not configured
+* route owner discovery/search/analytics/list/detail reads through the query path intentionally
+* keep mutation/write paths on the primary write datasource
 
-It should:
+### Part 3 — role-aware operational/SRE hardening
 
-expose public redirect endpoints
-resolve slug -> destination quickly
-record click intent / analytics event emission as already designed
-expose minimal health/metrics needed for the redirect service
-exclude owner control-plane endpoints, rebuild APIs, heavy query APIs, and worker duties
+Add a stronger operations surface for the split runtimes:
 
-Keep this in the same repository/application codebase, but with a clean runtime boundary and startup role.
+* role-aware readiness/health behavior
+* clearer metrics for:
 
-Part 2 — stronger runtime separation
+    * cache hit/miss/fallback
+    * analytics outbox backlog / parked / retry posture
+    * lifecycle outbox backlog / parked / retry posture
+    * projection job lag/failure/reclaim posture
+    * rate-limit/security-event counters where useful
+* make runtime-specific degradation more visible without overbuilding dashboards inside the repo
 
-Formalize runtime roles so the code can run cleanly as:
+### Part 4 — performance and degradation proof
 
-all
-control-plane-api
-redirect
-worker
+Add focused proof that the new architecture actually behaves well:
 
-Make sure:
+* redirect runtime hot-path verification
+* owner control-plane read-path verification through query datasource
+* query-datasource outage / degradation behavior
+* Redis degradation still behaving correctly
+* targeted performance evidence for hot paths and owner query screens
 
-scheduled outbox relay / projection rebuild / background work runs only where it should
-control-plane API hosts owner-authenticated CRUD/discovery/query endpoints
-redirect runtime remains slim
-worker runtime owns async relays, consumers, projection rebuilds, and background jobs
-Part 3 — worker/projection hardening
+Keep this explicit and production-shaped.
+Do **not** introduce full replica infrastructure or multi-region yet.
 
-Strengthen the worker runtime so it looks production-shaped:
+#### feature_delivered_by_end[]
 
-role-aware startup validation
-clearer ownership of scheduled jobs
-stronger projection/rebuild diagnostics
-lag/lease/failure metrics for relay/projection paths
-clearer degraded/parked/retry visibility
-guardrails so redirect/control-plane roles do not accidentally run worker logic
-Part 4 — query/read isolation with replica-aware posture
+The platform has:
 
-Split the owner-facing query workload more intentionally from the write path.
+* real query-datasource routing posture instead of just a placeholder seam
+* deterministic analytics freshness after click/rollup changes
+* stronger runtime-specific health/metrics visibility
+* better proof that redirect, control-plane, and worker runtimes behave correctly under load and degradation
 
-Add a practical read-isolation layer for:
+#### how_this_unlocks_next_feature[]
 
-owner discovery queries
-owner analytics queries
-owner detail/list reads where sensible
+This unlocks the next major destination slices cleanly:
 
-This does not need real infra-level replicas yet, but it should:
+* backup/restore + retention + recovery drills
+* multi-region redirect architecture
+* stronger security/release/resilience proof packs
+* final performance/observability/staff-level packaging
 
-introduce a clear query/read datasource posture that can target primary now
-support a future read-replica route cleanly
-separate heavy query code paths from mutation code paths
-allow role-aware routing for query workloads
+#### acceptance_criteria[]
 
-If the existing app already has multiple datasource wiring patterns, extend them cleanly. Do not invent a giant abstraction.
+* query datasource is separately configurable from the write datasource
+* query reads default safely to primary when a dedicated query datasource is not configured
+* owner discovery/search/analytics/list/detail reads go through the query path intentionally
+* mutations remain on the primary/write path
+* analytics caches are invalidated or refreshed deterministically after click/rollup changes
+* redirect runtime still behaves correctly and remains slim
+* control-plane and worker runtime behavior remains correctly separated
+* runtime-specific health/metrics expose useful operational signals
+* degraded query datasource behavior is explicit and proven
+* Redis degradation still does not break correctness
+* no repo churn in `docs/tickets.md`, README, or Postman
 
-Part 5 — carry forward the unfinished 033 hardening
+#### code_target[]
 
-Also finish the still-under-proven parts from the previous slice:
+* runtime datasource configuration
+* `PostgresLinkStore`
+* owner-facing query/read paths in `LinkApplicationService` / `DefaultLinkApplicationService`
+* analytics click/rollup consumer path
+* cache invalidation hooks
+* runtime health/metrics wiring
+* focused runtime/query/cache tests
+* focused performance/degradation proof
+* do **not** touch repo ticket-tracking/docs files
 
-deterministic analytics cache freshness after click/rollup changes
-clear rebuild/proof for discovery projection recovery
-ensure cache invalidation and rebuild behavior remain correct after runtime separation
-feature_delivered_by_end[]
+#### proof[]
 
-The platform runs with a much more serious production shape:
+* targeted tests proving query reads route through the query datasource path
+* targeted tests proving writes remain on the primary path
+* targeted tests proving analytics freshness after click/rollup changes
+* targeted tests proving redirect runtime still behaves correctly
+* targeted tests proving worker/control-plane separation still holds
+* targeted tests proving query-datasource fallback/degradation behavior
+* targeted tests proving Redis degradation still works
+* focused performance evidence for redirect and owner query paths
+* actual compile/test command output with passing results
 
-dedicated redirect runtime for the hot path
-clean control-plane vs worker vs redirect runtime boundaries
-stronger worker/projection execution posture
-query/read isolation shaped for future replica use
-carried-forward cache/rebuild hardening from the prior slice
-how_this_unlocks_next_feature[]
+#### delivery_note[]
 
-This unlocks the remaining big destination slices faster:
+This is intentionally a **large** ticket.
 
-backup/restore + retention + recovery drills
-multi-region redirect architecture
-performance/observability/SRE packaging
-stronger deployment/release posture
-final portfolio/staff-level packaging
-acceptance_criteria[]
-runtime roles exist and are intentionally shaped: all, control-plane-api, redirect, worker
-redirect runtime exposes the public redirect path and excludes control-plane/worker-only surfaces
-control-plane runtime exposes owner APIs and excludes worker-only jobs
-worker runtime owns background jobs, relays, consumers, and projection rebuild execution
-startup/runtime guards prevent the wrong jobs/endpoints from running in the wrong role
-owner discovery/analytics query paths run through a clearly isolated query/read path
-query/read isolation is designed so a future replica can be introduced without redesign
-analytics caches are invalidated or refreshed deterministically after click/rollup changes
-discovery projection rebuild/recovery is proven
-public redirect behavior remains correct and fast
-no repo churn in docs/tickets.md, README, or Postman
-code_target[]
-runtime role configuration / boot wiring
-redirect controller/runtime composition
-control-plane API runtime wiring
-worker scheduling / consumer / relay wiring
-projection job / relay diagnostics
-query/read datasource or repository routing layer
-analytics click/rollup invalidation path
-discovery rebuild/projection job path
-focused runtime integration tests
-do not touch repo ticket-tracking/docs files
-proof[]
-targeted tests proving redirect runtime serves public redirect and excludes owner control-plane endpoints
-targeted tests proving control-plane runtime excludes worker jobs
-targeted tests proving worker runtime excludes public/control-plane endpoint surface where appropriate
-targeted tests proving query/read isolation paths behave correctly
-targeted tests proving analytics cache freshness after click/rollup changes
-targeted tests proving discovery projection rebuild converges correctly
-targeted tests proving public redirect behavior remains unchanged
-actual compile/test command output with passing results
-delivery_note[]
+It must:
 
-This is intentionally a very large ticket.
+* finish the missing hardening from PR 29
+* turn the query seam into real read-scaling posture
+* add the next serious SRE/operational proof layer
 
-It folds the old 034 + 035 + much of 036 direction into one coherent slice:
+Do **not** split this into separate tickets for:
 
-redirect runtime boundary
-worker/projection hardening
-query/read isolation
-carried-forward missing hardening from 033
+* cache freshness
+* query datasource
+* metrics/health
+* performance proof
 
-Do not split this into several mini-tickets unless the repo forces a truly separate architectural cut.
+Do it as one coherent production-hardening jump.
