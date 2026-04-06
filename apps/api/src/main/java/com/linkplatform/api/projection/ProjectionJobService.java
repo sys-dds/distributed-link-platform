@@ -82,6 +82,7 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildClickRollupsChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
+            linkStore.findOwnerIdsWithClickHistory().forEach(linkReadCache::invalidateOwnerAnalytics);
             linkStore.resetClickDailyRollups();
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();

@@ -34,6 +34,9 @@ link-platform:
   public-base-url: ${LINK_PLATFORM_PUBLIC_BASE_URL:http://localhost:8080}
   runtime:
     mode: ${LINK_PLATFORM_RUNTIME_MODE:all}
+    redirect:
+      region: ${LINK_PLATFORM_RUNTIME_REDIRECT_REGION:local}
+      failover-region: ${LINK_PLATFORM_RUNTIME_REDIRECT_FAILOVER_REGION:}
   query:
     datasource:
       url: ${QUERY_DB_URL:}
@@ -79,4 +82,4 @@ management:
         liveness:
           include: livenessState
         readiness:
-          include: readinessState,db,queryDataSource,runtimeRole
+          include: readinessState,db,queryDataSource,runtimeRole,redirectRuntime

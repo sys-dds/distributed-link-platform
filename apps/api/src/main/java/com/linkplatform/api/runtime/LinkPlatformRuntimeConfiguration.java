@@ -19,4 +19,16 @@ public class LinkPlatformRuntimeConfiguration {
             }
         };
     }
+
+    @Bean(name = "runtimeRoleHealthIndicator")
+    RuntimeRoleHealthIndicator runtimeRoleHealthIndicator(LinkPlatformRuntimeProperties runtimeProperties) {
+        return new RuntimeRoleHealthIndicator(runtimeProperties);
+    }
+
+    @Bean(name = "redirectRuntimeHealthIndicator")
+    RedirectRuntimeHealthIndicator redirectRuntimeHealthIndicator(
+            LinkPlatformRuntimeProperties runtimeProperties,
+            @org.springframework.beans.factory.annotation.Value("${link-platform.cache.enabled:true}") boolean cacheEnabled) {
+        return new RedirectRuntimeHealthIndicator(runtimeProperties, cacheEnabled);
+    }
 }

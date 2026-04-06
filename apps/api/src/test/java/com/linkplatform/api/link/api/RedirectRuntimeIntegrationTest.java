@@ -1,21 +1,44 @@
 package com.linkplatform.api.link.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest(properties = "link-platform.runtime.mode=redirect")
+@SpringBootTest(properties = {
+        "link-platform.runtime.mode=redirect",
+        "link-platform.runtime.redirect.region=eu-west-1",
+        "link-platform.runtime.redirect.failover-region=us-east-1",
+        "link-platform.cache.enabled=true",
+        "management.endpoint.health.show-details=always",
+        "management.endpoint.health.group.readiness.show-details=always"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
@@ -26,6 +49,42 @@ class RedirectRuntimeIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @SpyBean
+    private com.linkplatform.api.link.application.LinkStore linkStore;
+
+    @MockBean
+    private StringRedisTemplate redisTemplate;
+
+    private final Map<String, String> redisState = new ConcurrentHashMap<>();
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUpRedis() {
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> valueOperations = org.mockito.Mockito.mock(ValueOperations.class);
+        org.mockito.Mockito.when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        org.mockito.Mockito.when(valueOperations.get(anyString()))
+                .thenAnswer(invocation -> redisState.get(invocation.getArgument(0)));
+        doAnswer(invocation -> {
+                    redisState.put(invocation.getArgument(0), invocation.getArgument(1));
+                    return null;
+                })
+                .when(valueOperations)
+                .set(anyString(), anyString(), any(Duration.class));
+        org.mockito.Mockito.when(valueOperations.increment(anyString()))
+                .thenAnswer(invocation -> {
+                    String key = invocation.getArgument(0);
+                    long next = Long.parseLong(redisState.getOrDefault(key, "0")) + 1;
+                    redisState.put(key, Long.toString(next));
+                    return next;
+                });
+        doAnswer(invocation -> {
+                    redisState.remove(invocation.getArgument(0));
+                    return null;
+                })
+                .when(redisTemplate)
+                .delete(anyString());
+    }
 
     @Test
     void redirectRuntimeServesPublicRedirectAndKeepsAsyncWriteShape() throws Exception {
@@ -54,6 +113,39 @@ class RedirectRuntimeIntegrationTest {
 
         mockMvc.perform(get("/api/v1/links"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void redirectRuntimeExposesRegionAwareReadinessPosture() throws Exception {
+        mockMvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.runtimeRole.details.mode").value("REDIRECT"))
+                .andExpect(jsonPath("$.components.queryDataSource.details.required").value(false))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.required").value(true))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.region").value("eu-west-1"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.failoverConfigured").value(true))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.failoverRegion").value("us-east-1"))
+                .andExpect(jsonPath("$.components.redirectRuntime.details.failoverReady").value(true));
+    }
+
+    @Test
+    void redirectRuntimeUsesCachedRedirectWhenPrimaryLookupDegrades() throws Exception {
+        insertLink("cached-runtime-link", "https://example.com/cached-runtime");
+
+        mockMvc.perform(get("/cached-runtime-link"))
+                .andExpect(status().isTemporaryRedirect())
+                .andExpect(header().string("Location", "https://example.com/cached-runtime"));
+
+        clearInvocations(linkStore);
+        doThrow(new DataAccessResourceFailureException("primary unavailable"))
+                .when(linkStore)
+                .findBySlug(org.mockito.ArgumentMatchers.eq("cached-runtime-link"), any());
+
+        mockMvc.perform(get("/cached-runtime-link"))
+                .andExpect(status().isTemporaryRedirect())
+                .andExpect(header().string("Location", "https://example.com/cached-runtime"));
+
+        verify(linkStore, never()).findBySlug(org.mockito.ArgumentMatchers.eq("cached-runtime-link"), any());
     }
 
     private void insertLink(String slug, String originalUrl) {

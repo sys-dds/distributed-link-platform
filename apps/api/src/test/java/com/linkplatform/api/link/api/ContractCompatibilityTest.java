@@ -82,4 +82,39 @@ class ContractCompatibilityTest {
         assertThat(json).isEqualTo(
                 "{\"slug\":\"launch-page\",\"originalUrl\":\"https://example.com/launch\",\"totalClicks\":12,\"clicksLast24Hours\":3,\"clicksLast7Days\":9,\"recentDailyClicks\":[{\"day\":\"2026-04-06\",\"clickTotal\":3}]}");
     }
+
+    @Test
+    void linkDiscoveryPageResponseJsonShapeRemainsCompatible() throws Exception {
+        String json = objectMapper.writeValueAsString(new LinkDiscoveryPageResponse(
+                List.of(new LinkDiscoveryItemResponse(
+                        "launch-page",
+                        "https://example.com/launch",
+                        "Launch",
+                        "example.com",
+                        List.of("docs"),
+                        "ACTIVE",
+                        OffsetDateTime.parse("2026-04-01T08:00:00Z"),
+                        OffsetDateTime.parse("2026-04-06T08:00:00Z"),
+                        OffsetDateTime.parse("2030-04-01T08:00:00Z"),
+                        null,
+                        4L)),
+                "next-cursor",
+                true));
+
+        assertThat(json).isEqualTo(
+                "{\"items\":[{\"slug\":\"launch-page\",\"originalUrl\":\"https://example.com/launch\",\"title\":\"Launch\",\"hostname\":\"example.com\",\"tags\":[\"docs\"],\"lifecycleState\":\"ACTIVE\",\"createdAt\":\"2026-04-01T08:00:00Z\",\"updatedAt\":\"2026-04-06T08:00:00Z\",\"expiresAt\":\"2030-04-01T08:00:00Z\",\"deletedAt\":null,\"version\":4}],\"nextCursor\":\"next-cursor\",\"hasMore\":true}");
+    }
+
+    @Test
+    void trendingLinkResponseJsonShapeRemainsCompatible() throws Exception {
+        String json = objectMapper.writeValueAsString(new TrendingLinkResponse(
+                "launch-page",
+                "https://example.com/launch",
+                7L,
+                10L,
+                3L));
+
+        assertThat(json).isEqualTo(
+                "{\"slug\":\"launch-page\",\"originalUrl\":\"https://example.com/launch\",\"clickGrowth\":7,\"currentWindowClicks\":10,\"previousWindowClicks\":3}");
+    }
 }

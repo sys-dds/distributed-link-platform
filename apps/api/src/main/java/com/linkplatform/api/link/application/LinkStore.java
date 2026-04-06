@@ -37,6 +37,8 @@ public interface LinkStore {
 
     Optional<Long> findOwnerIdBySlug(String slug);
 
+    List<Long> findOwnerIdsWithClickHistory();
+
     long rebuildClickDailyRollups();
 
     void projectCatalogEvent(LinkLifecycleEvent linkLifecycleEvent);
