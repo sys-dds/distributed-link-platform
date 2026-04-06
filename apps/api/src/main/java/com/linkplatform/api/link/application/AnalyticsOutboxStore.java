@@ -29,4 +29,8 @@ public interface AnalyticsOutboxStore {
     List<AnalyticsOutboxRecord> findParked(int limit);
 
     boolean requeueParked(long id, OffsetDateTime nextAttemptAt);
+
+    long archivePublishedBefore(OffsetDateTime cutoff, int limit);
+
+    long countArchived();
 }

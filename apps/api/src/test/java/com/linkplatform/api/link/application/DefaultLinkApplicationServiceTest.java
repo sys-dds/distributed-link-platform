@@ -565,6 +565,8 @@ class DefaultLinkApplicationServiceTest {
         @Override public void recordPublishFailure(long id, int attemptCount, OffsetDateTime nextAttemptAt, String lastErrorSummary, OffsetDateTime parkedAt) { }
         @Override public List<AnalyticsOutboxRecord> findParked(int limit) { return List.of(); }
         @Override public boolean requeueParked(long id, OffsetDateTime nextAttemptAt) { return false; }
+        @Override public long archivePublishedBefore(OffsetDateTime cutoff, int limit) { return 0; }
+        @Override public long countArchived() { return 0; }
 
         private List<RedirectClickAnalyticsEvent> events() {
             return events;
