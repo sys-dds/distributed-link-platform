@@ -1,0 +1,14 @@
+ALTER TABLE projection_jobs
+    ADD COLUMN IF NOT EXISTS started_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE projection_jobs
+    ADD COLUMN IF NOT EXISTS last_chunk_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE projection_jobs
+    ADD COLUMN IF NOT EXISTS processed_items BIGINT NOT NULL DEFAULT 0;
+
+ALTER TABLE projection_jobs
+    ADD COLUMN IF NOT EXISTS failed_items BIGINT NOT NULL DEFAULT 0;
+
+ALTER TABLE projection_jobs
+    ADD COLUMN IF NOT EXISTS last_error VARCHAR(1024);

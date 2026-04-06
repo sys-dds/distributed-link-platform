@@ -1,12 +1,18 @@
 package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.AnalyticsOutboxRecord;
+import com.linkplatform.api.link.application.AnalyticsOutboxRelay;
 import com.linkplatform.api.link.application.AnalyticsOutboxStore;
+import com.linkplatform.api.link.application.PipelineControl;
+import com.linkplatform.api.link.application.PipelineControlStore;
 import com.linkplatform.api.owner.application.OwnerAccessService;
+import com.linkplatform.api.owner.application.SecurityEventStore;
+import com.linkplatform.api.owner.application.SecurityEventType;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -23,22 +29,33 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/v1/analytics/pipeline")
 @ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.CONTROL_PLANE_API})
 public class AnalyticsPipelineController {
+    private static final String PIPELINE_NAME = "analytics";
 
     private static final int DEFAULT_LIMIT = 20;
     private static final int MAX_LIMIT = 100;
-    private static final int DEFAULT_REQUEUE_LIMIT = 50;
-    private static final int MAX_REQUEUE_LIMIT = 200;
+    private static final int DEFAULT_REQUEUE_LIMIT = 100;
+    private static final int MAX_REQUEUE_LIMIT = 500;
     private static final int MAX_BATCH_IDS = 200;
+    private static final int MAX_LOG_DETAIL_LENGTH = 120;
 
     private final AnalyticsOutboxStore analyticsOutboxStore;
+    private final PipelineControlStore pipelineControlStore;
+    private final AnalyticsOutboxRelay analyticsOutboxRelay;
     private final OwnerAccessService ownerAccessService;
+    private final SecurityEventStore securityEventStore;
     private final Clock clock;
 
     public AnalyticsPipelineController(
             AnalyticsOutboxStore analyticsOutboxStore,
-            OwnerAccessService ownerAccessService) {
+            PipelineControlStore pipelineControlStore,
+            AnalyticsOutboxRelay analyticsOutboxRelay,
+            OwnerAccessService ownerAccessService,
+            SecurityEventStore securityEventStore) {
         this.analyticsOutboxStore = analyticsOutboxStore;
+        this.pipelineControlStore = pipelineControlStore;
+        this.analyticsOutboxRelay = analyticsOutboxRelay;
         this.ownerAccessService = ownerAccessService;
+        this.securityEventStore = securityEventStore;
         this.clock = Clock.systemUTC();
     }
 
@@ -53,13 +70,7 @@ public class AnalyticsPipelineController {
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        return new AnalyticsPipelineStatusResponse(
-                analyticsOutboxStore.countEligible(now),
-                analyticsOutboxStore.countParked(),
-                analyticsOutboxStore.findOldestEligibleAgeSeconds(now),
-                analyticsOutboxStore.findOldestParkedAgeSeconds(now),
-                null);
+        return buildStatusResponse();
     }
 
     @GetMapping("/parked")
@@ -95,6 +106,7 @@ public class AnalyticsPipelineController {
         if (!analyticsOutboxStore.requeueParked(id, OffsetDateTime.now(clock))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Parked analytics outbox row not found: " + id);
         }
+        pipelineControlStore.recordRequeue(PIPELINE_NAME, OffsetDateTime.now(clock));
         return ResponseEntity.noContent().build();
     }
 
@@ -112,23 +124,135 @@ public class AnalyticsPipelineController {
                 httpServletRequest.getRemoteAddr());
         List<Long> ids = validateBatchRequest(request);
         analyticsOutboxStore.requeueParkedBatch(ids, OffsetDateTime.now(clock));
+        pipelineControlStore.recordRequeue(PIPELINE_NAME, OffsetDateTime.now(clock));
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/parked/requeue-all")
-    public ResponseEntity<Void> requeueAll(
-            @RequestParam(required = false) Integer limit,
+    @PostMapping("/pause")
+    public AnalyticsPipelineStatusResponse pause(
+            @org.springframework.web.bind.annotation.RequestBody(required = false) UpdatePipelineControlRequest request,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        ownerAccessService.authorizeMutation(
+        var owner = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
-        analyticsOutboxStore.requeueAllParked(resolveRequeueLimit(limit), OffsetDateTime.now(clock));
-        return ResponseEntity.noContent().build();
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        String reason = request == null ? null : request.reason();
+        httpServletRequest.setAttribute("operatorOperation", "analytics_pipeline_pause");
+        httpServletRequest.setAttribute("operatorDetail", truncate(reason));
+        pipelineControlStore.pause(PIPELINE_NAME, reason, now);
+        securityEventStore.record(
+                SecurityEventType.ANALYTICS_PIPELINE_PAUSED,
+                owner.id(),
+                null,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                truncate(reason == null ? "Analytics pipeline paused" : "Analytics pipeline paused: " + reason),
+                now);
+        return buildStatusResponse();
+    }
+
+    @PostMapping("/resume")
+    public AnalyticsPipelineStatusResponse resume(
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        var owner = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        httpServletRequest.setAttribute("operatorOperation", "analytics_pipeline_resume");
+        pipelineControlStore.resume(PIPELINE_NAME, now);
+        securityEventStore.record(
+                SecurityEventType.ANALYTICS_PIPELINE_RESUMED,
+                owner.id(),
+                null,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                "Analytics pipeline resumed",
+                now);
+        return buildStatusResponse();
+    }
+
+    @PostMapping("/force-tick")
+    public PipelineTickResponse forceTick(
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        var owner = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        httpServletRequest.setAttribute("operatorOperation", "analytics_pipeline_force_tick");
+        pipelineControlStore.recordForceTick(PIPELINE_NAME, now);
+        securityEventStore.record(
+                SecurityEventType.ANALYTICS_PIPELINE_FORCE_TICKED,
+                owner.id(),
+                null,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                "Analytics pipeline force ticked",
+                now);
+        AnalyticsOutboxRelay.RelayIterationResult result = analyticsOutboxRelay.relayOnce();
+        return new PipelineTickResponse(
+                result.pipelineName(),
+                result.paused(),
+                result.processedCount(),
+                result.parkedCount(),
+                analyticsOutboxStore.countEligible(),
+                analyticsOutboxStore.countParked());
+    }
+
+    @PostMapping("/parked/drain")
+    public DrainParkedQueueResponse drainParked(
+            @RequestParam(required = false) Integer limit,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        var owner = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        int requestedLimit = limit == null ? DEFAULT_REQUEUE_LIMIT : limit;
+        int appliedLimit = resolveRequeueLimit(limit);
+        httpServletRequest.setAttribute("operatorOperation", "analytics_pipeline_drain");
+        httpServletRequest.setAttribute("operatorDetail", "limit=" + appliedLimit);
+        int movedCount = analyticsOutboxStore.requeueAllParked(appliedLimit);
+        PipelineControl control = movedCount > 0
+                ? pipelineControlStore.recordRequeue(PIPELINE_NAME, now)
+                : pipelineControlStore.get(PIPELINE_NAME);
+        securityEventStore.record(
+                SecurityEventType.ANALYTICS_PIPELINE_DRAINED,
+                owner.id(),
+                null,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                "Analytics pipeline drained " + movedCount + " parked rows",
+                now);
+        return new DrainParkedQueueResponse(
+                PIPELINE_NAME,
+                requestedLimit,
+                appliedLimit,
+                movedCount,
+                analyticsOutboxStore.countParked(),
+                control.lastRequeueAt());
     }
 
     private void validateLimit(int limit) {
@@ -158,6 +282,39 @@ public class AnalyticsPipelineController {
             throw new IllegalArgumentException("ids must be unique");
         }
         return request.ids();
+    }
+
+    private AnalyticsPipelineStatusResponse buildStatusResponse() {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        PipelineControl control = pipelineControlStore.get(PIPELINE_NAME);
+        return new AnalyticsPipelineStatusResponse(
+                control.pipelineName(),
+                control.paused(),
+                control.pauseReason(),
+                analyticsOutboxStore.countEligible(),
+                analyticsOutboxStore.countParked(),
+                ageSeconds(analyticsOutboxStore.findOldestEligibleAt(), now),
+                ageSeconds(analyticsOutboxStore.findOldestParkedAt(), now),
+                control.lastRequeueAt(),
+                control.lastForceTickAt(),
+                control.lastRelaySuccessAt(),
+                control.lastRelayFailureAt(),
+                control.lastRelayFailureReason());
+    }
+
+    private Double ageSeconds(OffsetDateTime timestamp, OffsetDateTime now) {
+        if (timestamp == null) {
+            return null;
+        }
+        return (double) Duration.between(timestamp, now).toSeconds();
+    }
+
+    private String truncate(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.length() <= MAX_LOG_DETAIL_LENGTH ? trimmed : trimmed.substring(0, MAX_LOG_DETAIL_LENGTH);
     }
 
     private AnalyticsPipelineParkedRecordResponse toResponse(AnalyticsOutboxRecord record) {

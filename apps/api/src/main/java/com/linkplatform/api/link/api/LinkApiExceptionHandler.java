@@ -112,6 +112,11 @@ public class LinkApiExceptionHandler {
         return problemDetail(HttpStatus.SERVICE_UNAVAILABLE, "Backend datastore temporarily unavailable");
     }
 
+    @ExceptionHandler(RuntimeException.class)
+    public ProblemDetail handleRuntimeException(RuntimeException exception) {
+        return problemDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected runtime failure");
+    }
+
     private ProblemDetail problemDetail(HttpStatus status, String detail) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detail);
         problemDetail.setType(URI.create("about:blank"));

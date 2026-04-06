@@ -231,11 +231,11 @@ class JdbcAnalyticsOutboxStoreTest {
                 10);
 
         assertTrue(laterClaim.isEmpty());
-        assertEquals(0L, jdbcAnalyticsOutboxStore.countEligible(OffsetDateTime.parse("2026-04-03T10:00:00Z")));
+        assertEquals(0L, jdbcAnalyticsOutboxStore.countEligible());
         assertEquals(1L, jdbcAnalyticsOutboxStore.countParked());
         assertEquals(1.0, meterRegistry.get("link.analytics.outbox.parked").gauge().value());
         assertEquals(0.0, meterRegistry.get("link.analytics.outbox.eligible").gauge().value());
-        assertNull(jdbcAnalyticsOutboxStore.findOldestEligibleAgeSeconds(OffsetDateTime.parse("2026-04-03T10:00:00Z")));
+        assertNull(jdbcAnalyticsOutboxStore.findOldestEligibleAt());
     }
 
     @Test

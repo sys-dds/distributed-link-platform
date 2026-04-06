@@ -47,7 +47,11 @@ class ProjectionJobsControllerIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").value(1))
-                .andExpect(jsonPath("$.slug").value("alpha"));
+                .andExpect(jsonPath("$.slug").value("alpha"))
+                .andExpect(jsonPath("$.startedAt").doesNotExist())
+                .andExpect(jsonPath("$.lastChunkAt").doesNotExist())
+                .andExpect(jsonPath("$.processedItems").value(0))
+                .andExpect(jsonPath("$.failedItems").value(0));
 
         projectionJobRunner.runPendingJobs();
 
@@ -70,7 +74,48 @@ class ProjectionJobsControllerIntegrationTest {
 
         mockMvc.perform(get("/api/v1/projection-jobs").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].jobType").value("LINK_CATALOG_REBUILD"));
+                .andExpect(jsonPath("$[0].jobType").value("LINK_CATALOG_REBUILD"))
+                .andExpect(jsonPath("$[0].startedAt").isNotEmpty())
+                .andExpect(jsonPath("$[0].lastChunkAt").isNotEmpty())
+                .andExpect(jsonPath("$[0].processedItems").isNumber())
+                .andExpect(jsonPath("$[0].failedItems").value(0))
+                .andExpect(jsonPath("$[0].lastError").doesNotExist());
+    }
+
+    @Test
+    void failedScopedJobExposesFailedItemsAndLastError() throws Exception {
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_lifecycle_outbox (event_id, event_type, event_key, payload_json, created_at, published_at)
+                VALUES ('bad-scope', 'CREATED', 'broken', '{bad-json', ?, ?)
+                """,
+                OffsetDateTime.parse("2026-04-06T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-06T10:00:00Z"));
+
+        String responseBody = mockMvc.perform(post("/api/v1/projection-jobs")
+                        .header("X-API-Key", FREE_API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jobType":"LINK_CATALOG_REBUILD","slug":"broken"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long jobId = com.fasterxml.jackson.databind.json.JsonMapper.builder()
+                .build()
+                .readTree(responseBody)
+                .get("id")
+                .asLong();
+
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class, () -> projectionJobRunner.runPendingJobs());
+
+        mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId).header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.startedAt").isNotEmpty())
+                .andExpect(jsonPath("$.failedItems").value(1))
+                .andExpect(jsonPath("$.lastError").isNotEmpty());
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {

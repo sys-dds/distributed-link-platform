@@ -75,7 +75,8 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return jdbcTemplate.query(
                         """
                         SELECT id, job_type, status, requested_at, started_at, completed_at,
-                               processed_count, checkpoint_id, error_summary, claimed_by, claimed_until, owner_id, slug
+                               last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
+                               error_summary, last_error, claimed_by, claimed_until, owner_id, slug
                         FROM projection_jobs
                         WHERE id = ?
                         """,
@@ -90,7 +91,8 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return jdbcTemplate.query(
                 """
                 SELECT id, job_type, status, requested_at, started_at, completed_at,
-                       processed_count, checkpoint_id, error_summary, claimed_by, claimed_until, owner_id, slug
+                       last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
+                       error_summary, last_error, claimed_by, claimed_until, owner_id, slug
                 FROM projection_jobs
                 ORDER BY requested_at DESC, id DESC
                 LIMIT ?
@@ -104,7 +106,8 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return transactionTemplate.execute(status -> jdbcTemplate.query(
                         """
                         SELECT id, job_type, status, requested_at, started_at, completed_at,
-                               processed_count, checkpoint_id, error_summary, claimed_by, claimed_until, owner_id, slug
+                               last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
+                               error_summary, last_error, claimed_by, claimed_until, owner_id, slug
                         FROM projection_jobs
                         WHERE (status = 'QUEUED'
                                OR status = 'FAILED'
@@ -128,6 +131,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                                 started_at = COALESCE(started_at, ?),
                                 completed_at = NULL,
                                 error_summary = NULL,
+                                last_error = NULL,
                                 claimed_by = ?,
                                 claimed_until = ?
                             WHERE id = ?
@@ -142,19 +146,24 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public void markProgress(long id, long processedCountIncrement, Long checkpointId) {
+    public void markProgress(long id, OffsetDateTime occurredAt, long processedCountIncrement, Long checkpointId) {
         jdbcTemplate.update(
                 """
                 UPDATE projection_jobs
                 SET status = ?,
+                    last_chunk_at = ?,
                     processed_count = processed_count + ?,
+                    processed_items = processed_items + ?,
                     checkpoint_id = ?,
                     claimed_by = NULL,
                     claimed_until = NULL,
-                    error_summary = NULL
+                    error_summary = NULL,
+                    last_error = NULL
                 WHERE id = ?
                 """,
                 ProjectionJobStatus.QUEUED.name(),
+                occurredAt,
+                processedCountIncrement,
                 processedCountIncrement,
                 checkpointId,
                 id);
@@ -167,35 +176,44 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 UPDATE projection_jobs
                 SET status = ?,
                     completed_at = ?,
+                    last_chunk_at = ?,
                     processed_count = processed_count + ?,
+                    processed_items = processed_items + ?,
                     checkpoint_id = ?,
                     claimed_by = NULL,
                     claimed_until = NULL,
-                    error_summary = NULL
+                    error_summary = NULL,
+                    last_error = NULL
                 WHERE id = ?
                 """,
                 ProjectionJobStatus.COMPLETED.name(),
                 completedAt,
+                completedAt,
+                processedCountIncrement,
                 processedCountIncrement,
                 checkpointId,
                 id);
     }
 
     @Override
-    public void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
+    public void markFailed(long id, OffsetDateTime completedAt, long failedItemsIncrement, String errorSummary) {
         jdbcTemplate.update(
                 """
                 UPDATE projection_jobs
                 SET status = ?,
                     completed_at = ?,
+                    failed_items = failed_items + ?,
                     claimed_by = NULL,
                     claimed_until = NULL,
-                    error_summary = ?
+                    error_summary = ?,
+                    last_error = ?
                 WHERE id = ?
                 """,
                 ProjectionJobStatus.FAILED.name(),
                 completedAt,
-                errorSummary,
+                failedItemsIncrement,
+                shorten(errorSummary, 255),
+                shorten(errorSummary, 1024),
                 id);
     }
 
@@ -241,10 +259,14 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 ProjectionJobStatus.valueOf(resultSet.getString("status")),
                 resultSet.getObject("requested_at", OffsetDateTime.class),
                 resultSet.getObject("started_at", OffsetDateTime.class),
+                resultSet.getObject("last_chunk_at", OffsetDateTime.class),
                 resultSet.getObject("completed_at", OffsetDateTime.class),
                 resultSet.getLong("processed_count"),
+                resultSet.getLong("processed_items"),
+                resultSet.getLong("failed_items"),
                 getNullableLong(resultSet, "checkpoint_id"),
                 resultSet.getString("error_summary"),
+                resultSet.getString("last_error"),
                 resultSet.getString("claimed_by"),
                 resultSet.getObject("claimed_until", OffsetDateTime.class),
                 getNullableLong(resultSet, "owner_id"),
@@ -259,5 +281,16 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     private Long getNullableLong(ResultSet resultSet, String column) throws SQLException {
         long value = resultSet.getLong(column);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private String shorten(String value, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.length() <= maxLength ? trimmed : trimmed.substring(0, maxLength);
     }
 }
