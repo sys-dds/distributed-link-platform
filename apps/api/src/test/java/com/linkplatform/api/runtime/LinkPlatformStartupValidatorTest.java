@@ -79,7 +79,7 @@ class LinkPlatformStartupValidatorTest {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .hasMessageContaining(
-                                    "link-platform.cache.enabled must remain true when link-platform.runtime.redirect.failover-region is configured");
+                                    "link-platform.cache.enabled must remain true when the redirect surface is enabled");
                 });
     }
 
@@ -106,7 +106,7 @@ class LinkPlatformStartupValidatorTest {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .hasMessageContaining(
-                                    "link-platform.cache.enabled must remain true when link-platform.runtime.mode is redirect");
+                                    "link-platform.cache.enabled must remain true when the redirect surface is enabled");
                 });
     }
 

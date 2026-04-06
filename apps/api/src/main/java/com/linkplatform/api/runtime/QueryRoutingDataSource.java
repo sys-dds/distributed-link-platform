@@ -11,9 +11,12 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.datasource.AbstractDataSource;
 
 public class QueryRoutingDataSource extends AbstractDataSource {
+
+    private static final org.slf4j.Logger log = LoggerFactory.getLogger(QueryRoutingDataSource.class);
 
     private final DataSource primaryDataSource;
     private final DataSource dedicatedQueryDataSource;
@@ -123,6 +126,7 @@ public class QueryRoutingDataSource extends AbstractDataSource {
             fallbackCounter.increment();
             lastFallbackAt = OffsetDateTime.now(clock);
             lastFallbackReason = compactReason(exception);
+            log.warn("link_query_datasource_fallback reason={}", lastFallbackReason);
             return primaryConnection(username, password);
         }
     }

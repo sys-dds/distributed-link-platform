@@ -167,5 +167,65 @@ services:
       LINK_PLATFORM_RUNTIME_MODE: worker
       LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
 
+  control-plane-api-query-fallback:
+    profiles: ["proof"]
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    container_name: link-platform-control-plane-api-query-fallback
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/link_platform
+      DB_USERNAME: link_platform
+      DB_PASSWORD: link_platform
+      QUERY_DB_URL: jdbc:postgresql://missing-query:5432/link_platform
+      QUERY_DB_USERNAME: link_platform
+      QUERY_DB_PASSWORD: link_platform
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LINK_PLATFORM_CACHE_ENABLED: "true"
+      LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8081
+      LINK_PLATFORM_RUNTIME_MODE: control-plane-api
+      LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
+    ports:
+      - "8083:8080"
+
+  redirect-single-region:
+    profiles: ["proof"]
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    container_name: link-platform-redirect-single-region
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/link_platform
+      DB_USERNAME: link_platform
+      DB_PASSWORD: link_platform
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LINK_PLATFORM_CACHE_ENABLED: "true"
+      LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8084
+      LINK_PLATFORM_RUNTIME_MODE: redirect
+      LINK_PLATFORM_RUNTIME_REDIRECT_REGION: single-region
+      LINK_PLATFORM_LIFECYCLE_TOPIC: link-platform.lifecycle.link-events
+    ports:
+      - "8084:8080"
+
 volumes:
   postgres-data:
