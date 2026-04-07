@@ -40,6 +40,7 @@ class ProjectionJobsControllerIntegrationTest {
 
     @Test
     void projectionJobsPersistScopeAndScopedAndUnscopedRunsWork() throws Exception {
+        String personalWorkspaceSlug = personalWorkspaceSlug();
         insertLifecycleHistory(1L, "scope-1", "alpha", OffsetDateTime.parse("2026-04-06T10:00:00Z"));
         insertLifecycleHistory(2L, "scope-2", "beta", OffsetDateTime.parse("2026-04-06T10:05:00Z"));
 
@@ -51,7 +52,7 @@ class ProjectionJobsControllerIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").value(1))
-                .andExpect(jsonPath("$.workspaceSlug").doesNotExist())
+                .andExpect(jsonPath("$.workspaceSlug").value(personalWorkspaceSlug))
                 .andExpect(jsonPath("$.slug").value("alpha"))
                 .andExpect(jsonPath("$.startedAt").doesNotExist())
                 .andExpect(jsonPath("$.lastChunkAt").doesNotExist())
@@ -73,7 +74,7 @@ class ProjectionJobsControllerIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").doesNotExist())
-                .andExpect(jsonPath("$.workspaceSlug").doesNotExist())
+                .andExpect(jsonPath("$.workspaceSlug").value(personalWorkspaceSlug))
                 .andExpect(jsonPath("$.slug").doesNotExist());
 
         projectionJobRunner.runPendingJobs();
@@ -90,6 +91,7 @@ class ProjectionJobsControllerIntegrationTest {
 
     @Test
     void failedScopedJobExposesConsistentUnknownFailedItemsAndCompatibilityAlias() throws Exception {
+        String personalWorkspaceSlug = personalWorkspaceSlug();
         jdbcTemplate.update(
                 """
                 INSERT INTO link_lifecycle_outbox (event_id, event_type, event_key, payload_json, created_at, published_at)
@@ -105,6 +107,7 @@ class ProjectionJobsControllerIntegrationTest {
                                 {"jobType":"LINK_CATALOG_REBUILD","slug":"broken"}
                                 """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workspaceSlug").value(personalWorkspaceSlug))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -133,6 +136,7 @@ class ProjectionJobsControllerIntegrationTest {
 
     @Test
     void controllerResponseMatchesPersistedProjectionProgressState() throws Exception {
+        String personalWorkspaceSlug = personalWorkspaceSlug();
         insertLifecycleHistory(1L, "progress-1", "gamma", OffsetDateTime.parse("2026-04-06T11:00:00Z"));
         insertLifecycleHistory(1L, "progress-2", "gamma", OffsetDateTime.parse("2026-04-06T11:01:00Z"));
         insertLifecycleHistory(1L, "progress-3", "gamma", OffsetDateTime.parse("2026-04-06T11:02:00Z"));
@@ -146,6 +150,7 @@ class ProjectionJobsControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.startedAt").doesNotExist())
                 .andExpect(jsonPath("$.lastChunkAt").doesNotExist())
+                .andExpect(jsonPath("$.workspaceSlug").value(personalWorkspaceSlug))
                 .andExpect(jsonPath("$.processedItems").value(0))
                 .andExpect(jsonPath("$.failedItems").value(0))
                 .andReturn()
@@ -199,6 +204,7 @@ class ProjectionJobsControllerIntegrationTest {
 
         assertThat(controllerJob.path("startedAt").asText()).isEqualTo(persisted.startedAt().toString());
         assertThat(controllerJob.path("lastChunkAt").asText()).isEqualTo(persisted.lastChunkAt().toString());
+        assertThat(controllerJob.path("workspaceSlug").asText()).isEqualTo(personalWorkspaceSlug);
         assertThat(controllerJob.path("processedItems").asLong()).isEqualTo(persisted.processedItems());
         assertThat(controllerJob.path("processedCount").asLong()).isEqualTo(persisted.processedItems());
         assertThat(controllerJob.path("processedCount").asLong()).isEqualTo(controllerJob.path("processedItems").asLong());
@@ -220,5 +226,11 @@ class ProjectionJobsControllerIntegrationTest {
                 """.formatted(eventId, ownerId, slug, slug, slug, occurredAt),
                 occurredAt,
                 occurredAt);
+    }
+
+    private String personalWorkspaceSlug() {
+        return jdbcTemplate.queryForObject(
+                "SELECT slug FROM workspaces WHERE personal_workspace = TRUE AND created_by_owner_id = 1",
+                String.class);
     }
 }

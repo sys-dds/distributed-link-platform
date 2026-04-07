@@ -35,6 +35,14 @@ public interface ProjectionJobStore {
 
     List<ProjectionJob> findRecent(int limit);
 
+    default Optional<ProjectionJob> findByIdVisibleToWorkspace(long id, long workspaceId, long ownerId, boolean personalWorkspace) {
+        return findById(id);
+    }
+
+    default List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace) {
+        return findRecent(limit);
+    }
+
     default Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
         return claimNextQueued(workerId, now, claimedUntil);
     }

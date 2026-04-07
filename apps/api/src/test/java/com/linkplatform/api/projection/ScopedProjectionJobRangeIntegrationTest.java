@@ -57,11 +57,28 @@ class ScopedProjectionJobRangeIntegrationTest {
                 .andExpect(jsonPath("$.requestedByOwnerId").value(1))
                 .andExpect(jsonPath("$.operatorNote").value("targeted repair"));
 
+        Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = 'repair'", Long.class);
+        Long loggedWorkspaceId = jdbcTemplate.queryForObject(
+                "SELECT workspace_id FROM operator_action_log WHERE action_type = 'projection_job_create' ORDER BY id DESC LIMIT 1",
+                Long.class);
+        org.junit.jupiter.api.Assertions.assertEquals(workspaceId, loggedWorkspaceId);
+
         mockMvc.perform(post("/api/v1/projection-jobs")
                         .header("X-API-Key", opsKey)
                         .header("X-Workspace-Slug", "repair")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
+                                {"jobType":"CLICK_ROLLUP_REBUILD","workspaceSlug":"   ","slug":"scoped-link","operatorNote":"blank scope"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workspaceSlug").value("repair"))
+                .andExpect(jsonPath("$.slug").value("scoped-link"));
+
+        mockMvc.perform(post("/api/v1/projection-jobs")
+                        .header("X-API-Key", opsKey)
+                        .header("X-Workspace-Slug", "repair")
+                        .contentType(MediaType.APPLICATION_JSON)
+                .content("""
                                 {"jobType":"LINK_CATALOG_REBUILD","workspaceSlug":"repair","slug":"scoped-link","from":"2026-04-01T00:00:00Z","to":"2026-04-02T00:00:00Z"}
                                 """))
                 .andExpect(status().isBadRequest());

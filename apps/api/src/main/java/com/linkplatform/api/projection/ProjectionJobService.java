@@ -73,6 +73,9 @@ public class ProjectionJobService {
             Long requestedByOwnerId,
             String operatorNote) {
         validateScope(jobType, from, to);
+        if (workspaceId == null) {
+            throw new IllegalArgumentException("workspace scope is required");
+        }
         return projectionJobStore.createJob(
                 jobType,
                 OffsetDateTime.now(clock),
