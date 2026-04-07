@@ -9,9 +9,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class JdbcPipelineControlStore implements PipelineControlStore {
 
-    private static final int MAX_PAUSE_REASON_LENGTH = 255;
-    private static final int MAX_FAILURE_REASON_LENGTH = 512;
-
     private final JdbcTemplate jdbcTemplate;
 
     public JdbcPipelineControlStore(JdbcTemplate jdbcTemplate) {
@@ -44,7 +41,7 @@ public class JdbcPipelineControlStore implements PipelineControlStore {
                     updated_at = ?
                 WHERE pipeline_name = ?
                 """,
-                truncate(trimToNull(reason), MAX_PAUSE_REASON_LENGTH),
+                truncate(trimToNull(reason), PipelineControl.MAX_PAUSE_REASON_LENGTH),
                 updatedAt,
                 pipelineName);
         return get(pipelineName);
@@ -122,7 +119,7 @@ public class JdbcPipelineControlStore implements PipelineControlStore {
                 WHERE pipeline_name = ?
                 """,
                 occurredAt,
-                truncate(trimToNull(failureReason), MAX_FAILURE_REASON_LENGTH),
+                truncate(trimToNull(failureReason), PipelineControl.MAX_FAILURE_REASON_LENGTH),
                 occurredAt,
                 pipelineName);
         return get(pipelineName);

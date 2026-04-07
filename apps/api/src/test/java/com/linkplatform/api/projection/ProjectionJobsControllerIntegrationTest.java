@@ -1,11 +1,14 @@
 package com.linkplatform.api.projection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class ProjectionJobsControllerIntegrationTest {
 
     private static final String FREE_API_KEY = "free-owner-api-key";
+    private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
     @Autowired
     private MockMvc mockMvc;
@@ -116,6 +120,75 @@ class ProjectionJobsControllerIntegrationTest {
                 .andExpect(jsonPath("$.startedAt").isNotEmpty())
                 .andExpect(jsonPath("$.failedItems").value(1))
                 .andExpect(jsonPath("$.lastError").isNotEmpty());
+    }
+
+    @Test
+    void controllerResponseMatchesPersistedProjectionProgressState() throws Exception {
+        insertLifecycleHistory(1L, "progress-1", "gamma", OffsetDateTime.parse("2026-04-06T11:00:00Z"));
+        insertLifecycleHistory(1L, "progress-2", "gamma", OffsetDateTime.parse("2026-04-06T11:01:00Z"));
+        insertLifecycleHistory(1L, "progress-3", "gamma", OffsetDateTime.parse("2026-04-06T11:02:00Z"));
+
+        String responseBody = mockMvc.perform(post("/api/v1/projection-jobs")
+                        .header("X-API-Key", FREE_API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jobType":"LINK_CATALOG_REBUILD","ownerId":1,"slug":"gamma"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.startedAt").doesNotExist())
+                .andExpect(jsonPath("$.lastChunkAt").doesNotExist())
+                .andExpect(jsonPath("$.processedItems").value(0))
+                .andExpect(jsonPath("$.failedItems").value(0))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long jobId = jsonMapper.readTree(responseBody).path("id").asLong();
+
+        projectionJobRunner.runPendingJobs();
+
+        ProjectionJob persisted = jdbcTemplate.queryForObject(
+                """
+                SELECT id, job_type, status, requested_at, started_at, completed_at,
+                       last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
+                       error_summary, last_error, claimed_by, claimed_until, owner_id, slug
+                FROM projection_jobs
+                WHERE id = ?
+                """,
+                (resultSet, rowNum) -> new ProjectionJob(
+                        resultSet.getLong("id"),
+                        ProjectionJobType.valueOf(resultSet.getString("job_type")),
+                        ProjectionJobStatus.valueOf(resultSet.getString("status")),
+                        resultSet.getObject("requested_at", OffsetDateTime.class),
+                        resultSet.getObject("started_at", OffsetDateTime.class),
+                        resultSet.getObject("last_chunk_at", OffsetDateTime.class),
+                        resultSet.getObject("completed_at", OffsetDateTime.class),
+                        resultSet.getLong("processed_count"),
+                        resultSet.getLong("processed_items"),
+                        resultSet.getLong("failed_items"),
+                        resultSet.getObject("checkpoint_id", Long.class),
+                        resultSet.getString("error_summary"),
+                        resultSet.getString("last_error"),
+                        resultSet.getString("claimed_by"),
+                        resultSet.getObject("claimed_until", OffsetDateTime.class),
+                        resultSet.getObject("owner_id", Long.class),
+                        resultSet.getString("slug")),
+                jobId);
+
+        JsonNode controllerJob = jsonMapper.readTree(mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId)
+                        .header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+
+        assertThat(controllerJob.path("startedAt").asText()).isEqualTo(persisted.startedAt().toString());
+        assertThat(controllerJob.path("lastChunkAt").asText()).isEqualTo(persisted.lastChunkAt().toString());
+        assertThat(controllerJob.path("processedItems").asLong()).isEqualTo(persisted.processedItems());
+        assertThat(controllerJob.path("processedCount").asLong()).isEqualTo(persisted.processedItems());
+        assertThat(controllerJob.path("failedItems").asLong()).isEqualTo(persisted.failedItems());
+        assertThat(controllerJob.path("lastError").isMissingNode() || controllerJob.path("lastError").isNull()).isTrue();
+        assertThat(controllerJob.path("errorSummary").isMissingNode() || controllerJob.path("errorSummary").isNull()).isTrue();
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {

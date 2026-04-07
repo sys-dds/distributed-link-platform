@@ -93,25 +93,6 @@ public class ProjectionJobsController {
     }
 
     private ProjectionJobResponse toResponse(ProjectionJob job) {
-        return new ProjectionJobResponse(
-                job.id(),
-                job.jobType(),
-                job.status(),
-                job.requestedAt(),
-                job.startedAt(),
-                job.lastChunkAt(),
-                job.completedAt(),
-                job.processedCount(),
-                job.processedItems(),
-                job.failedItems(),
-                job.checkpointId(),
-                null,
-                null,
-                job.errorSummary(),
-                job.lastError(),
-                job.claimedBy(),
-                job.claimedUntil(),
-                job.ownerId(),
-                job.slug());
+        return ProjectionJobResponse.from(job);
     }
 }

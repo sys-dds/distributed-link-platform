@@ -51,14 +51,20 @@ class PipelineHealthIndicatorIntegrationTest {
                 OffsetDateTime.parse("2026-04-06T08:10:00Z"));
 
         pipelineControlStore.pause("analytics", "maintenance", OffsetDateTime.parse("2026-04-06T08:20:00Z"));
+        pipelineControlStore.recordRequeue("analytics", OffsetDateTime.parse("2026-04-06T08:20:30Z"));
+        pipelineControlStore.recordForceTick("analytics", OffsetDateTime.parse("2026-04-06T08:20:45Z"));
         pipelineControlStore.recordRelayFailure("analytics", OffsetDateTime.parse("2026-04-06T08:21:00Z"), "failure");
         pipelineControlStore.recordRelaySuccess("lifecycle", OffsetDateTime.parse("2026-04-06T08:22:00Z"));
 
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.components.pipeline.details.analytics.paused").value(true))
+                .andExpect(jsonPath("$.components.pipeline.details.analytics.pauseReason").value("maintenance"))
                 .andExpect(jsonPath("$.components.pipeline.details.analytics.parkedCount").value(1))
+                .andExpect(jsonPath("$.components.pipeline.details.analytics.lastRequeueAt").isNotEmpty())
+                .andExpect(jsonPath("$.components.pipeline.details.analytics.lastForceTickAt").isNotEmpty())
                 .andExpect(jsonPath("$.components.pipeline.details.analytics.lastRelayFailureAt").isNotEmpty())
+                .andExpect(jsonPath("$.components.pipeline.details.analytics.lastRelayFailureReason").value("failure"))
                 .andExpect(jsonPath("$.components.pipeline.details.lifecycle.paused").value(false))
                 .andExpect(jsonPath("$.components.pipeline.details.lifecycle.eligibleCount").value(1))
                 .andExpect(jsonPath("$.components.pipeline.details.lifecycle.lastRelaySuccessAt").isNotEmpty());

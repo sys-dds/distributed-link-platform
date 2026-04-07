@@ -61,16 +61,20 @@ public class PipelineHealthIndicator extends AbstractHealthIndicator {
             OffsetDateTime now) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("paused", control.paused());
+        details.put("pauseReason", control.pauseReason());
         details.put("eligibleCount", eligibleCount);
         details.put("parkedCount", parkedCount);
         details.put("oldestEligibleAgeSeconds", ageSeconds(oldestEligibleAt, now));
         details.put("oldestParkedAgeSeconds", ageSeconds(oldestParkedAt, now));
+        details.put("lastRequeueAt", control.lastRequeueAt());
+        details.put("lastForceTickAt", control.lastForceTickAt());
         details.put("lastRelaySuccessAt", control.lastRelaySuccessAt());
         details.put("lastRelayFailureAt", control.lastRelayFailureAt());
+        details.put("lastRelayFailureReason", control.lastRelayFailureReason());
         return details;
     }
 
-    private Object ageSeconds(OffsetDateTime timestamp, OffsetDateTime now) {
+    private Double ageSeconds(OffsetDateTime timestamp, OffsetDateTime now) {
         if (timestamp == null) {
             return null;
         }
