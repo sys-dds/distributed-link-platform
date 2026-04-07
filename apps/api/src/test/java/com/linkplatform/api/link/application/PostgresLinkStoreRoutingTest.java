@@ -33,6 +33,7 @@ class PostgresLinkStoreRoutingTest {
                 "Route",
                 List.of("docs"),
                 "example.com",
+                LinkAbuseStatus.ACTIVE,
                 2L,
                 4L);
 

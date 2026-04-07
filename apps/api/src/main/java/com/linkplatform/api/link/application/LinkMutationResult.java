@@ -11,6 +11,7 @@ public record LinkMutationResult(
         String title,
         List<String> tags,
         String hostname,
+        LinkAbuseStatus abuseStatus,
         long version,
         boolean deleted) {
 
@@ -23,6 +24,7 @@ public record LinkMutationResult(
                 linkDetails.title(),
                 linkDetails.tags(),
                 linkDetails.hostname(),
+                linkDetails.abuseStatus(),
                 linkDetails.version(),
                 false);
     }

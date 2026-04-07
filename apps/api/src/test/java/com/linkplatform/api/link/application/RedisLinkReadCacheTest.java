@@ -60,8 +60,8 @@ class RedisLinkReadCacheTest {
                 Duration.ofSeconds(30),
                 Duration.ofSeconds(15));
 
-        cache.putOwnerLinkDetails(1L, "same-slug", new LinkDetails("same-slug", "https://example.com/one", null, null, null, List.of(), "example.com", 1L, 0L));
-        cache.putOwnerLinkDetails(2L, "same-slug", new LinkDetails("same-slug", "https://example.com/two", null, null, null, List.of(), "example.com", 1L, 0L));
+        cache.putOwnerLinkDetails(1L, "same-slug", new LinkDetails("same-slug", "https://example.com/one", null, null, null, List.of(), "example.com", LinkAbuseStatus.ACTIVE, 1L, 0L));
+        cache.putOwnerLinkDetails(2L, "same-slug", new LinkDetails("same-slug", "https://example.com/two", null, null, null, List.of(), "example.com", LinkAbuseStatus.ACTIVE, 1L, 0L));
         cache.putOwnerRecentLinks(1L, 20, "same", LinkLifecycleState.ALL, List.of());
         cache.putOwnerRecentLinks(2L, 20, "same", LinkLifecycleState.ALL, List.of());
         cache.putOwnerSuggestions(1L, "same", 10, List.of());
@@ -70,6 +70,7 @@ class RedisLinkReadCacheTest {
                 "same",
                 "example.com",
                 "docs",
+                null,
                 LinkDiscoveryLifecycleFilter.ACTIVE,
                 LinkDiscoveryExpirationFilter.ANY,
                 LinkDiscoverySort.UPDATED_DESC,

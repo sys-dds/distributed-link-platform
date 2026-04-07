@@ -27,6 +27,7 @@ public class RedirectRuntimeService {
     private final LinkReadCache linkReadCache;
     private final RedirectRateLimitService redirectRateLimitService;
     private final SecurityEventStore securityEventStore;
+    private final LinkAbuseReviewService linkAbuseReviewService;
     private final LinkPlatformRuntimeProperties runtimeProperties;
     private final RedirectRuntimeState redirectRuntimeState;
     private final Clock clock;
@@ -36,6 +37,7 @@ public class RedirectRuntimeService {
             LinkReadCache linkReadCache,
             RedirectRateLimitService redirectRateLimitService,
             SecurityEventStore securityEventStore,
+            LinkAbuseReviewService linkAbuseReviewService,
             LinkPlatformRuntimeProperties runtimeProperties,
             RedirectRuntimeState redirectRuntimeState,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
@@ -43,6 +45,7 @@ public class RedirectRuntimeService {
         this.linkReadCache = linkReadCache;
         this.redirectRateLimitService = redirectRateLimitService;
         this.securityEventStore = securityEventStore;
+        this.linkAbuseReviewService = linkAbuseReviewService;
         this.runtimeProperties = runtimeProperties;
         this.redirectRuntimeState = redirectRuntimeState;
         URI.create(publicBaseUrl);
@@ -129,7 +132,14 @@ public class RedirectRuntimeService {
         }
         try {
             Link link = linkStore.findBySlug(slug, OffsetDateTime.now(clock))
-                    .orElseThrow(() -> new LinkNotFoundException(slug));
+                    .orElseThrow(() -> {
+                        if (linkStore.findStoredDetailsBySlug(slug).map(LinkDetails::abuseStatus).orElse(LinkAbuseStatus.ACTIVE)
+                                == LinkAbuseStatus.QUARANTINED) {
+                            linkAbuseReviewService.recordQuarantinedRedirectAttempt(slug, requestPath, remoteAddress);
+                            return new LinkQuarantinedException(slug);
+                        }
+                        return new LinkNotFoundException(slug);
+                    });
             if (linkReadCache.isCacheGenerationAvailable(generation)) {
                 linkReadCache.putPublicRedirect(slug, generation, link);
             }

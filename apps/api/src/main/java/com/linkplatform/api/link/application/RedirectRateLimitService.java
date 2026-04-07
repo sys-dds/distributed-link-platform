@@ -22,6 +22,7 @@ public class RedirectRateLimitService {
     private final RedirectRateLimitStore fallbackStore;
     private final RedirectRateLimitStore redisStore;
     private final SecurityEventStore securityEventStore;
+    private final LinkAbuseReviewService linkAbuseReviewService;
     private final LinkPlatformRuntimeProperties runtimeProperties;
     private final Counter allowedCounter;
     private final Counter rejectedCounter;
@@ -34,11 +35,13 @@ public class RedirectRateLimitService {
             RedirectRateLimitStore fallbackStore,
             ObjectProvider<RedisRedirectRateLimitStore> redisStoreProvider,
             SecurityEventStore securityEventStore,
+            LinkAbuseReviewService linkAbuseReviewService,
             LinkPlatformRuntimeProperties runtimeProperties,
             MeterRegistry meterRegistry) {
         this.fallbackStore = fallbackStore;
         this.redisStore = redisStoreProvider.getIfAvailable();
         this.securityEventStore = securityEventStore;
+        this.linkAbuseReviewService = linkAbuseReviewService;
         this.runtimeProperties = runtimeProperties;
         this.allowedCounter = Counter.builder("link.redirect.rate_limit.allowed").register(meterRegistry);
         this.rejectedCounter = Counter.builder("link.redirect.rate_limit.rejected").register(meterRegistry);
@@ -73,6 +76,7 @@ public class RedirectRateLimitService {
                         null,
                         "Redirect rate limit rejected",
                         now);
+                linkAbuseReviewService.recordRedirectRateLimitSignal(slug);
                 return RedirectRateLimitDecision.rejected(false, false, count, limit);
             }
             return RedirectRateLimitDecision.allowed(false, false, count, limit);
@@ -92,6 +96,7 @@ public class RedirectRateLimitService {
                         null,
                         "Redirect rate limit rejected",
                         now);
+                linkAbuseReviewService.recordRedirectRateLimitSignal(slug);
                 return RedirectRateLimitDecision.rejected(true, true, count, limit);
             }
             allowedCounter.increment();

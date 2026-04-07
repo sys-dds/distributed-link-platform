@@ -9,6 +9,7 @@ public record LinkDiscoveryItemResponse(
         String title,
         String hostname,
         List<String> tags,
+        String abuseStatus,
         String lifecycleState,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,

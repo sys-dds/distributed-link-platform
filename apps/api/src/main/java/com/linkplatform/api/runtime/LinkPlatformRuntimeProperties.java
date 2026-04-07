@@ -7,6 +7,7 @@ public class LinkPlatformRuntimeProperties {
 
     private RuntimeMode mode = RuntimeMode.ALL;
     private final Redirect redirect = new Redirect();
+    private final Abuse abuse = new Abuse();
 
     public RuntimeMode getMode() {
         return mode;
@@ -18,6 +19,10 @@ public class LinkPlatformRuntimeProperties {
 
     public Redirect getRedirect() {
         return redirect;
+    }
+
+    public Abuse getAbuse() {
+        return abuse;
     }
 
     public boolean redirectEnabled() {
@@ -129,5 +134,65 @@ public class LinkPlatformRuntimeProperties {
             }
             return Math.min(requestsPerWindow, hotSlugRequestsPerWindow);
         }
+    }
+
+    public static class Abuse {
+
+        private boolean enabled = true;
+        private int autoQuarantineThreshold = 5;
+        private int reviewPageSizeDefault = 20;
+        private int reviewPageSizeMax = 100;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getAutoQuarantineThreshold() {
+            return autoQuarantineThreshold;
+        }
+
+        public void setAutoQuarantineThreshold(int autoQuarantineThreshold) {
+            this.autoQuarantineThreshold = autoQuarantineThreshold;
+        }
+
+        public int getReviewPageSizeDefault() {
+            return reviewPageSizeDefault;
+        }
+
+        public void setReviewPageSizeDefault(int reviewPageSizeDefault) {
+            this.reviewPageSizeDefault = reviewPageSizeDefault;
+        }
+
+        public int getReviewPageSizeMax() {
+            return reviewPageSizeMax;
+        }
+
+        public void setReviewPageSizeMax(int reviewPageSizeMax) {
+            this.reviewPageSizeMax = reviewPageSizeMax;
+        }
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.abuse.enabled:true}")
+    void bindAbuseEnabled(boolean enabled) {
+        abuse.setEnabled(enabled);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.abuse.auto-quarantine-threshold:5}")
+    void bindAbuseAutoQuarantineThreshold(int threshold) {
+        abuse.setAutoQuarantineThreshold(threshold);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.abuse.review-page-size-default:20}")
+    void bindAbuseReviewPageSizeDefault(int pageSize) {
+        abuse.setReviewPageSizeDefault(pageSize);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.abuse.review-page-size-max:100}")
+    void bindAbuseReviewPageSizeMax(int pageSize) {
+        abuse.setReviewPageSizeMax(pageSize);
     }
 }

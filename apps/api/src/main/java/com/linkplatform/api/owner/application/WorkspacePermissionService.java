@@ -38,6 +38,14 @@ public class WorkspacePermissionService {
         throw new WorkspaceScopeDeniedException("Scope denied for workspace action");
     }
 
+    public void requireOpsRead(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.OPS_READ);
+    }
+
+    public void requireOpsWrite(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.OPS_WRITE);
+    }
+
     public Set<ApiKeyScope> validateRequestedScopes(WorkspaceRole role, List<String> requestedScopes) {
         Set<ApiKeyScope> parsed = EnumSet.noneOf(ApiKeyScope.class);
         if (requestedScopes != null) {

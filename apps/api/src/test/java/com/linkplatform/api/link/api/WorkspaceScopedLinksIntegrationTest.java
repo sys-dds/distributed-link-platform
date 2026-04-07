@@ -38,7 +38,8 @@ class WorkspaceScopedLinksIntegrationTest {
 
         mockMvc.perform(get("/api/v1/links/workspace-fallback").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.slug").value("workspace-fallback"));
+                .andExpect(jsonPath("$.slug").value("workspace-fallback"))
+                .andExpect(jsonPath("$.abuseStatus").value("active"));
     }
 
     @Test

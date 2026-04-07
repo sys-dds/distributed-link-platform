@@ -8,6 +8,7 @@ import com.linkplatform.api.link.application.LinkDiscoveryPage;
 import com.linkplatform.api.link.application.LinkDiscoveryQuery;
 import com.linkplatform.api.link.application.LinkDiscoverySort;
 import com.linkplatform.api.link.application.LinkDetails;
+import com.linkplatform.api.link.application.LinkAbuseStatus;
 import com.linkplatform.api.link.application.LinkLifecycleState;
 import com.linkplatform.api.link.application.LinkMutationResult;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
@@ -133,6 +134,7 @@ public class LinkController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "active") String state,
+            @RequestParam(required = false, name = "abuse") String abuse,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
@@ -146,10 +148,11 @@ public class LinkController {
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
                                 httpServletRequest.getRemoteAddr(),
-                                ApiKeyScope.LINKS_READ),
+                        ApiKeyScope.LINKS_READ),
                         limit,
                         resolveSearchText(q, search),
-                        parseState(state)).stream()
+                        parseState(state),
+                        parseAbuseStatus(abuse)).stream()
                 .map(this::toReadResponse)
                 .toList();
     }
@@ -185,6 +188,7 @@ public class LinkController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String hostname,
             @RequestParam(required = false) String tag,
+            @RequestParam(required = false, name = "abuse") String abuse,
             @RequestParam(defaultValue = "active") String lifecycle,
             @RequestParam(defaultValue = "any") String expiration,
             @RequestParam(defaultValue = "updated_desc") String sort,
@@ -208,6 +212,7 @@ public class LinkController {
                         resolveSearchText(searchText, search),
                         hostname,
                         tag,
+                        parseAbuseStatus(abuse),
                         parseDiscoveryLifecycle(lifecycle),
                         parseExpiration(expiration),
                         parseSort(sort),
@@ -221,6 +226,7 @@ public class LinkController {
                                 item.title(),
                                 item.hostname(),
                                 item.tags(),
+                                item.abuseStatus().name().toLowerCase(Locale.ROOT),
                                 item.lifecycleState().name().toLowerCase(Locale.ROOT),
                                 item.createdAt(),
                                 item.updatedAt(),
@@ -350,6 +356,10 @@ public class LinkController {
         }
     }
 
+    private LinkAbuseStatus parseAbuseStatus(String abuse) {
+        return LinkAbuseStatus.fromApiValue(abuse);
+    }
+
     private String resolveSearchText(String q, String search) {
         String normalizedQ = normalizeToNull(q);
         if (normalizedQ != null) {
@@ -376,6 +386,7 @@ public class LinkController {
                 result.title(),
                 result.tags(),
                 result.hostname(),
+                result.abuseStatus().name().toLowerCase(Locale.ROOT),
                 result.version());
     }
 
@@ -388,6 +399,7 @@ public class LinkController {
                 linkDetails.title(),
                 linkDetails.tags(),
                 linkDetails.hostname(),
+                linkDetails.abuseStatus().name().toLowerCase(Locale.ROOT),
                 linkDetails.version(),
                 linkDetails.clickTotal());
     }

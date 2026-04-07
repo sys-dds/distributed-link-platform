@@ -43,7 +43,8 @@ class LinkLifecycleControlsIntegrationTest {
                                 {"action":"suspend"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.version").value(2));
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.abuseStatus").value("active"));
 
         mockMvc.perform(post("/api/v1/links/lifecycle-link/lifecycle")
                         .header("X-API-Key", FREE_API_KEY)
