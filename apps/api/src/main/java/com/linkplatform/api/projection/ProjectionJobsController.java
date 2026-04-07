@@ -64,7 +64,7 @@ public class ProjectionJobsController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
-        Long scopedWorkspaceId = resolveRequestedWorkspaceId(context, request.workspaceSlug());
+        Long scopedWorkspaceId = resolveRequestedWorkspaceId(context, JdbcOperatorActionLogStore.sanitizeWorkspaceSlug(request.workspaceSlug()));
         String safeNote = JdbcOperatorActionLogStore.sanitizeNote(request.operatorNote());
         ProjectionJob job = projectionJobService.createJob(
                 request.jobType(),
@@ -85,7 +85,7 @@ public class ProjectionJobsController {
                 job.id(),
                 safeNote,
                 job.requestedAt());
-        return ProjectionJobResponse.from(job, resolveWorkspaceSlug(job.workspaceId()));
+        return ProjectionJobResponse.from(job, context.workspaceSlug());
     }
 
     @GetMapping("/{id}")
@@ -95,7 +95,7 @@ public class ProjectionJobsController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
-        ownerAccessService.authorizeRead(
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
@@ -103,8 +103,8 @@ public class ProjectionJobsController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_READ);
-        return projectionJobStore.findById(id)
-                .map(job -> ProjectionJobResponse.from(job, resolveWorkspaceSlug(job.workspaceId())))
+        return projectionJobStore.findByIdVisibleToWorkspace(id, context.workspaceId(), context.ownerId(), context.personalWorkspace())
+                .map(job -> ProjectionJobResponse.from(job, context.workspaceSlug()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Projection job not found: " + id));
     }
 
@@ -115,7 +115,7 @@ public class ProjectionJobsController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
-        ownerAccessService.authorizeRead(
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
@@ -124,8 +124,8 @@ public class ProjectionJobsController {
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_READ);
         validateLimit(limit);
-        return projectionJobStore.findRecent(limit).stream()
-                .map(job -> ProjectionJobResponse.from(job, resolveWorkspaceSlug(job.workspaceId())))
+        return projectionJobStore.findRecentVisibleToWorkspace(limit, context.workspaceId(), context.ownerId(), context.personalWorkspace()).stream()
+                .map(job -> ProjectionJobResponse.from(job, context.workspaceSlug()))
                 .toList();
     }
 
@@ -137,7 +137,7 @@ public class ProjectionJobsController {
 
     private Long resolveRequestedWorkspaceId(WorkspaceAccessContext context, String requestWorkspaceSlug) {
         if (requestWorkspaceSlug == null || requestWorkspaceSlug.isBlank()) {
-            return null;
+            return context.workspaceId();
         }
         String normalized = requestWorkspaceSlug.trim();
         if (!context.workspaceSlug().equals(normalized)) {
@@ -146,14 +146,5 @@ public class ProjectionJobsController {
         return workspaceStore.findBySlug(normalized)
                 .map(com.linkplatform.api.owner.application.WorkspaceRecord::id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found: " + normalized));
-    }
-
-    private String resolveWorkspaceSlug(Long workspaceId) {
-        if (workspaceId == null) {
-            return null;
-        }
-        return workspaceStore.findById(workspaceId)
-                .map(com.linkplatform.api.owner.application.WorkspaceRecord::slug)
-                .orElse(null);
     }
 }

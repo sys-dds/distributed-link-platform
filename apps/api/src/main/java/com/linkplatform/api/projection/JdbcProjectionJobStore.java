@@ -103,10 +103,48 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
+    public Optional<ProjectionJob> findByIdVisibleToWorkspace(long id, long workspaceId, long ownerId, boolean personalWorkspace) {
+        if (personalWorkspace) {
+            return jdbcTemplate.query(
+                            selectJobsSql() + visibilityClause(true) + " AND id = ?",
+                            this::mapJob,
+                            workspaceId,
+                            ownerId,
+                            id)
+                    .stream()
+                    .findFirst();
+        }
+        return jdbcTemplate.query(
+                        selectJobsSql() + visibilityClause(false) + " AND id = ?",
+                        this::mapJob,
+                        workspaceId,
+                        id)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public List<ProjectionJob> findRecent(int limit) {
         return jdbcTemplate.query(
                 selectJobsSql() + " ORDER BY requested_at DESC, id DESC LIMIT ?",
                 this::mapJob,
+                limit);
+    }
+
+    @Override
+    public List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace) {
+        if (personalWorkspace) {
+            return jdbcTemplate.query(
+                    selectJobsSql() + visibilityClause(true) + " ORDER BY requested_at DESC, id DESC LIMIT ?",
+                    this::mapJob,
+                    workspaceId,
+                    ownerId,
+                    limit);
+        }
+        return jdbcTemplate.query(
+                selectJobsSql() + visibilityClause(false) + " ORDER BY requested_at DESC, id DESC LIMIT ?",
+                this::mapJob,
+                workspaceId,
                 limit);
     }
 
@@ -303,6 +341,21 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                        slug, range_start, range_end, requested_by_owner_id, operator_note
                 FROM projection_jobs
                 """;
+    }
+
+    private String visibilityClause(boolean personalWorkspace) {
+        if (personalWorkspace) {
+            return """
+                     WHERE (
+                         workspace_id = ?
+                         OR (
+                             workspace_id IS NULL
+                             AND COALESCE(requested_by_owner_id, owner_id) = ?
+                         )
+                     )
+                    """;
+        }
+        return " WHERE workspace_id = ? AND 1 = 1 ";
     }
 
     private ProjectionJob mapJob(ResultSet resultSet, int rowNum) throws SQLException {

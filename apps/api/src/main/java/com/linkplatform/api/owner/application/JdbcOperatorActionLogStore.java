@@ -112,6 +112,14 @@ public class JdbcOperatorActionLogStore implements OperatorActionLogStore {
         return normalized.length() <= NOTE_MAX_LENGTH ? normalized : normalized.substring(0, NOTE_MAX_LENGTH);
     }
 
+    public static String sanitizeWorkspaceSlug(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private String shorten(String value, int maxLength) {
         if (value == null) {
             return null;

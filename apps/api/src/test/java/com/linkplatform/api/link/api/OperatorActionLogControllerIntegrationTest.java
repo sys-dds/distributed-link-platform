@@ -59,8 +59,14 @@ class OperatorActionLogControllerIntegrationTest {
                         .header("X-API-Key", opsKey)
                         .header("X-Workspace-Slug", "ops-log")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"jobType\":\"CLICK_ROLLUP_REBUILD\",\"workspaceSlug\":\"ops-log\",\"slug\":\"log-link\",\"operatorNote\":\"repair window\"}"))
+                        .content("{\"jobType\":\"CLICK_ROLLUP_REBUILD\",\"slug\":\"log-link\",\"operatorNote\":\"repair window\"}"))
                 .andExpect(status().isOk());
+
+        Long opsWorkspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = 'ops-log'", Long.class);
+        Long loggedProjectionWorkspaceId = jdbcTemplate.queryForObject(
+                "SELECT workspace_id FROM operator_action_log WHERE action_type = 'projection_job_create' ORDER BY id DESC LIMIT 1",
+                Long.class);
+        org.junit.jupiter.api.Assertions.assertEquals(opsWorkspaceId, loggedProjectionWorkspaceId);
 
         mockMvc.perform(post("/api/v1/analytics/pipeline/resume")
                         .header("X-API-Key", otherOpsKey)
