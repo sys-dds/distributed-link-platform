@@ -37,9 +37,7 @@ public interface ProjectionJobStore {
 
     void markCompleted(long id, OffsetDateTime completedAt, long processedCountIncrement, Long checkpointId);
 
-    default void markFailed(long id, OffsetDateTime completedAt, long failedItemsIncrement, String errorSummary) {
-        markFailed(id, completedAt, errorSummary);
-    }
+    void markFailed(long id, OffsetDateTime completedAt, long failedItemsIncrement, String errorSummary);
 
     default void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
         markFailed(id, completedAt, 0L, errorSummary);

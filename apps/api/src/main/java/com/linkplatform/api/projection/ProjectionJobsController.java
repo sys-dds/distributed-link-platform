@@ -48,7 +48,7 @@ public class ProjectionJobsController {
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
-        return toResponse(projectionJobService.createJob(request.jobType(), request.ownerId(), request.slug()));
+        return ProjectionJobResponse.from(projectionJobService.createJob(request.jobType(), request.ownerId(), request.slug()));
     }
 
     @GetMapping("/{id}")
@@ -64,7 +64,7 @@ public class ProjectionJobsController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
         return projectionJobStore.findById(id)
-                .map(this::toResponse)
+                .map(ProjectionJobResponse::from)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Projection job not found: " + id));
     }
 
@@ -82,7 +82,7 @@ public class ProjectionJobsController {
                 httpServletRequest.getRemoteAddr());
         validateLimit(limit);
         return projectionJobStore.findRecent(limit).stream()
-                .map(this::toResponse)
+                .map(ProjectionJobResponse::from)
                 .toList();
     }
 
@@ -90,9 +90,5 @@ public class ProjectionJobsController {
         if (limit < 1 || limit > MAX_LIMIT) {
             throw new IllegalArgumentException("Limit must be between 1 and " + MAX_LIMIT);
         }
-    }
-
-    private ProjectionJobResponse toResponse(ProjectionJob job) {
-        return ProjectionJobResponse.from(job);
     }
 }
