@@ -1,0 +1,256 @@
+package com.linkplatform.api.owner.application;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.stereotype.Component;
+
+@Component
+public class JdbcWorkspaceStore implements WorkspaceStore {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    public JdbcWorkspaceStore(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    @Override
+    public WorkspaceRecord createWorkspace(
+            String slug,
+            String displayName,
+            boolean personalWorkspace,
+            OffsetDateTime createdAt,
+            long createdByOwnerId) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            var statement = connection.prepareStatement(
+                    """
+                    INSERT INTO workspaces (slug, display_name, personal_workspace, created_at, created_by_owner_id, archived_at)
+                    VALUES (?, ?, ?, ?, ?, NULL)
+                    """,
+                    new String[] {"id"});
+            statement.setString(1, slug);
+            statement.setString(2, displayName);
+            statement.setBoolean(3, personalWorkspace);
+            statement.setObject(4, createdAt);
+            statement.setLong(5, createdByOwnerId);
+            return statement;
+        }, keyHolder);
+        Number id = keyHolder.getKey();
+        return findById(id.longValue()).orElseThrow();
+    }
+
+    @Override
+    public Optional<WorkspaceRecord> findBySlug(String slug) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT w.id, w.slug, w.display_name, w.personal_workspace, w.created_at, w.created_by_owner_id, w.archived_at
+                        FROM workspaces w
+                        WHERE w.slug = ?
+                        """,
+                        (resultSet, rowNum) -> mapWorkspace(resultSet),
+                        slug)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<WorkspaceRecord> findById(long workspaceId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT w.id, w.slug, w.display_name, w.personal_workspace, w.created_at, w.created_by_owner_id, w.archived_at
+                        FROM workspaces w
+                        WHERE w.id = ?
+                        """,
+                        (resultSet, rowNum) -> mapWorkspace(resultSet),
+                        workspaceId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<WorkspaceRecord> findPersonalWorkspaceByOwnerId(long ownerId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT w.id, w.slug, w.display_name, w.personal_workspace, w.created_at, w.created_by_owner_id, w.archived_at
+                        FROM workspaces w
+                        WHERE w.personal_workspace = TRUE
+                          AND w.created_by_owner_id = ?
+                          AND w.archived_at IS NULL
+                        """,
+                        (resultSet, rowNum) -> mapWorkspace(resultSet),
+                        ownerId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public List<WorkspaceRecord> findActiveWorkspacesForOwner(long ownerId) {
+        return jdbcTemplate.query(
+                """
+                SELECT w.id, w.slug, w.display_name, w.personal_workspace, w.created_at, w.created_by_owner_id, w.archived_at,
+                       wm.role AS caller_role
+                FROM workspaces w
+                JOIN workspace_members wm ON wm.workspace_id = w.id
+                WHERE wm.owner_id = ?
+                  AND wm.removed_at IS NULL
+                  AND w.archived_at IS NULL
+                ORDER BY w.personal_workspace DESC, w.created_at DESC, w.id DESC
+                """,
+                (resultSet, rowNum) -> mapWorkspace(resultSet),
+                ownerId);
+    }
+
+    @Override
+    public Optional<WorkspaceMemberRecord> findActiveMembership(long workspaceId, long ownerId) {
+        return jdbcTemplate.query(
+                        membershipSelect() + """
+                                 WHERE wm.workspace_id = ?
+                                   AND wm.owner_id = ?
+                                   AND wm.removed_at IS NULL
+                                """,
+                        (resultSet, rowNum) -> mapMember(resultSet),
+                        workspaceId,
+                        ownerId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<WorkspaceMemberRecord> findActiveMembership(String workspaceSlug, long ownerId) {
+        return jdbcTemplate.query(
+                        membershipSelect() + """
+                                 JOIN workspaces w ON w.id = wm.workspace_id
+                                 WHERE w.slug = ?
+                                   AND wm.owner_id = ?
+                                   AND wm.removed_at IS NULL
+                                   AND w.archived_at IS NULL
+                                """,
+                        (resultSet, rowNum) -> mapMember(resultSet),
+                        workspaceSlug,
+                        ownerId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public List<WorkspaceMemberRecord> findActiveMembers(long workspaceId) {
+        return jdbcTemplate.query(
+                membershipSelect() + """
+                         WHERE wm.workspace_id = ?
+                           AND wm.removed_at IS NULL
+                         ORDER BY CASE wm.role WHEN 'OWNER' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'EDITOR' THEN 2 ELSE 3 END,
+                                  o.id ASC
+                        """,
+                (resultSet, rowNum) -> mapMember(resultSet),
+                workspaceId);
+    }
+
+    @Override
+    public boolean addMember(long workspaceId, long ownerId, WorkspaceRole role, OffsetDateTime joinedAt, Long addedByOwnerId) {
+        return jdbcTemplate.update(
+                """
+                MERGE INTO workspace_members (workspace_id, owner_id, role, joined_at, added_by_owner_id, removed_at)
+                KEY (workspace_id, owner_id)
+                VALUES (?, ?, ?, ?, ?, NULL)
+                """,
+                workspaceId,
+                ownerId,
+                role.name(),
+                joinedAt,
+                addedByOwnerId) == 1;
+    }
+
+    @Override
+    public boolean updateMemberRole(long workspaceId, long ownerId, WorkspaceRole role) {
+        return jdbcTemplate.update(
+                """
+                UPDATE workspace_members
+                SET role = ?
+                WHERE workspace_id = ?
+                  AND owner_id = ?
+                  AND removed_at IS NULL
+                """,
+                role.name(),
+                workspaceId,
+                ownerId) == 1;
+    }
+
+    @Override
+    public boolean removeMember(long workspaceId, long ownerId, OffsetDateTime removedAt) {
+        return jdbcTemplate.update(
+                """
+                UPDATE workspace_members
+                SET removed_at = ?
+                WHERE workspace_id = ?
+                  AND owner_id = ?
+                  AND removed_at IS NULL
+                """,
+                removedAt,
+                workspaceId,
+                ownerId) == 1;
+    }
+
+    @Override
+    public long countActiveOwners(long workspaceId) {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM workspace_members
+                WHERE workspace_id = ?
+                  AND role = 'OWNER'
+                  AND removed_at IS NULL
+                """,
+                Long.class,
+                workspaceId);
+        return count == null ? 0L : count;
+    }
+
+    private String membershipSelect() {
+        return """
+                SELECT wm.workspace_id, wm.owner_id, o.owner_key, o.display_name, wm.role, wm.joined_at, wm.added_by_owner_id, wm.removed_at
+                FROM workspace_members wm
+                JOIN owners o ON o.id = wm.owner_id
+                """;
+    }
+
+    private WorkspaceRecord mapWorkspace(ResultSet resultSet) throws SQLException {
+        String callerRole = null;
+        try {
+            callerRole = resultSet.getString("caller_role");
+        } catch (SQLException ignored) {
+            callerRole = null;
+        }
+        return new WorkspaceRecord(
+                resultSet.getLong("id"),
+                resultSet.getString("slug"),
+                resultSet.getString("display_name"),
+                resultSet.getBoolean("personal_workspace"),
+                resultSet.getObject("created_at", OffsetDateTime.class),
+                resultSet.getLong("created_by_owner_id"),
+                resultSet.getObject("archived_at", OffsetDateTime.class),
+                callerRole == null ? null : WorkspaceRole.valueOf(callerRole));
+    }
+
+    private WorkspaceMemberRecord mapMember(ResultSet resultSet) throws SQLException {
+        return new WorkspaceMemberRecord(
+                resultSet.getLong("workspace_id"),
+                resultSet.getLong("owner_id"),
+                resultSet.getString("owner_key"),
+                resultSet.getString("display_name"),
+                WorkspaceRole.valueOf(resultSet.getString("role")),
+                resultSet.getObject("joined_at", OffsetDateTime.class),
+                getNullableLong(resultSet, "added_by_owner_id"),
+                resultSet.getObject("removed_at", OffsetDateTime.class));
+    }
+
+    private Long getNullableLong(ResultSet resultSet, String column) throws SQLException {
+        long value = resultSet.getLong(column);
+        return resultSet.wasNull() ? null : value;
+    }
+}

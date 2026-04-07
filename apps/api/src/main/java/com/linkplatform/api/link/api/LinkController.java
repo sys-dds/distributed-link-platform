@@ -12,6 +12,7 @@ import com.linkplatform.api.link.application.LinkLifecycleState;
 import com.linkplatform.api.link.application.LinkMutationResult;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
 import com.linkplatform.api.link.application.LinkSuggestion;
+import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
@@ -58,14 +59,17 @@ public class LinkController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         LinkMutationResult result = linkApplicationService.createLink(
                 ownerAccessService.authorizeMutation(
                         apiKey,
                         authorizationHeader,
+                        workspaceSlug,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
-                        httpServletRequest.getRemoteAddr()),
+                        httpServletRequest.getRemoteAddr(),
+                        ApiKeyScope.LINKS_WRITE),
                 new CreateLinkCommand(
                         request.slug(),
                         request.originalUrl(),
@@ -84,14 +88,17 @@ public class LinkController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         return toUpdateResponse(linkApplicationService.updateLink(
                 ownerAccessService.authorizeMutation(
                         apiKey,
                         authorizationHeader,
+                        workspaceSlug,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
-                        httpServletRequest.getRemoteAddr()),
+                        httpServletRequest.getRemoteAddr(),
+                        ApiKeyScope.LINKS_WRITE),
                 slug,
                 request.originalUrl(),
                 request.expiresAt(),
@@ -106,14 +113,17 @@ public class LinkController {
             @PathVariable String slug,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         return toReadResponse(linkApplicationService.getLink(
                 ownerAccessService.authorizeRead(
                         apiKey,
                         authorizationHeader,
+                        workspaceSlug,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
-                        httpServletRequest.getRemoteAddr()),
+                        httpServletRequest.getRemoteAddr(),
+                        ApiKeyScope.LINKS_READ),
                 slug));
     }
 
@@ -125,15 +135,18 @@ public class LinkController {
             @RequestParam(defaultValue = "active") String state,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         validateLimit(limit);
         return linkApplicationService.listRecentLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
                                 authorizationHeader,
+                                workspaceSlug,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
-                                httpServletRequest.getRemoteAddr()),
+                                httpServletRequest.getRemoteAddr(),
+                                ApiKeyScope.LINKS_READ),
                         limit,
                         resolveSearchText(q, search),
                         parseState(state)).stream()
@@ -148,15 +161,18 @@ public class LinkController {
             @RequestParam(defaultValue = "" + DEFAULT_SUGGESTION_LIMIT) int limit,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         validateSuggestionLimit(limit);
         return linkApplicationService.suggestLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
                                 authorizationHeader,
+                                workspaceSlug,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
-                                httpServletRequest.getRemoteAddr()),
+                                httpServletRequest.getRemoteAddr(),
+                                ApiKeyScope.LINKS_READ),
                         resolveSearchText(q, search),
                         limit).stream()
                 .map(this::toSuggestionResponse)
@@ -176,15 +192,18 @@ public class LinkController {
             @RequestParam(required = false) String cursor,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         validateDiscoveryLimit(limit);
         LinkDiscoveryPage page = linkApplicationService.searchLinks(
                 ownerAccessService.authorizeRead(
                         apiKey,
                         authorizationHeader,
+                        workspaceSlug,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
-                        httpServletRequest.getRemoteAddr()),
+                        httpServletRequest.getRemoteAddr(),
+                        ApiKeyScope.LINKS_READ),
                 new LinkDiscoveryQuery(
                         resolveSearchText(searchText, search),
                         hostname,
@@ -221,14 +240,17 @@ public class LinkController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         linkApplicationService.deleteLink(
                 ownerAccessService.authorizeMutation(
                         apiKey,
                         authorizationHeader,
+                        workspaceSlug,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
-                        httpServletRequest.getRemoteAddr()),
+                        httpServletRequest.getRemoteAddr(),
+                        ApiKeyScope.LINKS_WRITE),
                 slug,
                 parseIfMatch(ifMatch),
                 idempotencyKey);
@@ -242,14 +264,17 @@ public class LinkController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         return toUpdateResponse(linkApplicationService.changeLifecycle(
                 ownerAccessService.authorizeMutation(
                         apiKey,
                         authorizationHeader,
+                        workspaceSlug,
                         httpServletRequest.getMethod(),
                         httpServletRequest.getRequestURI(),
-                        httpServletRequest.getRemoteAddr()),
+                        httpServletRequest.getRemoteAddr(),
+                        ApiKeyScope.LINKS_WRITE),
                 slug,
                 request == null ? null : request.action(),
                 request == null ? null : request.expiresAt(),

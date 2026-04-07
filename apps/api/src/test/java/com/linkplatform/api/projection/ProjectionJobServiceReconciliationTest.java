@@ -166,7 +166,7 @@ class ProjectionJobServiceReconciliationTest {
         @Override public Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) { return Optional.empty(); }
         @Override public void markProgress(long id, long processedCount, Long checkpointId) { }
         @Override public void markCompleted(long id, OffsetDateTime completedAt, long processedCount, Long checkpointId) { }
-        @Override public void markFailed(long id, OffsetDateTime failedAt, String errorSummary) { }
+        @Override public void markFailed(long id, OffsetDateTime failedAt, long failedItemsIncrement, String errorSummary) { }
     }
 
     private static final class NoOpLifecycleOutboxStore implements LinkLifecycleOutboxStore {

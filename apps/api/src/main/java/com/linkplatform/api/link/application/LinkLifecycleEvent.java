@@ -7,6 +7,7 @@ public record LinkLifecycleEvent(
         String eventId,
         LinkLifecycleEventType eventType,
         long ownerId,
+        long workspaceId,
         String slug,
         String originalUrl,
         String title,
@@ -29,7 +30,39 @@ public record LinkLifecycleEvent(
             OffsetDateTime expiresAt,
             long version,
             OffsetDateTime occurredAt) {
-        this(eventId, eventType, ownerId, slug, originalUrl, title, tags, hostname, expiresAt, LinkLifecycleState.ACTIVE, version, occurredAt);
+        this(eventId, eventType, ownerId, ownerId, slug, originalUrl, title, tags, hostname, expiresAt, version, occurredAt);
+    }
+
+    public LinkLifecycleEvent(
+            String eventId,
+            LinkLifecycleEventType eventType,
+            long ownerId,
+            String slug,
+            String originalUrl,
+            String title,
+            List<String> tags,
+            String hostname,
+            OffsetDateTime expiresAt,
+            LinkLifecycleState lifecycleState,
+            long version,
+            OffsetDateTime occurredAt) {
+        this(eventId, eventType, ownerId, ownerId, slug, originalUrl, title, tags, hostname, expiresAt, lifecycleState, version, occurredAt);
+    }
+
+    public LinkLifecycleEvent(
+            String eventId,
+            LinkLifecycleEventType eventType,
+            long ownerId,
+            long workspaceId,
+            String slug,
+            String originalUrl,
+            String title,
+            List<String> tags,
+            String hostname,
+            OffsetDateTime expiresAt,
+            long version,
+            OffsetDateTime occurredAt) {
+        this(eventId, eventType, ownerId, workspaceId, slug, originalUrl, title, tags, hostname, expiresAt, LinkLifecycleState.ACTIVE, version, occurredAt);
     }
 
     public String eventKey() {

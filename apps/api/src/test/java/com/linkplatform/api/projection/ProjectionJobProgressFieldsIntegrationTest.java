@@ -76,4 +76,29 @@ class ProjectionJobProgressFieldsIntegrationTest {
         assertThat(completeDbJob.lastChunkAt()).isEqualTo(completeTime);
         assertThat(completeDbJob.completedAt()).isEqualTo(completeTime);
     }
+
+    @Test
+    void genericFailurePathsLeaveFailedItemsAtZeroWhenExactItemCountIsUnknown() {
+        OffsetDateTime requestedAt = OffsetDateTime.parse("2026-04-06T12:00:00Z");
+
+        ProjectionJob explicitUnknownCountJob = store.createJob(ProjectionJobType.LINK_CATALOG_REBUILD, requestedAt);
+        OffsetDateTime explicitFailedAt = OffsetDateTime.parse("2026-04-06T12:05:00Z");
+        store.markFailed(explicitUnknownCountJob.id(), explicitFailedAt, 0L, "chunk crashed");
+
+        ProjectionJob explicitUnknownCount = store.findById(explicitUnknownCountJob.id()).orElseThrow();
+        assertThat(explicitUnknownCount.failedItems()).isEqualTo(0L);
+        assertThat(explicitUnknownCount.lastError()).isEqualTo("chunk crashed");
+        assertThat(explicitUnknownCount.errorSummary()).isEqualTo("chunk crashed");
+
+        ProjectionJob defaultUnknownCountJob = store.createJob(
+                ProjectionJobType.LINK_CATALOG_REBUILD,
+                requestedAt.plusMinutes(1));
+        OffsetDateTime defaultFailedAt = OffsetDateTime.parse("2026-04-06T12:06:00Z");
+        store.markFailed(defaultUnknownCountJob.id(), defaultFailedAt, "runtime crashed");
+
+        ProjectionJob defaultUnknownCount = store.findById(defaultUnknownCountJob.id()).orElseThrow();
+        assertThat(defaultUnknownCount.failedItems()).isEqualTo(0L);
+        assertThat(defaultUnknownCount.lastError()).isEqualTo("runtime crashed");
+        assertThat(defaultUnknownCount.errorSummary()).isEqualTo("runtime crashed");
+    }
 }

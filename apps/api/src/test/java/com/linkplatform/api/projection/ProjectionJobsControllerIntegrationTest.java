@@ -87,7 +87,7 @@ class ProjectionJobsControllerIntegrationTest {
     }
 
     @Test
-    void failedScopedJobExposesFailedItemsAndLastError() throws Exception {
+    void failedScopedJobExposesConsistentUnknownFailedItemsAndCompatibilityAlias() throws Exception {
         jdbcTemplate.update(
                 """
                 INSERT INTO link_lifecycle_outbox (event_id, event_type, event_key, payload_json, created_at, published_at)
@@ -115,11 +115,18 @@ class ProjectionJobsControllerIntegrationTest {
 
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class, () -> projectionJobRunner.runPendingJobs());
 
-        mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId).header("X-API-Key", FREE_API_KEY))
+        JsonNode failedJob = jsonMapper.readTree(mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId)
+                        .header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.startedAt").isNotEmpty())
-                .andExpect(jsonPath("$.failedItems").value(1))
-                .andExpect(jsonPath("$.lastError").isNotEmpty());
+                .andExpect(jsonPath("$.failedItems").value(0))
+                .andExpect(jsonPath("$.lastError").isNotEmpty())
+                .andExpect(jsonPath("$.errorSummary").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+
+        assertThat(failedJob.path("errorSummary").asText()).isEqualTo(failedJob.path("lastError").asText());
     }
 
     @Test
@@ -186,6 +193,7 @@ class ProjectionJobsControllerIntegrationTest {
         assertThat(controllerJob.path("lastChunkAt").asText()).isEqualTo(persisted.lastChunkAt().toString());
         assertThat(controllerJob.path("processedItems").asLong()).isEqualTo(persisted.processedItems());
         assertThat(controllerJob.path("processedCount").asLong()).isEqualTo(persisted.processedItems());
+        assertThat(controllerJob.path("processedCount").asLong()).isEqualTo(controllerJob.path("processedItems").asLong());
         assertThat(controllerJob.path("failedItems").asLong()).isEqualTo(persisted.failedItems());
         assertThat(controllerJob.path("lastError").isMissingNode() || controllerJob.path("lastError").isNull()).isTrue();
         assertThat(controllerJob.path("errorSummary").isMissingNode() || controllerJob.path("errorSummary").isNull()).isTrue();

@@ -1,6 +1,7 @@
 package com.linkplatform.api.projection;
 
 import com.linkplatform.api.owner.application.OwnerAccessService;
+import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,14 +42,17 @@ public class ProjectionJobsController {
             @RequestBody CreateProjectionJobRequest request,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
-        return toResponse(projectionJobService.createJob(request.jobType(), request.ownerId(), request.slug()));
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
+        return ProjectionJobResponse.from(projectionJobService.createJob(request.jobType(), request.ownerId(), request.slug()));
     }
 
     @GetMapping("/{id}")
@@ -56,15 +60,18 @@ public class ProjectionJobsController {
             @PathVariable long id,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_READ);
         return projectionJobStore.findById(id)
-                .map(this::toResponse)
+                .map(ProjectionJobResponse::from)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Projection job not found: " + id));
     }
 
@@ -73,16 +80,19 @@ public class ProjectionJobsController {
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_READ);
         validateLimit(limit);
         return projectionJobStore.findRecent(limit).stream()
-                .map(this::toResponse)
+                .map(ProjectionJobResponse::from)
                 .toList();
     }
 
@@ -90,9 +100,5 @@ public class ProjectionJobsController {
         if (limit < 1 || limit > MAX_LIMIT) {
             throw new IllegalArgumentException("Limit must be between 1 and " + MAX_LIMIT);
         }
-    }
-
-    private ProjectionJobResponse toResponse(ProjectionJob job) {
-        return ProjectionJobResponse.from(job);
     }
 }

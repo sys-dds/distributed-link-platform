@@ -1,11 +1,12 @@
 package com.linkplatform.api.owner.api;
 
-import com.linkplatform.api.owner.application.AuthenticatedOwner;
+import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.SecurityEventQuery;
 import com.linkplatform.api.owner.application.SecurityEventRecord;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
+import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,20 +49,23 @@ public class SecurityEventsController {
             @RequestParam(required = false) String cursor,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         validateLimit(limit);
-        AuthenticatedOwner owner = ownerAccessService.authorizeRead(
+        WorkspaceAccessContext context = ownerAccessService.authorizeReadAny(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                java.util.Set.of(ApiKeyScope.OPS_READ));
         SecurityEventQuery query = new SecurityEventQuery(
                 parseTypes(typeValues),
                 parseSince(since),
                 limit,
                 cursor);
-        List<SecurityEventRecord> fetchedItems = securityEventStore.findEvents(owner.id(), query);
+        List<SecurityEventRecord> fetchedItems = securityEventStore.findEvents(context.workspaceId(), query);
         boolean hasMore = fetchedItems.size() > limit;
         List<SecurityEventRecord> pageItems = hasMore ? fetchedItems.subList(0, limit) : fetchedItems;
         String nextCursor = hasMore && !pageItems.isEmpty() ? encodeCursor(pageItems.getLast()) : null;

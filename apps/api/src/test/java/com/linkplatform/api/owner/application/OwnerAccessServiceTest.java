@@ -7,39 +7,109 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class OwnerAccessServiceTest {
 
     private static final AuthenticatedOwner OWNER = new AuthenticatedOwner(1L, "free-owner", "Free Owner", OwnerPlan.FREE);
+    private static final WorkspaceRecord PERSONAL_WORKSPACE = new WorkspaceRecord(
+            101L,
+            "free-owner",
+            "Free Owner",
+            true,
+            OffsetDateTime.parse("2026-04-07T00:00:00Z"),
+            OWNER.id(),
+            null);
 
     @Test
     void createdRevokedRotatedAndExpiredKeysBehavePredictably() {
         InMemoryOwnerApiKeyStore keyStore = new InMemoryOwnerApiKeyStore();
         InMemorySecurityEventStore securityEventStore = new InMemorySecurityEventStore();
-        ApiKeyLifecycleService lifecycleService = new ApiKeyLifecycleService(keyStore, securityEventStore);
+        ApiKeyLifecycleService lifecycleService = new ApiKeyLifecycleService(keyStore, securityEventStore, new WorkspacePermissionService());
         OwnerAccessService accessService = new OwnerAccessService(
-                new InMemoryOwnerStore(keyStore),
+                new InMemoryOwnerStore(),
+                new InMemoryWorkspaceStore(),
+                new WorkspacePermissionService(),
                 lifecycleService,
                 new AllowAllRateLimitStore(),
                 securityEventStore);
 
-        ApiKeyLifecycleService.CreatedApiKey created = lifecycleService.createKey(OWNER, "primary", null, OWNER.ownerKey());
-        assertThat(accessService.authorizeRead(created.plaintextKey(), null, "GET", "/api/v1/me", "127.0.0.1").id()).isEqualTo(1L);
+        WorkspaceAccessContext ownerContext = ownerContext();
+        ApiKeyLifecycleService.CreatedApiKey created = lifecycleService.createKey(
+                ownerContext,
+                "primary",
+                null,
+                List.of("links:read"),
+                OWNER.ownerKey());
 
-        lifecycleService.revoke(OWNER, created.record().id(), OWNER.ownerKey());
-        assertThatThrownBy(() -> accessService.authorizeRead(created.plaintextKey(), null, "GET", "/api/v1/me", "127.0.0.1"))
+        assertThat(accessService.authorizeRead(
+                        created.plaintextKey(),
+                        null,
+                        null,
+                        "GET",
+                        "/api/v1/me",
+                        "127.0.0.1",
+                        ApiKeyScope.LINKS_READ)
+                .ownerId()).isEqualTo(OWNER.id());
+
+        lifecycleService.revoke(ownerContext, created.record().id(), OWNER.ownerKey());
+        assertThatThrownBy(() -> accessService.authorizeRead(
+                        created.plaintextKey(),
+                        null,
+                        null,
+                        "GET",
+                        "/api/v1/me",
+                        "127.0.0.1",
+                        ApiKeyScope.LINKS_READ))
                 .isInstanceOf(ApiKeyAuthenticationException.class);
 
-        ApiKeyLifecycleService.CreatedApiKey rotatedBase = lifecycleService.createKey(OWNER, "rotate-me", null, OWNER.ownerKey());
-        ApiKeyLifecycleService.CreatedApiKey rotated = lifecycleService.rotate(OWNER, rotatedBase.record().id(), null, OWNER.ownerKey());
+        ApiKeyLifecycleService.CreatedApiKey rotatedBase = lifecycleService.createKey(
+                ownerContext,
+                "rotate-me",
+                null,
+                List.of("links:read"),
+                OWNER.ownerKey());
+        ApiKeyLifecycleService.CreatedApiKey rotated = lifecycleService.rotate(
+                ownerContext,
+                rotatedBase.record().id(),
+                null,
+                List.of("links:read"),
+                OWNER.ownerKey());
         assertThat(rotated.plaintextKey()).isNotEqualTo(rotatedBase.plaintextKey());
-        assertThatThrownBy(() -> accessService.authorizeRead(rotatedBase.plaintextKey(), null, "GET", "/api/v1/me", "127.0.0.1"))
+        assertThatThrownBy(() -> accessService.authorizeRead(
+                        rotatedBase.plaintextKey(),
+                        null,
+                        null,
+                        "GET",
+                        "/api/v1/me",
+                        "127.0.0.1",
+                        ApiKeyScope.LINKS_READ))
                 .isInstanceOf(ApiKeyAuthenticationException.class);
-        assertThat(accessService.authorizeRead(rotated.plaintextKey(), null, "GET", "/api/v1/me", "127.0.0.1").id()).isEqualTo(1L);
+        assertThat(accessService.authorizeRead(
+                        rotated.plaintextKey(),
+                        null,
+                        null,
+                        "GET",
+                        "/api/v1/me",
+                        "127.0.0.1",
+                        ApiKeyScope.LINKS_READ)
+                .ownerId()).isEqualTo(OWNER.id());
 
-        ApiKeyLifecycleService.CreatedApiKey expiring = lifecycleService.createKey(OWNER, "expiring", OffsetDateTime.now().minusMinutes(1), OWNER.ownerKey());
-        assertThatThrownBy(() -> accessService.authorizeRead(expiring.plaintextKey(), null, "GET", "/api/v1/me", "127.0.0.1"))
+        ApiKeyLifecycleService.CreatedApiKey expiring = lifecycleService.createKey(
+                ownerContext,
+                "expiring",
+                OffsetDateTime.now().minusMinutes(1),
+                List.of("links:read"),
+                OWNER.ownerKey());
+        assertThatThrownBy(() -> accessService.authorizeRead(
+                        expiring.plaintextKey(),
+                        null,
+                        null,
+                        "GET",
+                        "/api/v1/me",
+                        "127.0.0.1",
+                        ApiKeyScope.LINKS_READ))
                 .isInstanceOf(ApiKeyAuthenticationException.class);
     }
 
@@ -47,21 +117,50 @@ class OwnerAccessServiceTest {
     void malformedAmbiguousAndMissingCredentialsBehavePredictably() {
         InMemoryOwnerApiKeyStore keyStore = new InMemoryOwnerApiKeyStore();
         InMemorySecurityEventStore securityEventStore = new InMemorySecurityEventStore();
-        ApiKeyLifecycleService lifecycleService = new ApiKeyLifecycleService(keyStore, securityEventStore);
+        ApiKeyLifecycleService lifecycleService = new ApiKeyLifecycleService(keyStore, securityEventStore, new WorkspacePermissionService());
         OwnerAccessService accessService = new OwnerAccessService(
-                new InMemoryOwnerStore(keyStore),
+                new InMemoryOwnerStore(),
+                new InMemoryWorkspaceStore(),
+                new WorkspacePermissionService(),
                 lifecycleService,
                 new AllowAllRateLimitStore(),
                 securityEventStore);
-        ApiKeyLifecycleService.CreatedApiKey created = lifecycleService.createKey(OWNER, "primary", null, OWNER.ownerKey());
 
-        assertThatThrownBy(() -> accessService.authorizeRead(null, null, "GET", "/api/v1/me", "127.0.0.1"))
+        ApiKeyLifecycleService.CreatedApiKey created = lifecycleService.createKey(
+                ownerContext(),
+                "primary",
+                null,
+                List.of("links:read"),
+                OWNER.ownerKey());
+
+        assertThatThrownBy(() -> accessService.authorizeRead(
+                        null,
+                        null,
+                        null,
+                        "GET",
+                        "/api/v1/me",
+                        "127.0.0.1",
+                        ApiKeyScope.LINKS_READ))
                 .isInstanceOf(ApiKeyAuthenticationException.class)
                 .hasMessageContaining("API credential is required");
-        assertThatThrownBy(() -> accessService.authorizeRead(null, "Basic abc", "GET", "/api/v1/me", "127.0.0.1"))
+        assertThatThrownBy(() -> accessService.authorizeRead(
+                        null,
+                        "Basic abc",
+                        null,
+                        "GET",
+                        "/api/v1/me",
+                        "127.0.0.1",
+                        ApiKeyScope.LINKS_READ))
                 .isInstanceOf(ApiKeyAuthenticationException.class)
                 .hasMessageContaining("Bearer token");
-        assertThatThrownBy(() -> accessService.authorizeRead(created.plaintextKey(), "Bearer something-else", "GET", "/api/v1/me", "127.0.0.1"))
+        assertThatThrownBy(() -> accessService.authorizeRead(
+                        created.plaintextKey(),
+                        "Bearer something-else",
+                        null,
+                        "GET",
+                        "/api/v1/me",
+                        "127.0.0.1",
+                        ApiKeyScope.LINKS_READ))
                 .isInstanceOf(ApiKeyAuthenticationException.class)
                 .hasMessageContaining("must match");
         assertThat(securityEventStore.types).contains(
@@ -70,32 +169,219 @@ class OwnerAccessServiceTest {
                 SecurityEventType.AMBIGUOUS_CREDENTIAL);
     }
 
+    private WorkspaceAccessContext ownerContext() {
+        return new WorkspaceAccessContext(
+                OWNER,
+                PERSONAL_WORKSPACE.id(),
+                PERSONAL_WORKSPACE.slug(),
+                PERSONAL_WORKSPACE.displayName(),
+                true,
+                WorkspaceRole.OWNER,
+                WorkspaceRole.OWNER.impliedScopes(),
+                null);
+    }
+
     private static final class InMemoryOwnerStore implements OwnerStore {
-        private final InMemoryOwnerApiKeyStore keyStore;
-        private InMemoryOwnerStore(InMemoryOwnerApiKeyStore keyStore) { this.keyStore = keyStore; }
-        @Override public Optional<AuthenticatedOwner> findByApiKeyHash(String apiKeyHash) { return keyStore.findActiveByHash(apiKeyHash, OffsetDateTime.now()).map(record -> OWNER); }
-        @Override public void lockById(long ownerId) { }
+        @Override
+        public Optional<AuthenticatedOwner> findByApiKeyHash(String apiKeyHash) {
+            return Optional.of(OWNER);
+        }
+
+        @Override
+        public Optional<AuthenticatedOwner> findById(long ownerId) {
+            return ownerId == OWNER.id() ? Optional.of(OWNER) : Optional.empty();
+        }
+
+        @Override
+        public void lockById(long ownerId) {
+        }
+    }
+
+    private static final class InMemoryWorkspaceStore implements WorkspaceStore {
+        @Override
+        public WorkspaceRecord createWorkspace(
+                String slug,
+                String displayName,
+                boolean personalWorkspace,
+                OffsetDateTime createdAt,
+                long createdByOwnerId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<WorkspaceRecord> findBySlug(String slug) {
+            return PERSONAL_WORKSPACE.slug().equals(slug) ? Optional.of(PERSONAL_WORKSPACE) : Optional.empty();
+        }
+
+        @Override
+        public Optional<WorkspaceRecord> findById(long workspaceId) {
+            return PERSONAL_WORKSPACE.id() == workspaceId ? Optional.of(PERSONAL_WORKSPACE) : Optional.empty();
+        }
+
+        @Override
+        public Optional<WorkspaceRecord> findPersonalWorkspaceByOwnerId(long ownerId) {
+            return ownerId == OWNER.id() ? Optional.of(PERSONAL_WORKSPACE) : Optional.empty();
+        }
+
+        @Override
+        public List<WorkspaceRecord> findActiveWorkspacesForOwner(long ownerId) {
+            return ownerId == OWNER.id() ? List.of(PERSONAL_WORKSPACE) : List.of();
+        }
+
+        @Override
+        public Optional<WorkspaceMemberRecord> findActiveMembership(long workspaceId, long ownerId) {
+            if (workspaceId == PERSONAL_WORKSPACE.id() && ownerId == OWNER.id()) {
+                return Optional.of(new WorkspaceMemberRecord(
+                        workspaceId,
+                        ownerId,
+                        WorkspaceRole.OWNER,
+                        PERSONAL_WORKSPACE.createdAt(),
+                        null,
+                        null));
+            }
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<WorkspaceMemberRecord> findActiveMembership(String workspaceSlug, long ownerId) {
+            return findActiveMembership(PERSONAL_WORKSPACE.id(), ownerId)
+                    .filter(member -> PERSONAL_WORKSPACE.slug().equals(workspaceSlug));
+        }
+
+        @Override
+        public List<WorkspaceMemberRecord> findActiveMembers(long workspaceId) {
+            return findActiveMembership(workspaceId, OWNER.id()).stream().toList();
+        }
+
+        @Override
+        public boolean addMember(long workspaceId, long ownerId, WorkspaceRole role, OffsetDateTime joinedAt, Long addedByOwnerId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean updateMemberRole(long workspaceId, long ownerId, WorkspaceRole role) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean removeMember(long workspaceId, long ownerId, OffsetDateTime removedAt) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public long countActiveOwners(long workspaceId) {
+            return 1L;
+        }
     }
 
     private static final class InMemoryOwnerApiKeyStore implements OwnerApiKeyStore {
         private final List<OwnerApiKeyRecord> records = new ArrayList<>();
         private long nextId = 1L;
-        @Override public OwnerApiKeyRecord create(long ownerId, String keyPrefix, String keyHash, String label, OffsetDateTime createdAt, OffsetDateTime expiresAt, String createdBy) {
-            OwnerApiKeyRecord record = new OwnerApiKeyRecord(nextId++, ownerId, OWNER.ownerKey(), OWNER.plan(), keyPrefix, keyHash, label, createdAt, null, null, expiresAt, createdBy, null);
+
+        @Override
+        public OwnerApiKeyRecord create(
+                long ownerId,
+                long workspaceId,
+                String keyPrefix,
+                String keyHash,
+                String label,
+                Set<ApiKeyScope> scopes,
+                OffsetDateTime createdAt,
+                OffsetDateTime expiresAt,
+                String createdBy) {
+            OwnerApiKeyRecord record = new OwnerApiKeyRecord(
+                    nextId++,
+                    ownerId,
+                    OWNER.ownerKey(),
+                    OWNER.plan(),
+                    workspaceId,
+                    PERSONAL_WORKSPACE.slug(),
+                    keyPrefix,
+                    keyHash,
+                    label,
+                    scopes,
+                    createdAt,
+                    null,
+                    null,
+                    expiresAt,
+                    createdBy,
+                    null);
             records.add(record);
             return record;
         }
-        @Override public List<OwnerApiKeyRecord> findByOwnerId(long ownerId) { return records.stream().filter(record -> record.ownerId() == ownerId).toList(); }
-        @Override public List<OwnerApiKeyRecord> findActiveByOwnerId(long ownerId, OffsetDateTime now) { return records.stream().filter(record -> record.ownerId() == ownerId && record.activeAt(now)).toList(); }
-        @Override public Optional<OwnerApiKeyRecord> findById(long ownerId, long keyId) { return records.stream().filter(record -> record.ownerId() == ownerId && record.id() == keyId).findFirst(); }
-        @Override public Optional<OwnerApiKeyRecord> findActiveByHash(String keyHash, OffsetDateTime now) { return records.stream().filter(record -> record.keyHash().equals(keyHash) && record.activeAt(now)).findFirst(); }
-        @Override public void revoke(long ownerId, long keyId, OffsetDateTime revokedAt, String revokedBy) { replace(ownerId, keyId, revokedAt, null, revokedBy, false); }
-        @Override public void expire(long ownerId, long keyId, OffsetDateTime expiresAt, String revokedBy) { replace(ownerId, keyId, null, expiresAt, revokedBy, true); }
-        @Override public void touchLastUsed(long keyId, OffsetDateTime lastUsedAt) { records.replaceAll(record -> record.id() == keyId ? new OwnerApiKeyRecord(record.id(), record.ownerId(), record.ownerKey(), record.ownerPlan(), record.keyPrefix(), record.keyHash(), record.label(), record.createdAt(), lastUsedAt, record.revokedAt(), record.expiresAt(), record.createdBy(), record.revokedBy()) : record); }
-        @Override public void lockOwner(long ownerId) { }
-        private void replace(long ownerId, long keyId, OffsetDateTime revokedAt, OffsetDateTime expiresAt, String actor, boolean expiryOnly) {
+
+        @Override
+        public List<OwnerApiKeyRecord> findByWorkspaceId(long workspaceId) {
+            return records.stream().filter(record -> record.workspaceId() == workspaceId).toList();
+        }
+
+        @Override
+        public List<OwnerApiKeyRecord> findActiveByWorkspaceId(long workspaceId, OffsetDateTime now) {
+            return records.stream()
+                    .filter(record -> record.workspaceId() == workspaceId && record.activeAt(now))
+                    .toList();
+        }
+
+        @Override
+        public Optional<OwnerApiKeyRecord> findById(long workspaceId, long keyId) {
+            return records.stream()
+                    .filter(record -> record.workspaceId() == workspaceId && record.id() == keyId)
+                    .findFirst();
+        }
+
+        @Override
+        public Optional<OwnerApiKeyRecord> findActiveByHash(String keyHash, OffsetDateTime now) {
+            return records.stream()
+                    .filter(record -> record.keyHash().equals(keyHash) && record.activeAt(now))
+                    .findFirst();
+        }
+
+        @Override
+        public void revoke(long workspaceId, long keyId, OffsetDateTime revokedAt, String revokedBy) {
+            replace(workspaceId, keyId, revokedAt, null, revokedBy, false);
+        }
+
+        @Override
+        public void expire(long workspaceId, long keyId, OffsetDateTime expiresAt, String revokedBy) {
+            replace(workspaceId, keyId, null, expiresAt, revokedBy, true);
+        }
+
+        @Override
+        public void touchLastUsed(long keyId, OffsetDateTime lastUsedAt) {
+            records.replaceAll(record -> record.id() == keyId
+                    ? new OwnerApiKeyRecord(
+                            record.id(),
+                            record.ownerId(),
+                            record.ownerKey(),
+                            record.ownerPlan(),
+                            record.workspaceId(),
+                            record.workspaceSlug(),
+                            record.keyPrefix(),
+                            record.keyHash(),
+                            record.label(),
+                            record.scopes(),
+                            record.createdAt(),
+                            lastUsedAt,
+                            record.revokedAt(),
+                            record.expiresAt(),
+                            record.createdBy(),
+                            record.revokedBy())
+                    : record);
+        }
+
+        @Override
+        public void lockWorkspace(long workspaceId) {
+        }
+
+        private void replace(
+                long workspaceId,
+                long keyId,
+                OffsetDateTime revokedAt,
+                OffsetDateTime expiresAt,
+                String actor,
+                boolean expiryOnly) {
             records.replaceAll(record -> {
-                if (record.ownerId() != ownerId || record.id() != keyId) {
+                if (record.workspaceId() != workspaceId || record.id() != keyId) {
                     return record;
                 }
                 return new OwnerApiKeyRecord(
@@ -103,9 +389,12 @@ class OwnerAccessServiceTest {
                         record.ownerId(),
                         record.ownerKey(),
                         record.ownerPlan(),
+                        record.workspaceId(),
+                        record.workspaceSlug(),
                         record.keyPrefix(),
                         record.keyHash(),
                         record.label(),
+                        record.scopes(),
                         record.createdAt(),
                         record.lastUsedAt(),
                         expiryOnly ? record.revokedAt() : revokedAt,
@@ -117,11 +406,27 @@ class OwnerAccessServiceTest {
     }
 
     private static final class AllowAllRateLimitStore implements ControlPlaneRateLimitStore {
-        @Override public boolean tryConsume(long ownerId, ControlPlaneRateLimitBucket bucket, OffsetDateTime windowStartedAt, int limit) { return true; }
+        @Override
+        public boolean tryConsume(long ownerId, ControlPlaneRateLimitBucket bucket, OffsetDateTime windowStartedAt, int limit) {
+            return true;
+        }
     }
 
     private static final class InMemorySecurityEventStore implements SecurityEventStore {
         private final List<SecurityEventType> types = new ArrayList<>();
-        @Override public void record(SecurityEventType eventType, Long ownerId, String apiKeyHash, String requestMethod, String requestPath, String remoteAddress, String detailSummary, OffsetDateTime occurredAt) { types.add(eventType); }
+
+        @Override
+        public void record(
+                SecurityEventType eventType,
+                Long ownerId,
+                Long workspaceId,
+                String apiKeyHash,
+                String requestMethod,
+                String requestPath,
+                String remoteAddress,
+                String detailSummary,
+                OffsetDateTime occurredAt) {
+            types.add(eventType);
+        }
     }
 }

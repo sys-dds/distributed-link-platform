@@ -28,6 +28,7 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
     public void record(
             SecurityEventType eventType,
             Long ownerId,
+            Long workspaceId,
             String apiKeyHash,
             String requestMethod,
             String requestPath,
@@ -37,11 +38,12 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
         jdbcTemplate.update(
                 """
                 INSERT INTO owner_security_events (
-                    event_type, owner_id, api_key_hash, request_method, request_path, remote_address, detail_summary, occurred_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    event_type, owner_id, workspace_id, api_key_hash, request_method, request_path, remote_address, detail_summary, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 eventType.name(),
                 ownerId,
+                workspaceId,
                 apiKeyHash,
                 requestMethod,
                 requestPath,
@@ -52,14 +54,14 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
 
     @Override
     @Transactional(readOnly = true)
-    public List<SecurityEventRecord> findEvents(long ownerId, SecurityEventQuery query) {
+    public List<SecurityEventRecord> findEvents(long workspaceId, SecurityEventQuery query) {
         StringBuilder sql = new StringBuilder("""
                 SELECT id, event_type, occurred_at
                 FROM owner_security_events
-                WHERE owner_id = ?
+                WHERE workspace_id = ?
                 """);
         List<Object> parameters = new ArrayList<>();
-        parameters.add(ownerId);
+        parameters.add(workspaceId);
         if (query.types() != null && !query.types().isEmpty()) {
             sql.append(" AND event_type IN (");
             sql.append(query.types().stream().map(ignored -> "?").reduce((left, right) -> left + ", " + right).orElse(""));
@@ -138,6 +140,13 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case API_KEY_REVOKED -> "API key revoked";
             case API_KEY_ROTATED -> "API key rotated";
             case API_KEY_EXPIRED -> "API key expired";
+            case WORKSPACE_CREATED -> "Workspace created";
+            case WORKSPACE_MEMBER_ADDED -> "Workspace member added";
+            case WORKSPACE_MEMBER_REMOVED -> "Workspace member removed";
+            case WORKSPACE_MEMBER_ROLE_CHANGED -> "Workspace member role changed";
+            case WORKSPACE_ACCESS_DENIED -> "Workspace access denied";
+            case WORKSPACE_SCOPE_DENIED -> "Workspace scope denied";
+            case API_KEY_SCOPE_DENIED -> "API key scope denied";
             case MISSING_CREDENTIAL -> "Missing credential rejected";
             case MALFORMED_BEARER -> "Malformed bearer rejected";
             case AMBIGUOUS_CREDENTIAL -> "Conflicting credential rejected";

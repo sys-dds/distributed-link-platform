@@ -6,12 +6,15 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
 @Service
 public class OwnerAccessService {
 
     private final OwnerStore ownerStore;
+    private final WorkspaceStore workspaceStore;
+    private final WorkspacePermissionService workspacePermissionService;
     private final ApiKeyLifecycleService apiKeyLifecycleService;
     private final ControlPlaneRateLimitStore controlPlaneRateLimitStore;
     private final SecurityEventStore securityEventStore;
@@ -19,49 +22,72 @@ public class OwnerAccessService {
 
     public OwnerAccessService(
             OwnerStore ownerStore,
+            WorkspaceStore workspaceStore,
+            WorkspacePermissionService workspacePermissionService,
             ApiKeyLifecycleService apiKeyLifecycleService,
             ControlPlaneRateLimitStore controlPlaneRateLimitStore,
             SecurityEventStore securityEventStore) {
         this.ownerStore = ownerStore;
+        this.workspaceStore = workspaceStore;
+        this.workspacePermissionService = workspacePermissionService;
         this.apiKeyLifecycleService = apiKeyLifecycleService;
         this.controlPlaneRateLimitStore = controlPlaneRateLimitStore;
         this.securityEventStore = securityEventStore;
         this.clock = Clock.systemUTC();
     }
 
-    public AuthenticatedOwner authorizeRead(String apiKey, String requestMethod, String requestPath, String remoteAddress) {
-        return authorize(apiKey, null, ControlPlaneRateLimitBucket.READ, requestMethod, requestPath, remoteAddress);
-    }
-
-    public AuthenticatedOwner authorizeRead(
+    public WorkspaceAccessContext authorizeRead(
             String apiKey,
             String authorizationHeader,
+            String workspaceSlug,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress,
+            ApiKeyScope requiredScope) {
+        return authorize(apiKey, authorizationHeader, workspaceSlug, ControlPlaneRateLimitBucket.READ, requestMethod, requestPath, remoteAddress, Set.of(requiredScope));
+    }
+
+    public WorkspaceAccessContext authorizeReadAny(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress,
+            Set<ApiKeyScope> acceptedScopes) {
+        return authorize(apiKey, authorizationHeader, workspaceSlug, ControlPlaneRateLimitBucket.READ, requestMethod, requestPath, remoteAddress, acceptedScopes);
+    }
+
+    public WorkspaceAccessContext authorizeMutation(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress,
+            ApiKeyScope requiredScope) {
+        return authorize(apiKey, authorizationHeader, workspaceSlug, ControlPlaneRateLimitBucket.MUTATION, requestMethod, requestPath, remoteAddress, Set.of(requiredScope));
+    }
+
+    public WorkspaceAccessContext authorizeAuthenticated(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
             String requestMethod,
             String requestPath,
             String remoteAddress) {
-        return authorize(apiKey, authorizationHeader, ControlPlaneRateLimitBucket.READ, requestMethod, requestPath, remoteAddress);
+        return authorize(apiKey, authorizationHeader, workspaceSlug, ControlPlaneRateLimitBucket.READ, requestMethod, requestPath, remoteAddress, Set.of());
     }
 
-    public AuthenticatedOwner authorizeMutation(String apiKey, String requestMethod, String requestPath, String remoteAddress) {
-        return authorize(apiKey, null, ControlPlaneRateLimitBucket.MUTATION, requestMethod, requestPath, remoteAddress);
-    }
-
-    public AuthenticatedOwner authorizeMutation(
+    private WorkspaceAccessContext authorize(
             String apiKey,
             String authorizationHeader,
-            String requestMethod,
-            String requestPath,
-            String remoteAddress) {
-        return authorize(apiKey, authorizationHeader, ControlPlaneRateLimitBucket.MUTATION, requestMethod, requestPath, remoteAddress);
-    }
-
-    private AuthenticatedOwner authorize(
-            String apiKey,
-            String authorizationHeader,
+            String workspaceSlug,
             ControlPlaneRateLimitBucket bucket,
             String requestMethod,
             String requestPath,
-            String remoteAddress) {
+            String remoteAddress,
+            Set<ApiKeyScope> acceptedScopes) {
         String resolvedApiKey = resolveApiKey(apiKey, authorizationHeader, requestMethod, requestPath, remoteAddress);
         if (resolvedApiKey == null) {
             securityEventStore.record(
@@ -83,6 +109,7 @@ public class OwnerAccessService {
             securityEventStore.record(
                     SecurityEventType.INVALID_CREDENTIAL,
                     null,
+                    null,
                     apiKeyHash,
                     requestMethod,
                     requestPath,
@@ -91,7 +118,7 @@ public class OwnerAccessService {
                     OffsetDateTime.now(clock));
             throw new ApiKeyAuthenticationException("API credential is invalid");
         }
-        AuthenticatedOwner owner = ownerStore.findByApiKeyHash(apiKeyHash)
+        AuthenticatedOwner owner = ownerStore.findById(apiKeyRecord.ownerId())
                 .orElseThrow(() -> new ApiKeyAuthenticationException("API credential is invalid"));
 
         OffsetDateTime windowStartedAt = OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MINUTES);
@@ -102,6 +129,7 @@ public class OwnerAccessService {
             securityEventStore.record(
                     SecurityEventType.RATE_LIMIT_REJECTED,
                     owner.id(),
+                    null,
                     apiKeyHash,
                     requestMethod,
                     requestPath,
@@ -111,8 +139,73 @@ public class OwnerAccessService {
             throw new ControlPlaneRateLimitExceededException(
                     "Control-plane " + bucket.name().toLowerCase() + " rate limit exceeded");
         }
+        WorkspaceRecord workspace = resolveWorkspace(owner.id(), trimToNull(workspaceSlug));
+        if (apiKeyRecord.workspaceId() != workspace.id()) {
+            securityEventStore.record(
+                    SecurityEventType.WORKSPACE_ACCESS_DENIED,
+                    owner.id(),
+                    workspace.id(),
+                    apiKeyHash,
+                    requestMethod,
+                    requestPath,
+                    remoteAddress,
+                    "Workspace selection denied for API key",
+                    OffsetDateTime.now(clock));
+            throw new WorkspaceAccessDeniedException("Selected workspace is not available to this API key");
+        }
+        WorkspaceMemberRecord membership = workspaceStore.findActiveMembership(workspace.id(), owner.id())
+                .orElseThrow(() -> {
+                    securityEventStore.record(
+                            SecurityEventType.WORKSPACE_ACCESS_DENIED,
+                            owner.id(),
+                            workspace.id(),
+                            apiKeyHash,
+                            requestMethod,
+                            requestPath,
+                            remoteAddress,
+                            "Workspace membership denied",
+                            OffsetDateTime.now(clock));
+                    return new WorkspaceAccessDeniedException("Caller is not an active member of workspace " + workspace.slug());
+                });
+        WorkspaceAccessContext context = new WorkspaceAccessContext(
+                owner,
+                workspace.id(),
+                workspace.slug(),
+                workspace.displayName(),
+                workspace.personalWorkspace(),
+                membership.role(),
+                workspacePermissionService.grantedScopes(membership.role(), apiKeyRecord.scopes()),
+                apiKeyHash);
+        if (!acceptedScopes.isEmpty()) {
+            boolean allowed = acceptedScopes.stream().anyMatch(context.grantedScopes()::contains);
+            if (!allowed) {
+                SecurityEventType denialType = membership.role().impliedScopes().stream().anyMatch(acceptedScopes::contains)
+                        ? SecurityEventType.API_KEY_SCOPE_DENIED
+                        : SecurityEventType.WORKSPACE_SCOPE_DENIED;
+                securityEventStore.record(
+                        denialType,
+                        owner.id(),
+                        workspace.id(),
+                        apiKeyHash,
+                        requestMethod,
+                        requestPath,
+                        remoteAddress,
+                        "Workspace scope denied",
+                        OffsetDateTime.now(clock));
+                throw new WorkspaceScopeDeniedException("Scope denied for requested workspace action");
+            }
+        }
         apiKeyLifecycleService.markUsed(apiKeyRecord);
-        return owner;
+        return context;
+    }
+
+    private WorkspaceRecord resolveWorkspace(long ownerId, String selectedWorkspaceSlug) {
+        if (selectedWorkspaceSlug == null) {
+            return workspaceStore.findPersonalWorkspaceByOwnerId(ownerId)
+                    .orElseThrow(() -> new WorkspaceNotFoundException("Personal workspace not found for owner " + ownerId));
+        }
+        return workspaceStore.findBySlug(selectedWorkspaceSlug)
+                .orElseThrow(() -> new WorkspaceNotFoundException("Workspace not found: " + selectedWorkspaceSlug));
     }
 
     private String resolveApiKey(
@@ -126,6 +219,7 @@ public class OwnerAccessService {
         if (normalizedApiKey != null && bearerToken != null && !normalizedApiKey.equals(bearerToken)) {
             securityEventStore.record(
                     SecurityEventType.AMBIGUOUS_CREDENTIAL,
+                    null,
                     null,
                     null,
                     requestMethod,
@@ -153,6 +247,7 @@ public class OwnerAccessService {
                     SecurityEventType.MALFORMED_BEARER,
                     null,
                     null,
+                    null,
                     requestMethod,
                     requestPath,
                     remoteAddress,
@@ -164,6 +259,7 @@ public class OwnerAccessService {
         if (bearerToken == null) {
             securityEventStore.record(
                     SecurityEventType.MALFORMED_BEARER,
+                    null,
                     null,
                     null,
                     requestMethod,
