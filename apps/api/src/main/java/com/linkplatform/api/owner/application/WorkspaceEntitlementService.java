@@ -56,7 +56,7 @@ public class WorkspaceEntitlementService {
     @Transactional
     public void enforceMembersQuota(long workspaceId) {
         WorkspacePlanRecord plan = currentPlan(workspaceId);
-        long current = workspaceStore.findActiveMembers(workspaceId).size();
+        long current = currentMembersCount(workspaceId);
         if (current >= plan.membersLimit()) {
             throw exceeded(WorkspaceUsageMetric.MEMBERS, current, plan.membersLimit());
         }
@@ -65,7 +65,7 @@ public class WorkspaceEntitlementService {
     @Transactional
     public void enforceApiKeysQuota(long workspaceId, OffsetDateTime now) {
         WorkspacePlanRecord plan = currentPlan(workspaceId);
-        long current = ownerApiKeyStore.findActiveByWorkspaceId(workspaceId, now).size();
+        long current = currentActiveApiKeysCount(workspaceId, now);
         if (current >= plan.apiKeysLimit()) {
             throw exceeded(WorkspaceUsageMetric.API_KEYS, current, plan.apiKeysLimit());
         }
@@ -108,22 +108,22 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void recordActiveLinksSnapshot(long workspaceId, long quantity, String source, String sourceRef, OffsetDateTime recordedAt) {
-        workspaceUsageStore.recordSnapshot(workspaceId, WorkspaceUsageMetric.ACTIVE_LINKS, quantity, source, sourceRef, recordedAt);
+        recordSnapshot(workspaceId, WorkspaceUsageMetric.ACTIVE_LINKS, quantity, source, sourceRef, recordedAt);
     }
 
     @Transactional
     public void recordMembersSnapshot(long workspaceId, long quantity, String source, String sourceRef, OffsetDateTime recordedAt) {
-        workspaceUsageStore.recordSnapshot(workspaceId, WorkspaceUsageMetric.MEMBERS, quantity, source, sourceRef, recordedAt);
+        recordSnapshot(workspaceId, WorkspaceUsageMetric.MEMBERS, quantity, source, sourceRef, recordedAt);
     }
 
     @Transactional
     public void recordApiKeysSnapshot(long workspaceId, long quantity, String source, String sourceRef, OffsetDateTime recordedAt) {
-        workspaceUsageStore.recordSnapshot(workspaceId, WorkspaceUsageMetric.API_KEYS, quantity, source, sourceRef, recordedAt);
+        recordSnapshot(workspaceId, WorkspaceUsageMetric.API_KEYS, quantity, source, sourceRef, recordedAt);
     }
 
     @Transactional
     public void recordWebhooksSnapshot(long workspaceId, long quantity, String source, String sourceRef, OffsetDateTime recordedAt) {
-        workspaceUsageStore.recordSnapshot(workspaceId, WorkspaceUsageMetric.WEBHOOKS, quantity, source, sourceRef, recordedAt);
+        recordSnapshot(workspaceId, WorkspaceUsageMetric.WEBHOOKS, quantity, source, sourceRef, recordedAt);
     }
 
     @Transactional
@@ -139,6 +139,36 @@ public class WorkspaceEntitlementService {
                 source,
                 sourceRef,
                 recordedAt);
+    }
+
+    @Transactional(readOnly = true)
+    public long currentMembersCount(long workspaceId) {
+        return workspaceStore.findActiveMembers(workspaceId).size();
+    }
+
+    @Transactional(readOnly = true)
+    public long currentActiveApiKeysCount(long workspaceId, OffsetDateTime now) {
+        return ownerApiKeyStore.findActiveByWorkspaceId(workspaceId, now).size();
+    }
+
+    @Transactional
+    public void recordCurrentMembersSnapshot(long workspaceId, String source, String sourceRef, OffsetDateTime recordedAt) {
+        recordMembersSnapshot(workspaceId, currentMembersCount(workspaceId), source, sourceRef, recordedAt);
+    }
+
+    @Transactional
+    public void recordCurrentApiKeysSnapshot(long workspaceId, String source, String sourceRef, OffsetDateTime recordedAt) {
+        recordApiKeysSnapshot(workspaceId, currentActiveApiKeysCount(workspaceId, recordedAt), source, sourceRef, recordedAt);
+    }
+
+    private void recordSnapshot(
+            long workspaceId,
+            WorkspaceUsageMetric metric,
+            long quantity,
+            String source,
+            String sourceRef,
+            OffsetDateTime recordedAt) {
+        workspaceUsageStore.recordSnapshot(workspaceId, metric, quantity, source, sourceRef, recordedAt);
     }
 
     private OffsetDateTime currentMonthWindowStart() {

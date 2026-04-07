@@ -189,8 +189,9 @@ public class LinkPlatformRuntimeProperties {
     public static class Webhooks {
 
         private boolean enabled = true;
+        private long runnerDelayMs = 5_000L;
         private int deliveryBatchSize = 20;
-        private int maxAttempts = 5;
+        private int parkedThreshold = 5;
         private int disableThreshold = 10;
         private int connectTimeoutSeconds = 5;
         private int requestTimeoutSeconds = 10;
@@ -211,12 +212,20 @@ public class LinkPlatformRuntimeProperties {
             this.deliveryBatchSize = deliveryBatchSize;
         }
 
-        public int getMaxAttempts() {
-            return maxAttempts;
+        public long getRunnerDelayMs() {
+            return runnerDelayMs;
         }
 
-        public void setMaxAttempts(int maxAttempts) {
-            this.maxAttempts = maxAttempts;
+        public void setRunnerDelayMs(long runnerDelayMs) {
+            this.runnerDelayMs = runnerDelayMs;
+        }
+
+        public int getParkedThreshold() {
+            return parkedThreshold;
+        }
+
+        public void setParkedThreshold(int parkedThreshold) {
+            this.parkedThreshold = parkedThreshold;
         }
 
         public int getDisableThreshold() {
@@ -247,6 +256,7 @@ public class LinkPlatformRuntimeProperties {
     public static class Exports {
 
         private boolean enabled = true;
+        private long runnerDelayMs = 10_000L;
         private long maxPayloadBytes = 5_000_000L;
 
         public boolean isEnabled() {
@@ -263,6 +273,14 @@ public class LinkPlatformRuntimeProperties {
 
         public void setMaxPayloadBytes(long maxPayloadBytes) {
             this.maxPayloadBytes = maxPayloadBytes;
+        }
+
+        public long getRunnerDelayMs() {
+            return runnerDelayMs;
+        }
+
+        public void setRunnerDelayMs(long runnerDelayMs) {
+            this.runnerDelayMs = runnerDelayMs;
         }
     }
 
@@ -296,9 +314,14 @@ public class LinkPlatformRuntimeProperties {
         webhooks.setDeliveryBatchSize(batchSize);
     }
 
-    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.max-attempts:5}")
-    void bindWebhookMaxAttempts(int maxAttempts) {
-        webhooks.setMaxAttempts(maxAttempts);
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.runner-delay-ms:5000}")
+    void bindWebhookRunnerDelay(long runnerDelayMs) {
+        webhooks.setRunnerDelayMs(runnerDelayMs);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.parked-threshold:5}")
+    void bindWebhookParkedThreshold(int parkedThreshold) {
+        webhooks.setParkedThreshold(parkedThreshold);
     }
 
     @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.disable-threshold:10}")
@@ -319,6 +342,11 @@ public class LinkPlatformRuntimeProperties {
     @org.springframework.beans.factory.annotation.Value("${link-platform.exports.enabled:true}")
     void bindExportsEnabled(boolean enabled) {
         exports.setEnabled(enabled);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.exports.runner-delay-ms:10000}")
+    void bindExportsRunnerDelay(long runnerDelayMs) {
+        exports.setRunnerDelayMs(runnerDelayMs);
     }
 
     @org.springframework.beans.factory.annotation.Value("${link-platform.exports.max-payload-bytes:5000000}")

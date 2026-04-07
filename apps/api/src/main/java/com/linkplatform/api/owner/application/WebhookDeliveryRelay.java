@@ -108,7 +108,7 @@ public class WebhookDeliveryRelay {
                     now);
             return;
         }
-        if (failureCount >= runtimeProperties.getWebhooks().getMaxAttempts()) {
+        if (failureCount >= runtimeProperties.getWebhooks().getParkedThreshold()) {
             webhookDeliveryStore.markParked(item.delivery().id(), attemptCount, reason, result.httpStatus(), result.responseBody(), now);
             return;
         }

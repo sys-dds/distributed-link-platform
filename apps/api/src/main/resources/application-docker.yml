@@ -1,0 +1,9 @@
+spring:
+  config:
+    activate:
+      on-profile: docker
+
+management:
+  endpoint:
+    health:
+      show-details: always

@@ -17,6 +17,8 @@ public interface WebhookDeliveryStore {
             OffsetDateTime createdAt,
             OffsetDateTime nextAttemptAt);
 
+    Optional<WebhookDeliveryRecord> findBySubscriptionAndEventId(long subscriptionId, String eventId);
+
     List<WebhookDeliveryRecord> findBySubscription(long workspaceId, long subscriptionId, int limit);
 
     Optional<WebhookDeliveryRecord> findById(long workspaceId, long subscriptionId, long deliveryId);

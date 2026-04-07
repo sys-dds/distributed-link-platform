@@ -6,16 +6,15 @@ import java.util.Optional;
 
 public interface ProjectionJobStore {
 
-    ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt);
-
-    default ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
-        if (ownerId != null || slug != null) {
-            throw new UnsupportedOperationException("Scoped projection jobs are not supported");
-        }
-        return createJob(jobType, requestedAt);
+    default ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+        return createJob(jobType, requestedAt, null, null, null, null, null, null, null);
     }
 
-    default ProjectionJob createJob(
+    default ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
+        return createJob(jobType, requestedAt, ownerId, null, slug, null, null, null, null);
+    }
+
+    ProjectionJob createJob(
             ProjectionJobType jobType,
             OffsetDateTime requestedAt,
             Long ownerId,
@@ -24,39 +23,37 @@ public interface ProjectionJobStore {
             OffsetDateTime rangeStart,
             OffsetDateTime rangeEnd,
             Long requestedByOwnerId,
-            String operatorNote) {
-        if (workspaceId != null || rangeStart != null || rangeEnd != null || requestedByOwnerId != null || operatorNote != null) {
-            throw new UnsupportedOperationException("Extended scoped projection jobs are not supported");
-        }
-        return createJob(jobType, requestedAt, ownerId, slug);
+            String operatorNote);
+
+    Optional<ProjectionJob> findByIdVisibleToWorkspace(long id, long workspaceId, long ownerId, boolean personalWorkspace);
+
+    List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace);
+
+    @Deprecated(forRemoval = false)
+    default List<ProjectionJob> findRecent(int limit) {
+        return List.of();
     }
 
-    Optional<ProjectionJob> findById(long id);
-
-    List<ProjectionJob> findRecent(int limit);
-
-    default Optional<ProjectionJob> findByIdVisibleToWorkspace(long id, long workspaceId, long ownerId, boolean personalWorkspace) {
-        return findById(id);
-    }
-
-    default List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace) {
-        return findRecent(limit);
+    @Deprecated(forRemoval = false)
+    default Optional<ProjectionJob> findById(long id) {
+        throw new UnsupportedOperationException("Use findByIdVisibleToWorkspace for workspace-scoped reads");
     }
 
     default Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
-        return claimNextQueued(workerId, now, claimedUntil);
-    }
-
-    default Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
         return Optional.empty();
     }
 
-    default void markProgress(long id, OffsetDateTime occurredAt, long processedCountIncrement, Long checkpointId) {
-        markProgress(id, processedCountIncrement, checkpointId);
+    @Deprecated(forRemoval = false)
+    default Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
+        return claimNext(workerId, now, claimedUntil);
     }
 
+    default void markProgress(long id, OffsetDateTime occurredAt, long processedCountIncrement, Long checkpointId) {
+    }
+
+    @Deprecated(forRemoval = false)
     default void markProgress(long id, long processedCountIncrement, Long checkpointId) {
-        markProgress(id, OffsetDateTime.now(java.time.Clock.systemUTC()), processedCountIncrement, checkpointId);
+        markProgress(id, OffsetDateTime.now(), processedCountIncrement, checkpointId);
     }
 
     void markCompleted(long id, OffsetDateTime completedAt, long processedCountIncrement, Long checkpointId);

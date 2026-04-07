@@ -16,4 +16,19 @@ public record LinkDiscoveryItemResponse(
         OffsetDateTime expiresAt,
         OffsetDateTime deletedAt,
         long version) {
+
+    public LinkDiscoveryItemResponse(
+            String slug,
+            String originalUrl,
+            String title,
+            String hostname,
+            List<String> tags,
+            String lifecycleState,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt,
+            OffsetDateTime expiresAt,
+            OffsetDateTime deletedAt,
+            long version) {
+        this(slug, originalUrl, title, hostname, tags, null, lifecycleState, createdAt, updatedAt, expiresAt, deletedAt, version);
+    }
 }

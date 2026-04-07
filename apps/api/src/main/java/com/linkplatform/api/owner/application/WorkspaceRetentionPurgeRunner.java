@@ -38,7 +38,7 @@ public class WorkspaceRetentionPurgeRunner {
         operatorActionLogStore.record(
                 context.workspaceId(),
                 context.ownerId(),
-                "ABUSE",
+                "PIPELINE",
                 "workspace_retention_purge",
                 null,
                 null,

@@ -21,23 +21,20 @@ public class LinkAbuseReviewService {
     private final SecurityEventStore securityEventStore;
     private final LinkPlatformRuntimeProperties runtimeProperties;
     private final Clock clock;
-    private WebhookEventPublisher webhookEventPublisher;
+    private final WebhookEventPublisher webhookEventPublisher;
 
     public LinkAbuseReviewService(
             LinkAbuseStore linkAbuseStore,
             LinkStore linkStore,
             SecurityEventStore securityEventStore,
-            LinkPlatformRuntimeProperties runtimeProperties) {
+            LinkPlatformRuntimeProperties runtimeProperties,
+            WebhookEventPublisher webhookEventPublisher) {
         this.linkAbuseStore = linkAbuseStore;
         this.linkStore = linkStore;
         this.securityEventStore = securityEventStore;
         this.runtimeProperties = runtimeProperties;
-        this.clock = Clock.systemUTC();
-    }
-
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    void setWebhookEventPublisher(WebhookEventPublisher webhookEventPublisher) {
         this.webhookEventPublisher = webhookEventPublisher;
+        this.clock = Clock.systemUTC();
     }
 
     @Transactional
@@ -254,10 +251,7 @@ public class LinkAbuseReviewService {
     }
 
     private void publishWebhook(long workspaceId, String workspaceSlug, WebhookEventType eventType, String eventId, Object payload) {
-        if (webhookEventPublisher == null) {
-            return;
-        }
-        webhookEventPublisher.publish(workspaceId, workspaceSlug, eventType, eventId, payload);
+        webhookEventPublisher.publish(workspaceId, eventType, eventId, payload);
     }
 
     public record AbuseReviewPage(List<LinkAbuseCaseRecord> items, String nextCursor, boolean hasMore) {

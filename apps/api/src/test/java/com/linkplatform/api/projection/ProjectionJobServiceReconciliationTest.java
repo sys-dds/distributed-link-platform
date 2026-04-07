@@ -163,7 +163,9 @@ class ProjectionJobServiceReconciliationTest {
     private static final class NoOpProjectionJobStore implements ProjectionJobStore {
         @Override public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) { return null; }
         @Override public Optional<ProjectionJob> findById(long id) { return Optional.empty(); }
+        @Override public Optional<ProjectionJob> findByIdVisibleToWorkspace(long id, long workspaceId, long ownerId, boolean personalWorkspace) { return Optional.empty(); }
         @Override public List<ProjectionJob> findRecent(int limit) { return List.of(); }
+        @Override public List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace) { return List.of(); }
         @Override public Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) { return Optional.empty(); }
         @Override public void markProgress(long id, long processedCount, Long checkpointId) { }
         @Override public void markCompleted(long id, OffsetDateTime completedAt, long processedCount, Long checkpointId) { }
