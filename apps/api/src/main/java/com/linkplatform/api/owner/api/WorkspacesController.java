@@ -8,6 +8,7 @@ import com.linkplatform.api.owner.application.OwnerStore;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
+import com.linkplatform.api.owner.application.WorkspaceEntitlementService;
 import com.linkplatform.api.owner.application.WorkspaceMemberRecord;
 import com.linkplatform.api.owner.application.WorkspaceRecord;
 import com.linkplatform.api.owner.application.WorkspaceRole;
@@ -43,17 +44,20 @@ public class WorkspacesController {
     private final OwnerStore ownerStore;
     private final WorkspaceStore workspaceStore;
     private final SecurityEventStore securityEventStore;
+    private final WorkspaceEntitlementService workspaceEntitlementService;
     private final Clock clock;
 
     public WorkspacesController(
             OwnerAccessService ownerAccessService,
             OwnerStore ownerStore,
             WorkspaceStore workspaceStore,
-            SecurityEventStore securityEventStore) {
+            SecurityEventStore securityEventStore,
+            WorkspaceEntitlementService workspaceEntitlementService) {
         this.ownerAccessService = ownerAccessService;
         this.ownerStore = ownerStore;
         this.workspaceStore = workspaceStore;
         this.securityEventStore = securityEventStore;
+        this.workspaceEntitlementService = workspaceEntitlementService;
         this.clock = Clock.systemUTC();
     }
 
@@ -181,7 +185,14 @@ public class WorkspacesController {
             throw new DuplicateWorkspaceMemberException("Workspace membership already exists for owner " + ownerId);
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
+        workspaceEntitlementService.enforceMembersQuota(context.workspaceId());
         workspaceStore.addMember(context.workspaceId(), ownerId, role, now, context.ownerId());
+        workspaceEntitlementService.recordMembersSnapshot(
+                context.workspaceId(),
+                workspaceStore.findActiveMembers(context.workspaceId()).size(),
+                "workspace_member_add",
+                Long.toString(ownerId),
+                now);
         securityEventStore.record(
                 SecurityEventType.WORKSPACE_MEMBER_ADDED,
                 context.ownerId(),
@@ -254,6 +265,12 @@ public class WorkspacesController {
             throw new InvalidWorkspaceRoleChangeException("Cannot remove the last OWNER");
         }
         workspaceStore.removeMember(context.workspaceId(), ownerId, OffsetDateTime.now(clock));
+        workspaceEntitlementService.recordMembersSnapshot(
+                context.workspaceId(),
+                workspaceStore.findActiveMembers(context.workspaceId()).size(),
+                "workspace_member_remove",
+                Long.toString(ownerId),
+                OffsetDateTime.now(clock));
         securityEventStore.record(
                 SecurityEventType.WORKSPACE_MEMBER_REMOVED,
                 context.ownerId(),

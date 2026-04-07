@@ -10,6 +10,8 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import com.linkplatform.api.owner.application.WebhookEventPublisher;
+import com.linkplatform.api.owner.application.WebhookEventType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +34,7 @@ public class ProjectionJobRunner {
     private final Counter completedCounter;
     private final Counter failedCounter;
     private final Timer durationTimer;
+    private WebhookEventPublisher webhookEventPublisher;
 
     @Autowired
     public ProjectionJobRunner(
@@ -74,6 +77,11 @@ public class ProjectionJobRunner {
                 .register(meterRegistry);
     }
 
+    @Autowired(required = false)
+    void setWebhookEventPublisher(WebhookEventPublisher webhookEventPublisher) {
+        this.webhookEventPublisher = webhookEventPublisher;
+    }
+
     @Scheduled(fixedDelayString = "${link-platform.projection-jobs.runner-delay}")
     public void runPendingJobs() {
         OffsetDateTime now = OffsetDateTime.now(clock);
@@ -89,6 +97,14 @@ public class ProjectionJobRunner {
             ProjectionJobChunkResult result = projectionJobService.executeClaimedJobChunk(job);
             if (result.completed()) {
                 completedCounter.increment();
+                if (webhookEventPublisher != null && job.workspaceId() != null) {
+                    webhookEventPublisher.publish(
+                            job.workspaceId(),
+                            null,
+                            WebhookEventType.PROJECTION_JOB_COMPLETED,
+                            "projection-job:" + job.id(),
+                            job);
+                }
             }
         } catch (RuntimeException exception) {
             projectionJobStore.markFailed(

@@ -3,11 +3,14 @@ package com.linkplatform.api.link.application;
 import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
-import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
 import com.linkplatform.api.owner.application.OwnerStore;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
+import com.linkplatform.api.owner.application.WebhookEventPublisher;
+import com.linkplatform.api.owner.application.WebhookEventType;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
+import com.linkplatform.api.owner.application.WorkspaceEntitlementService;
+import com.linkplatform.api.owner.application.WorkspaceQuotaExceededException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -43,11 +46,13 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private final LinkMutationIdempotencyStore linkMutationIdempotencyStore;
     private final OwnerStore ownerStore;
     private final SecurityEventStore securityEventStore;
+    private final WorkspaceEntitlementService workspaceEntitlementService;
     private final LinkTargetPolicyService linkTargetPolicyService;
     private final LinkAbuseReviewService linkAbuseReviewService;
     private final LinkReadCache linkReadCache;
     private final URI publicBaseUri;
     private final Clock clock;
+    private WebhookEventPublisher webhookEventPublisher;
 
     public DefaultLinkApplicationService(
             LinkStore linkStore,
@@ -59,6 +64,32 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             LinkTargetPolicyService linkTargetPolicyService,
             LinkAbuseReviewService linkAbuseReviewService,
             LinkReadCache linkReadCache,
+            String publicBaseUrl) {
+        this(
+                linkStore,
+                analyticsOutboxStore,
+                linkLifecycleOutboxStore,
+                linkMutationIdempotencyStore,
+                ownerStore,
+                securityEventStore,
+                null,
+                linkTargetPolicyService,
+                linkAbuseReviewService,
+                linkReadCache,
+                publicBaseUrl);
+    }
+
+    public DefaultLinkApplicationService(
+            LinkStore linkStore,
+            AnalyticsOutboxStore analyticsOutboxStore,
+            LinkLifecycleOutboxStore linkLifecycleOutboxStore,
+            LinkMutationIdempotencyStore linkMutationIdempotencyStore,
+            OwnerStore ownerStore,
+            SecurityEventStore securityEventStore,
+            WorkspaceEntitlementService workspaceEntitlementService,
+            LinkTargetPolicyService linkTargetPolicyService,
+            LinkAbuseReviewService linkAbuseReviewService,
+            LinkReadCache linkReadCache,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
         this.linkStore = linkStore;
         this.analyticsOutboxStore = analyticsOutboxStore;
@@ -66,11 +97,17 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         this.linkMutationIdempotencyStore = linkMutationIdempotencyStore;
         this.ownerStore = ownerStore;
         this.securityEventStore = securityEventStore;
+        this.workspaceEntitlementService = workspaceEntitlementService;
         this.linkTargetPolicyService = linkTargetPolicyService;
         this.linkAbuseReviewService = linkAbuseReviewService;
         this.linkReadCache = linkReadCache;
         this.publicBaseUri = URI.create(publicBaseUrl);
         this.clock = Clock.systemUTC();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setWebhookEventPublisher(WebhookEventPublisher webhookEventPublisher) {
+        this.webhookEventPublisher = webhookEventPublisher;
     }
 
     @Override
@@ -122,6 +159,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         applyLifecycleReadModels(lifecycleEvent);
         LinkMutationResult result = LinkMutationResult.fromDetails(storedDetails);
         saveIdempotentResult(context, idempotencyKey, CREATE_OPERATION, requestHash, result, now);
+        recordActiveLinksSnapshot(context.workspaceId(), result.slug(), now, "link_create");
+        publishWebhook(context.workspaceId(), context.workspaceSlug(), WebhookEventType.LINK_CREATED, "link-created:" + result.slug() + ":" + result.version(), result);
         invalidateWriteCaches(context.workspaceId(), link.slug().value());
         return result;
     }
@@ -193,6 +232,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         LinkMutationResult result = LinkMutationResult.fromDetails(visibleDetails);
         saveIdempotentResult(context, idempotencyKey, UPDATE_OPERATION, requestHash, result, now);
+        publishWebhook(context.workspaceId(), context.workspaceSlug(), WebhookEventType.LINK_UPDATED, "link-updated:" + result.slug() + ":" + result.version(), result);
         invalidateWriteCaches(context.workspaceId(), linkSlug.value());
         return result;
     }
@@ -236,6 +276,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
         applyLifecycleReadModels(lifecycleEvent);
         saveIdempotentResult(context, idempotencyKey, DELETE_OPERATION, requestHash, result, now);
+        publishWebhook(context.workspaceId(), context.workspaceSlug(), WebhookEventType.LINK_DELETED, "link-deleted:" + result.slug() + ":" + result.version(), result);
         invalidateWriteCaches(context.workspaceId(), linkSlug.value());
         return result;
     }
@@ -272,6 +313,9 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 if (deletedSnapshot.version() != expectedVersion) {
                     throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
                 }
+                if (restoreTargetState(deletedSnapshot, now) == LinkLifecycleState.ACTIVE) {
+                    enforceCreateQuota(context, now);
+                }
                 LinkLifecycleState restoredState = restoreTargetState(deletedSnapshot, now);
                 long nextVersion = deletedSnapshot.version() + 1;
                 if (!linkStore.restoreDeleted(deletedSnapshot, persistedStateFor(restoredState), nextVersion, context.workspaceId())) {
@@ -280,6 +324,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 LinkDetails restored = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId())
                         .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
                 result = LinkMutationResult.fromDetails(restored);
+                recordActiveLinksSnapshot(context.workspaceId(), restored.slug(), now, "link_restore");
                 lifecycleEvent = toLifecycleEvent(LinkLifecycleEventType.RESTORED, context.ownerId(), context.workspaceId(), restored, persistedStateFor(restoredState), now);
             }
             case EXPIRE_NOW, EXTEND_EXPIRY, SUSPEND, RESUME, ARCHIVE, UNARCHIVE -> {
@@ -311,6 +356,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
         applyLifecycleReadModels(lifecycleEvent);
         saveIdempotentResult(context, idempotencyKey, LIFECYCLE_OPERATION, requestHash, result, now);
+        publishWebhook(context.workspaceId(), context.workspaceSlug(), WebhookEventType.LINK_LIFECYCLE_CHANGED, "link-lifecycle:" + result.slug() + ":" + result.version(), result);
         invalidateWriteCaches(context.workspaceId(), linkSlug.value());
         return result;
     }
@@ -1160,9 +1206,20 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     private void enforceCreateQuota(WorkspaceAccessContext context, OffsetDateTime occurredAt) {
-        if (linkStore.countActiveLinksByOwner(context.workspaceId()) >= context.plan().activeLinkLimit()) {
+        long currentUsage = linkStore.countActiveLinksByOwner(context.workspaceId());
+        try {
+            if (workspaceEntitlementService != null) {
+                workspaceEntitlementService.enforceActiveLinksQuota(context.workspaceId(), currentUsage);
+            } else if (currentUsage >= context.plan().activeLinkLimit()) {
+                throw new WorkspaceQuotaExceededException(
+                        com.linkplatform.api.owner.application.WorkspaceUsageMetric.ACTIVE_LINKS,
+                        currentUsage,
+                        context.plan().activeLinkLimit(),
+                        "Active link quota exceeded for owner " + context.ownerKey() + " on plan " + context.plan().name());
+            }
+        } catch (WorkspaceQuotaExceededException exception) {
             securityEventStore.record(
-                    SecurityEventType.QUOTA_REJECTED,
+                    SecurityEventType.WORKSPACE_QUOTA_EXCEEDED,
                     context.ownerId(),
                     context.workspaceId(),
                     null,
@@ -1171,9 +1228,27 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                     null,
                     "Active link quota exceeded",
                     occurredAt);
-            throw new OwnerQuotaExceededException(
-                    "Active link quota exceeded for owner " + context.ownerKey() + " on plan " + context.plan().name());
+            throw exception;
         }
+    }
+
+    private void recordActiveLinksSnapshot(long workspaceId, String slug, OffsetDateTime occurredAt, String source) {
+        if (workspaceEntitlementService == null) {
+            return;
+        }
+        workspaceEntitlementService.recordActiveLinksSnapshot(
+                workspaceId,
+                linkStore.countActiveLinksByOwner(workspaceId),
+                source,
+                slug,
+                occurredAt);
+    }
+
+    private void publishWebhook(long workspaceId, String workspaceSlug, WebhookEventType eventType, String eventId, Object payload) {
+        if (webhookEventPublisher == null) {
+            return;
+        }
+        webhookEventPublisher.publish(workspaceId, workspaceSlug, eventType, eventId, payload);
     }
 
     private String workspaceScopedIdempotencyKey(WorkspaceAccessContext context, String idempotencyKey) {

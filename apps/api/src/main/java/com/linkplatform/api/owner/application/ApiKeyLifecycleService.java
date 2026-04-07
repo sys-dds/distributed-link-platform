@@ -22,23 +22,26 @@ public class ApiKeyLifecycleService {
     private final OwnerApiKeyStore ownerApiKeyStore;
     private final SecurityEventStore securityEventStore;
     private final WorkspacePermissionService workspacePermissionService;
+    private final WorkspaceEntitlementService workspaceEntitlementService;
     private final Clock clock;
 
     @Autowired
     public ApiKeyLifecycleService(
             OwnerApiKeyStore ownerApiKeyStore,
             SecurityEventStore securityEventStore,
-            WorkspacePermissionService workspacePermissionService) {
+            WorkspacePermissionService workspacePermissionService,
+            WorkspaceEntitlementService workspaceEntitlementService) {
         this.ownerApiKeyStore = ownerApiKeyStore;
         this.securityEventStore = securityEventStore;
         this.workspacePermissionService = workspacePermissionService;
+        this.workspaceEntitlementService = workspaceEntitlementService;
         this.clock = Clock.systemUTC();
     }
 
     public ApiKeyLifecycleService(
             OwnerApiKeyStore ownerApiKeyStore,
             SecurityEventStore securityEventStore) {
-        this(ownerApiKeyStore, securityEventStore, new WorkspacePermissionService());
+        this(ownerApiKeyStore, securityEventStore, new WorkspacePermissionService(), null);
     }
 
     @Transactional
@@ -73,6 +76,7 @@ public class ApiKeyLifecycleService {
                 null,
                 "Owner API key created",
                 now);
+        recordApiKeysSnapshot(context.workspaceId(), record.id(), now, "api_key_create");
         return new CreatedApiKey(record, generatedApiKey.plaintext());
     }
 
@@ -121,6 +125,7 @@ public class ApiKeyLifecycleService {
                 .orElseThrow(() -> new ApiKeyAuthenticationException("Owner API key not found"));
         GeneratedApiKey generatedApiKey = generateApiKey();
         Set<ApiKeyScope> scopes = workspacePermissionService.validateRequestedScopes(context.role(), requestedScopes);
+        enforceActiveKeyLimit(context, now);
         ownerApiKeyStore.expire(context.workspaceId(), keyId, now, actor(context, rotatedBy));
         OwnerApiKeyRecord created = ownerApiKeyStore.create(
                 context.ownerId(),
@@ -152,6 +157,7 @@ public class ApiKeyLifecycleService {
                 null,
                 "Owner API key expired by rotation",
                 now);
+        recordApiKeysSnapshot(context.workspaceId(), created.id(), now, "api_key_rotate");
         return new CreatedApiKey(created, generatedApiKey.plaintext());
     }
 
@@ -177,10 +183,26 @@ public class ApiKeyLifecycleService {
     }
 
     private void enforceActiveKeyLimit(WorkspaceAccessContext context, OffsetDateTime now) {
+        if (workspaceEntitlementService != null) {
+            workspaceEntitlementService.enforceApiKeysQuota(context.workspaceId(), now);
+            return;
+        }
         int activeKeyLimit = context.plan() == OwnerPlan.FREE ? 2 : 10;
         if (ownerApiKeyStore.findActiveByWorkspaceId(context.workspaceId(), now).size() >= activeKeyLimit) {
             throw new IllegalArgumentException("Active API key limit exceeded for owner " + context.ownerKey());
         }
+    }
+
+    private void recordApiKeysSnapshot(long workspaceId, long recordId, OffsetDateTime now, String source) {
+        if (workspaceEntitlementService == null) {
+            return;
+        }
+        workspaceEntitlementService.recordApiKeysSnapshot(
+                workspaceId,
+                ownerApiKeyStore.findActiveByWorkspaceId(workspaceId, now).size(),
+                source,
+                Long.toString(recordId),
+                now);
     }
 
     private String normalizeLabel(String label) {

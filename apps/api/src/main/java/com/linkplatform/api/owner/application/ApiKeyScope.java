@@ -12,6 +12,12 @@ public enum ApiKeyScope {
     API_KEYS_WRITE("api_keys:write"),
     MEMBERS_READ("members:read"),
     MEMBERS_WRITE("members:write"),
+    WEBHOOKS_READ("webhooks:read"),
+    WEBHOOKS_WRITE("webhooks:write"),
+    EXPORTS_READ("exports:read"),
+    EXPORTS_WRITE("exports:write"),
+    RETENTION_READ("retention:read"),
+    RETENTION_WRITE("retention:write"),
     OPS_READ("ops:read"),
     OPS_WRITE("ops:write");
 

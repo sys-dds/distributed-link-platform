@@ -8,6 +8,8 @@ public class LinkPlatformRuntimeProperties {
     private RuntimeMode mode = RuntimeMode.ALL;
     private final Redirect redirect = new Redirect();
     private final Abuse abuse = new Abuse();
+    private final Webhooks webhooks = new Webhooks();
+    private final Exports exports = new Exports();
 
     public RuntimeMode getMode() {
         return mode;
@@ -23,6 +25,14 @@ public class LinkPlatformRuntimeProperties {
 
     public Abuse getAbuse() {
         return abuse;
+    }
+
+    public Webhooks getWebhooks() {
+        return webhooks;
+    }
+
+    public Exports getExports() {
+        return exports;
     }
 
     public boolean redirectEnabled() {
@@ -176,6 +186,86 @@ public class LinkPlatformRuntimeProperties {
         }
     }
 
+    public static class Webhooks {
+
+        private boolean enabled = true;
+        private int deliveryBatchSize = 20;
+        private int maxAttempts = 5;
+        private int disableThreshold = 10;
+        private int connectTimeoutSeconds = 5;
+        private int requestTimeoutSeconds = 10;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getDeliveryBatchSize() {
+            return deliveryBatchSize;
+        }
+
+        public void setDeliveryBatchSize(int deliveryBatchSize) {
+            this.deliveryBatchSize = deliveryBatchSize;
+        }
+
+        public int getMaxAttempts() {
+            return maxAttempts;
+        }
+
+        public void setMaxAttempts(int maxAttempts) {
+            this.maxAttempts = maxAttempts;
+        }
+
+        public int getDisableThreshold() {
+            return disableThreshold;
+        }
+
+        public void setDisableThreshold(int disableThreshold) {
+            this.disableThreshold = disableThreshold;
+        }
+
+        public int getConnectTimeoutSeconds() {
+            return connectTimeoutSeconds;
+        }
+
+        public void setConnectTimeoutSeconds(int connectTimeoutSeconds) {
+            this.connectTimeoutSeconds = connectTimeoutSeconds;
+        }
+
+        public int getRequestTimeoutSeconds() {
+            return requestTimeoutSeconds;
+        }
+
+        public void setRequestTimeoutSeconds(int requestTimeoutSeconds) {
+            this.requestTimeoutSeconds = requestTimeoutSeconds;
+        }
+    }
+
+    public static class Exports {
+
+        private boolean enabled = true;
+        private long maxPayloadBytes = 5_000_000L;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public long getMaxPayloadBytes() {
+            return maxPayloadBytes;
+        }
+
+        public void setMaxPayloadBytes(long maxPayloadBytes) {
+            this.maxPayloadBytes = maxPayloadBytes;
+        }
+    }
+
     @org.springframework.beans.factory.annotation.Value("${link-platform.abuse.enabled:true}")
     void bindAbuseEnabled(boolean enabled) {
         abuse.setEnabled(enabled);
@@ -194,5 +284,45 @@ public class LinkPlatformRuntimeProperties {
     @org.springframework.beans.factory.annotation.Value("${link-platform.abuse.review-page-size-max:100}")
     void bindAbuseReviewPageSizeMax(int pageSize) {
         abuse.setReviewPageSizeMax(pageSize);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.enabled:true}")
+    void bindWebhooksEnabled(boolean enabled) {
+        webhooks.setEnabled(enabled);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.delivery-batch-size:20}")
+    void bindWebhookDeliveryBatchSize(int batchSize) {
+        webhooks.setDeliveryBatchSize(batchSize);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.max-attempts:5}")
+    void bindWebhookMaxAttempts(int maxAttempts) {
+        webhooks.setMaxAttempts(maxAttempts);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.disable-threshold:10}")
+    void bindWebhookDisableThreshold(int disableThreshold) {
+        webhooks.setDisableThreshold(disableThreshold);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.connect-timeout-seconds:5}")
+    void bindWebhookConnectTimeout(int timeoutSeconds) {
+        webhooks.setConnectTimeoutSeconds(timeoutSeconds);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.request-timeout-seconds:10}")
+    void bindWebhookRequestTimeout(int timeoutSeconds) {
+        webhooks.setRequestTimeoutSeconds(timeoutSeconds);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.exports.enabled:true}")
+    void bindExportsEnabled(boolean enabled) {
+        exports.setEnabled(enabled);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.exports.max-payload-bytes:5000000}")
+    void bindExportsMaxPayloadBytes(long maxPayloadBytes) {
+        exports.setMaxPayloadBytes(maxPayloadBytes);
     }
 }

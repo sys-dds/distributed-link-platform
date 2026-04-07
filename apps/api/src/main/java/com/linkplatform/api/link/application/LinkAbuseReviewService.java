@@ -2,6 +2,8 @@ package com.linkplatform.api.link.application;
 
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
+import com.linkplatform.api.owner.application.WebhookEventPublisher;
+import com.linkplatform.api.owner.application.WebhookEventType;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.runtime.LinkPlatformRuntimeProperties;
 import java.time.Clock;
@@ -19,6 +21,7 @@ public class LinkAbuseReviewService {
     private final SecurityEventStore securityEventStore;
     private final LinkPlatformRuntimeProperties runtimeProperties;
     private final Clock clock;
+    private WebhookEventPublisher webhookEventPublisher;
 
     public LinkAbuseReviewService(
             LinkAbuseStore linkAbuseStore,
@@ -30,6 +33,11 @@ public class LinkAbuseReviewService {
         this.securityEventStore = securityEventStore;
         this.runtimeProperties = runtimeProperties;
         this.clock = Clock.systemUTC();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setWebhookEventPublisher(WebhookEventPublisher webhookEventPublisher) {
+        this.webhookEventPublisher = webhookEventPublisher;
     }
 
     @Transactional
@@ -58,6 +66,7 @@ public class LinkAbuseReviewService {
                 context.workspaceId(),
                 slug,
                 record.summary());
+        publishWebhook(context.workspaceId(), context.workspaceSlug(), WebhookEventType.ABUSE_CASE_OPENED, "abuse-case:" + record.id(), record);
         record(SecurityEventType.LINK_FLAGGED_FOR_REVIEW, context.ownerId(), context.workspaceId(), slug, assessment.summary());
         return record;
     }
@@ -205,9 +214,11 @@ public class LinkAbuseReviewService {
         if (nextStatus == LinkAbuseCaseStatus.QUARANTINED) {
             linkStore.quarantineLink(context.workspaceId(), existing.slug(), existing.summary(), now, context.ownerId(), resolutionNote);
             record(SecurityEventType.LINK_QUARANTINED, context.ownerId(), context.workspaceId(), existing.slug(), existing.summary());
+            publishWebhook(context.workspaceId(), context.workspaceSlug(), WebhookEventType.LINK_QUARANTINED, "abuse-case:" + existing.id() + ":quarantined", existing);
         } else if (nextStatus == LinkAbuseCaseStatus.RELEASED) {
             linkStore.releaseLink(context.workspaceId(), existing.slug(), context.ownerId(), resolutionNote, now);
             record(SecurityEventType.LINK_RELEASED, context.ownerId(), context.workspaceId(), existing.slug(), existing.summary());
+            publishWebhook(context.workspaceId(), context.workspaceSlug(), WebhookEventType.LINK_RELEASED, "abuse-case:" + existing.id() + ":released", existing);
         } else {
             LinkAbuseStatus currentStatus = linkStore.findAbuseStatusBySlug(existing.slug(), context.workspaceId())
                     .orElse(LinkAbuseStatus.ACTIVE);
@@ -240,6 +251,13 @@ public class LinkAbuseReviewService {
 
     private OffsetDateTime now() {
         return OffsetDateTime.now(clock);
+    }
+
+    private void publishWebhook(long workspaceId, String workspaceSlug, WebhookEventType eventType, String eventId, Object payload) {
+        if (webhookEventPublisher == null) {
+            return;
+        }
+        webhookEventPublisher.publish(workspaceId, workspaceSlug, eventType, eventId, payload);
     }
 
     public record AbuseReviewPage(List<LinkAbuseCaseRecord> items, String nextCursor, boolean hasMore) {

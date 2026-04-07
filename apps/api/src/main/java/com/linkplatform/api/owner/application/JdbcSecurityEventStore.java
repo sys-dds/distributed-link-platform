@@ -161,6 +161,18 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case ABUSE_CASE_OPENED -> "Abuse case opened";
             case ABUSE_CASE_SIGNAL_INCREMENTED -> "Abuse case signal incremented";
             case QUOTA_REJECTED -> "Quota limit rejected";
+            case WORKSPACE_PLAN_UPDATED -> "Workspace plan updated";
+            case WORKSPACE_QUOTA_EXCEEDED -> "Workspace quota exceeded";
+            case WEBHOOK_DELIVERY_QUOTA_EXCEEDED -> "Webhook delivery quota exceeded";
+            case WEBHOOK_SUBSCRIPTION_CREATED -> "Webhook subscription created";
+            case WEBHOOK_SUBSCRIPTION_UPDATED -> "Webhook subscription updated";
+            case WEBHOOK_SECRET_ROTATED -> "Webhook secret rotated";
+            case WEBHOOK_DELIVERY_REPLAYED -> "Webhook delivery replayed";
+            case WEBHOOK_SUBSCRIPTION_DISABLED -> "Webhook subscription disabled";
+            case WORKSPACE_EXPORT_REQUESTED -> "Workspace export requested";
+            case WORKSPACE_EXPORT_COMPLETED -> "Workspace export completed";
+            case WORKSPACE_EXPORT_FAILED -> "Workspace export failed";
+            case WORKSPACE_RETENTION_PURGE_RUN -> "Workspace retention purge run";
             case ANALYTICS_PIPELINE_PAUSED -> "Analytics pipeline paused";
             case ANALYTICS_PIPELINE_RESUMED -> "Analytics pipeline resumed";
             case ANALYTICS_PIPELINE_FORCE_TICKED -> "Analytics pipeline force ticked";
