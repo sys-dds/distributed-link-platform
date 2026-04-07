@@ -11,6 +11,7 @@ public record LinkReadResponse(
         String title,
         List<String> tags,
         String hostname,
+        String abuseStatus,
         long version,
         long clickTotal) {
 }

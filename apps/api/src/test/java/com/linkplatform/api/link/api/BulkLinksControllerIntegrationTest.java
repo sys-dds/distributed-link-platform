@@ -71,6 +71,11 @@ class BulkLinksControllerIntegrationTest {
                 .andExpect(jsonPath("$.items[0].success").value(true))
                 .andExpect(jsonPath("$.items[0].newVersion").value(2));
 
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/links/bulk-tags")
+                        .header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.abuseStatus").value("active"));
+
         mockMvc.perform(post("/api/v1/links/bulk/actions")
                         .header("X-API-Key", FREE_API_KEY)
                         .header("Idempotency-Key", "bulk-expiry-1")

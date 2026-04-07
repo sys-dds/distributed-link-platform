@@ -90,6 +90,16 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
         if (!runtimeProperties.controlPlaneEnabled() && runtimeProperties.getMode() == RuntimeMode.WORKER && runtimeProperties.httpEnabled()) {
             throw new IllegalStateException("Worker-only runtime must not expose HTTP surfaces");
         }
+        if (runtimeProperties.getAbuse().getAutoQuarantineThreshold() <= 0) {
+            throw new IllegalStateException("link-platform.abuse.auto-quarantine-threshold must be greater than 0");
+        }
+        if (runtimeProperties.getAbuse().getReviewPageSizeDefault() <= 0) {
+            throw new IllegalStateException("link-platform.abuse.review-page-size-default must be greater than 0");
+        }
+        if (runtimeProperties.getAbuse().getReviewPageSizeMax() < runtimeProperties.getAbuse().getReviewPageSizeDefault()) {
+            throw new IllegalStateException(
+                    "link-platform.abuse.review-page-size-max must be greater than or equal to link-platform.abuse.review-page-size-default");
+        }
     }
 
     private void validateAbsoluteHttpUrl(String value, String propertyName) {

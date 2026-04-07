@@ -69,6 +69,10 @@ class LinkAnalyticsControllerIntegrationTest {
                 .andExpect(jsonPath("$.totalClicks").value(2))
                 .andExpect(jsonPath("$.clicksLast24Hours").value(1))
                 .andExpect(jsonPath("$.clicksLast7Days").value(2));
+
+        mockMvc.perform(get("/api/v1/links/alpha").header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.abuseStatus").value("active"));
     }
 
     @Test
@@ -272,11 +276,15 @@ class LinkAnalyticsControllerIntegrationTest {
                 ownerId,
                 lifecycleState);
         jdbcTemplate.update(
+                "UPDATE links SET workspace_id = ?, abuse_status = 'ACTIVE' WHERE slug = ?",
+                ownerId,
+                slug);
+        jdbcTemplate.update(
                 """
                 MERGE INTO link_catalog_projection (
-                    slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, lifecycle_state, deleted_at, version, owner_id
+                    slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, lifecycle_state, deleted_at, version, owner_id, workspace_id
                 ) KEY (slug)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 slug,
                 "https://example.com/" + slug,
@@ -289,6 +297,7 @@ class LinkAnalyticsControllerIntegrationTest {
                 lifecycleState,
                 null,
                 1L,
+                ownerId,
                 ownerId);
     }
 
@@ -322,10 +331,11 @@ class LinkAnalyticsControllerIntegrationTest {
         jdbcTemplate.update(
                 """
                 INSERT INTO link_activity_events (
-                    event_id, owner_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_id, owner_id, workspace_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 slug + "-activity-" + occurredAt.toInstant().toEpochMilli(),
+                ownerId,
                 ownerId,
                 "UPDATED",
                 slug,

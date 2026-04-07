@@ -64,7 +64,16 @@ public interface LinkApplicationService {
 
     LinkDetails getLink(WorkspaceAccessContext context, String slug);
 
-    List<LinkDetails> listRecentLinks(WorkspaceAccessContext context, int limit, String query, LinkLifecycleState state);
+    List<LinkDetails> listRecentLinks(
+            WorkspaceAccessContext context,
+            int limit,
+            String query,
+            LinkLifecycleState state,
+            LinkAbuseStatus abuseStatus);
+
+    default List<LinkDetails> listRecentLinks(WorkspaceAccessContext context, int limit, String query, LinkLifecycleState state) {
+        return listRecentLinks(context, limit, query, state, null);
+    }
 
     List<LinkSuggestion> suggestLinks(WorkspaceAccessContext context, String query, int limit);
 
@@ -162,8 +171,17 @@ public interface LinkApplicationService {
         return getLink(compatibilityContext(owner), slug);
     }
 
+    default List<LinkDetails> listRecentLinks(
+            AuthenticatedOwner owner,
+            int limit,
+            String query,
+            LinkLifecycleState state,
+            LinkAbuseStatus abuseStatus) {
+        return listRecentLinks(compatibilityContext(owner), limit, query, state, abuseStatus);
+    }
+
     default List<LinkDetails> listRecentLinks(AuthenticatedOwner owner, int limit, String query, LinkLifecycleState state) {
-        return listRecentLinks(compatibilityContext(owner), limit, query, state);
+        return listRecentLinks(owner, limit, query, state, null);
     }
 
     default List<LinkSuggestion> suggestLinks(AuthenticatedOwner owner, String query, int limit) {

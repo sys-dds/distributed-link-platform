@@ -49,9 +49,9 @@ public class PostgresLinkStore implements LinkStore {
             long workspaceId) {
         try {
             return jdbcTemplate.update(
-                    """
-                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname, version, owner_id, workspace_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname, version, owner_id, workspace_id, abuse_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
                     """,
                     link.slug().value(),
                     link.originalUrl().value(),
@@ -245,6 +245,129 @@ public class PostgresLinkStore implements LinkStore {
                         workspaceId)
                 .stream()
                 .findFirst();
+    }
+
+    @Override
+    public Optional<LinkAbuseStatus> findAbuseStatusBySlug(String slug, long workspaceId) {
+        return jdbcTemplate.query(
+                        "SELECT abuse_status FROM links WHERE slug = ? AND workspace_id = ?",
+                        (resultSet, rowNum) -> LinkAbuseStatus.valueOf(resultSet.getString("abuse_status")),
+                        slug,
+                        workspaceId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public boolean flagLinkForAbuse(
+            long workspaceId,
+            String slug,
+            String abuseReason,
+            OffsetDateTime flaggedAt,
+            Long reviewedByOwnerId,
+            String reviewNote,
+            boolean preserveQuarantinedState) {
+        String quarantineGuard = preserveQuarantinedState ? " AND abuse_status <> 'QUARANTINED'" : "";
+        return jdbcTemplate.update(
+                """
+                UPDATE links
+                SET abuse_status = 'FLAGGED',
+                    abuse_reason = ?,
+                    abuse_flagged_at = ?,
+                    abuse_reviewed_at = ?,
+                    abuse_reviewed_by_owner_id = ?,
+                    abuse_review_note = ?
+                WHERE workspace_id = ?
+                  AND slug = ?
+                """
+                        + quarantineGuard,
+                abuseReason,
+                flaggedAt,
+                null,
+                reviewedByOwnerId,
+                reviewNote,
+                workspaceId,
+                slug) >= 1;
+    }
+
+    @Override
+    public boolean quarantineLink(
+            long workspaceId,
+            String slug,
+            String abuseReason,
+            OffsetDateTime reviewedAt,
+            Long reviewedByOwnerId,
+            String reviewNote) {
+        return jdbcTemplate.update(
+                """
+                UPDATE links
+                SET abuse_status = 'QUARANTINED',
+                    abuse_reason = ?,
+                    abuse_flagged_at = ?,
+                    abuse_reviewed_at = ?,
+                    abuse_reviewed_by_owner_id = ?,
+                    abuse_review_note = ?
+                WHERE workspace_id = ?
+                  AND slug = ?
+                """,
+                abuseReason,
+                reviewedAt,
+                reviewedAt,
+                reviewedByOwnerId,
+                reviewNote,
+                workspaceId,
+                slug) == 1;
+    }
+
+    @Override
+    public boolean releaseLink(
+            long workspaceId,
+            String slug,
+            Long reviewedByOwnerId,
+            String reviewNote,
+            OffsetDateTime reviewedAt) {
+        return jdbcTemplate.update(
+                """
+                UPDATE links
+                SET abuse_status = 'ACTIVE',
+                    abuse_reason = NULL,
+                    abuse_reviewed_at = ?,
+                    abuse_reviewed_by_owner_id = ?,
+                    abuse_review_note = ?
+                WHERE workspace_id = ?
+                  AND slug = ?
+                """,
+                reviewedAt,
+                reviewedByOwnerId,
+                reviewNote,
+                workspaceId,
+                slug) == 1;
+    }
+
+    @Override
+    public boolean clearFlaggedLink(
+            long workspaceId,
+            String slug,
+            Long reviewedByOwnerId,
+            String reviewNote,
+            OffsetDateTime reviewedAt) {
+        return jdbcTemplate.update(
+                """
+                UPDATE links
+                SET abuse_status = 'ACTIVE',
+                    abuse_reason = NULL,
+                    abuse_reviewed_at = ?,
+                    abuse_reviewed_by_owner_id = ?,
+                    abuse_review_note = ?
+                WHERE workspace_id = ?
+                  AND slug = ?
+                  AND abuse_status = 'FLAGGED'
+                """,
+                reviewedAt,
+                reviewedByOwnerId,
+                reviewNote,
+                workspaceId,
+                slug) == 1;
     }
 
     @Override
@@ -497,11 +620,12 @@ public class PostgresLinkStore implements LinkStore {
     @Override
     public Optional<Link> findBySlug(String slug, OffsetDateTime now) {
         return jdbcTemplate.query(
-                        """
+                """
                         SELECT slug, original_url
                         FROM links
                         WHERE slug = ?
                           AND lifecycle_state = 'ACTIVE'
+                          AND abuse_status <> 'QUARANTINED'
                           AND (expires_at IS NULL OR expires_at > ?)
                         """,
                         (resultSet, rowNum) -> toLink(resultSet.getString("slug"), resultSet.getString("original_url")),
@@ -522,6 +646,7 @@ public class PostgresLinkStore implements LinkStore {
                                l.title,
                                l.tags_json,
                                l.hostname,
+                               l.abuse_status,
                                l.version,
                                COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                         FROM links l
@@ -538,6 +663,7 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getString("title"),
                                 resultSet.getString("tags_json"),
                                 resultSet.getString("hostname"),
+                                LinkAbuseStatus.valueOf(resultSet.getString("abuse_status")),
                                 resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
                         slug,
@@ -558,6 +684,7 @@ public class PostgresLinkStore implements LinkStore {
                                l.title,
                                l.tags_json,
                                l.hostname,
+                               l.abuse_status,
                                l.version,
                                COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                         FROM links l
@@ -571,6 +698,7 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getString("title"),
                                 resultSet.getString("tags_json"),
                                 resultSet.getString("hostname"),
+                                LinkAbuseStatus.valueOf(resultSet.getString("abuse_status")),
                                 resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
                         slug)
@@ -589,6 +717,7 @@ public class PostgresLinkStore implements LinkStore {
                                l.title,
                                l.tags_json,
                                l.hostname,
+                               l.abuse_status,
                                l.version,
                                COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                         FROM links l
@@ -603,6 +732,7 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getString("title"),
                                 resultSet.getString("tags_json"),
                                 resultSet.getString("hostname"),
+                                LinkAbuseStatus.valueOf(resultSet.getString("abuse_status")),
                                 resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
                         slug,
@@ -646,7 +776,13 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long workspaceId) {
+    public List<LinkDetails> findRecent(
+            int limit,
+            OffsetDateTime now,
+            String query,
+            LinkLifecycleState state,
+            LinkAbuseStatus abuseStatus,
+            long workspaceId) {
         StringBuilder sql = new StringBuilder("""
                 SELECT p.slug,
                        p.original_url,
@@ -655,9 +791,11 @@ public class PostgresLinkStore implements LinkStore {
                        p.title,
                        p.tags_json,
                        p.hostname,
+                       l.abuse_status,
                        p.version,
                        COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = p.slug), 0) AS click_total
                 FROM link_catalog_projection p
+                JOIN links l ON l.slug = p.slug AND l.workspace_id = p.workspace_id
                 WHERE 1 = 1
                   AND p.workspace_id = ?
                   AND p.deleted_at IS NULL
@@ -665,11 +803,12 @@ public class PostgresLinkStore implements LinkStore {
         List<Object> parameters = new ArrayList<>(List.of(workspaceId));
 
         appendLifecycleClause(sql, parameters, now, state);
+        appendAbuseClause(sql, parameters, abuseStatus, "l");
         appendSearchClause(sql, parameters, query);
 
         sql.append("""
                 
-                ORDER BY updated_at DESC, created_at DESC, slug ASC
+                ORDER BY p.updated_at DESC, p.created_at DESC, p.slug ASC
                 LIMIT ?
                 """);
         parameters.add(limit);
@@ -684,6 +823,7 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("title"),
                         resultSet.getString("tags_json"),
                         resultSet.getString("hostname"),
+                        LinkAbuseStatus.valueOf(resultSet.getString("abuse_status")),
                         resultSet.getLong("version"),
                         resultSet.getLong("click_total")),
                 parameters.toArray());
@@ -727,18 +867,20 @@ public class PostgresLinkStore implements LinkStore {
     @Override
     public LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long workspaceId, LinkDiscoveryQuery query) {
         StringBuilder sql = new StringBuilder("""
-                SELECT slug,
-                       original_url,
-                       title,
-                       hostname,
-                       tags_json,
-                       created_at,
-                       updated_at,
-                       expires_at,
-                       deleted_at,
-                       version
-                FROM link_discovery_projection
-                WHERE workspace_id = ?
+                SELECT d.slug,
+                       d.original_url,
+                       d.title,
+                       d.hostname,
+                       d.tags_json,
+                       l.abuse_status,
+                       d.created_at,
+                       d.updated_at,
+                       d.expires_at,
+                       d.deleted_at,
+                       d.version
+                FROM link_discovery_projection d
+                JOIN links l ON l.slug = d.slug AND l.workspace_id = d.workspace_id
+                WHERE d.workspace_id = ?
                 """);
         List<Object> parameters = new ArrayList<>();
         parameters.add(workspaceId);
@@ -746,6 +888,7 @@ public class PostgresLinkStore implements LinkStore {
         appendDiscoverySearchClause(sql, parameters, query.searchText());
         appendDiscoveryHostnameClause(sql, parameters, query.hostname());
         appendDiscoveryTagClause(sql, parameters, query.tag());
+        appendAbuseClause(sql, parameters, query.abuseStatus(), "l");
         appendDiscoveryLifecycleClause(sql, parameters, now, query.lifecycle());
         appendDiscoveryExpirationClause(sql, parameters, now, query.expiration());
         appendDiscoveryCursorClause(sql, parameters, query.sort(), query.cursor());
@@ -760,6 +903,7 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("title"),
                         resultSet.getString("hostname"),
                         deserializeTags(resultSet.getString("tags_json")),
+                        LinkAbuseStatus.valueOf(resultSet.getString("abuse_status")),
                         mapLifecycleState(
                                 resultSet.getObject("deleted_at", OffsetDateTime.class),
                                 resultSet.getObject("expires_at", OffsetDateTime.class),
@@ -1145,25 +1289,25 @@ public class PostgresLinkStore implements LinkStore {
             case ACTIVE -> {
                 sql.append("""
                         
-                          AND (expires_at IS NULL OR expires_at > ?)
-                          AND lifecycle_state = 'ACTIVE'
+                          AND (p.expires_at IS NULL OR p.expires_at > ?)
+                          AND p.lifecycle_state = 'ACTIVE'
                         """);
                 parameters.add(now);
             }
             case SUSPENDED -> sql.append("""
                     
-                      AND lifecycle_state = 'SUSPENDED'
+                      AND p.lifecycle_state = 'SUSPENDED'
                     """);
             case ARCHIVED -> sql.append("""
                     
-                      AND lifecycle_state = 'ARCHIVED'
+                      AND p.lifecycle_state = 'ARCHIVED'
                     """);
             case EXPIRED -> {
                 sql.append("""
                         
-                          AND expires_at IS NOT NULL
-                          AND expires_at <= ?
-                          AND lifecycle_state = 'ACTIVE'
+                          AND p.expires_at IS NOT NULL
+                          AND p.expires_at <= ?
+                          AND p.lifecycle_state = 'ACTIVE'
                         """);
                 parameters.add(now);
             }
@@ -1194,6 +1338,19 @@ public class PostgresLinkStore implements LinkStore {
         parameters.add(pattern);
         parameters.add(pattern);
         parameters.add(pattern);
+    }
+
+    private void appendAbuseClause(
+            StringBuilder sql,
+            List<Object> parameters,
+            LinkAbuseStatus abuseStatus,
+            String alias) {
+        if (abuseStatus == null) {
+            return;
+        }
+        String qualifiedColumn = (alias == null || alias.isBlank() ? "" : alias + ".") + "abuse_status";
+        sql.append(" AND ").append(qualifiedColumn).append(" = ?");
+        parameters.add(abuseStatus.name());
     }
 
     private void appendCatalogTagClause(StringBuilder sql, List<Object> parameters, String tag) {
@@ -1258,11 +1415,11 @@ public class PostgresLinkStore implements LinkStore {
         sql.append("""
                 
                   AND (
-                    LOWER(slug) LIKE ?
-                    OR LOWER(original_url) LIKE ?
-                    OR LOWER(COALESCE(title, '')) LIKE ?
-                    OR LOWER(COALESCE(tags_json, '')) LIKE ?
-                    OR LOWER(COALESCE(hostname, '')) LIKE ?
+                    LOWER(d.slug) LIKE ?
+                    OR LOWER(d.original_url) LIKE ?
+                    OR LOWER(COALESCE(d.title, '')) LIKE ?
+                    OR LOWER(COALESCE(d.tags_json, '')) LIKE ?
+                    OR LOWER(COALESCE(d.hostname, '')) LIKE ?
                   )
                 """);
         String pattern = "%" + query.toLowerCase(Locale.ROOT).trim() + "%";
@@ -1279,7 +1436,7 @@ public class PostgresLinkStore implements LinkStore {
         }
         sql.append("""
                 
-                  AND LOWER(hostname) = ?
+                  AND LOWER(d.hostname) = ?
                 """);
         parameters.add(hostname.trim().toLowerCase(Locale.ROOT));
     }
@@ -1290,7 +1447,7 @@ public class PostgresLinkStore implements LinkStore {
         }
         sql.append("""
                 
-                  AND LOWER(COALESCE(tags_json, '')) LIKE ?
+                  AND LOWER(COALESCE(d.tags_json, '')) LIKE ?
                 """);
         parameters.add("%\"" + tag.trim().toLowerCase(Locale.ROOT) + "\"%");
     }
@@ -1304,23 +1461,23 @@ public class PostgresLinkStore implements LinkStore {
             case ACTIVE -> {
                 sql.append("""
                         
-                          AND deleted_at IS NULL
-                          AND (expires_at IS NULL OR expires_at > ?)
+                          AND d.deleted_at IS NULL
+                          AND (d.expires_at IS NULL OR d.expires_at > ?)
                         """);
                 parameters.add(now);
             }
             case EXPIRED -> {
                 sql.append("""
                         
-                          AND deleted_at IS NULL
-                          AND expires_at IS NOT NULL
-                          AND expires_at <= ?
+                          AND d.deleted_at IS NULL
+                          AND d.expires_at IS NOT NULL
+                          AND d.expires_at <= ?
                         """);
                 parameters.add(now);
             }
             case DELETED -> sql.append("""
                         
-                          AND deleted_at IS NOT NULL
+                          AND d.deleted_at IS NOT NULL
                         """);
             case ALL -> {
                 // no-op
@@ -1339,17 +1496,17 @@ public class PostgresLinkStore implements LinkStore {
             }
             case SCHEDULED -> sql.append("""
                         
-                          AND expires_at IS NOT NULL
+                          AND d.expires_at IS NOT NULL
                         """);
             case NONE -> sql.append("""
                         
-                          AND expires_at IS NULL
+                          AND d.expires_at IS NULL
                         """);
             case EXPIRED -> {
                 sql.append("""
                         
-                          AND expires_at IS NOT NULL
-                          AND expires_at <= ?
+                          AND d.expires_at IS NOT NULL
+                          AND d.expires_at <= ?
                         """);
                 parameters.add(now);
             }
@@ -1370,7 +1527,7 @@ public class PostgresLinkStore implements LinkStore {
                 OffsetDateTime updatedAt = parseCursorTimestamp(decodedCursor.primaryValue());
                 sql.append("""
                         
-                          AND (updated_at < ? OR (updated_at = ? AND slug > ?))
+                          AND (d.updated_at < ? OR (d.updated_at = ? AND d.slug > ?))
                         """);
                 parameters.add(updatedAt);
                 parameters.add(updatedAt);
@@ -1380,7 +1537,7 @@ public class PostgresLinkStore implements LinkStore {
                 OffsetDateTime createdAt = parseCursorTimestamp(decodedCursor.primaryValue());
                 sql.append("""
                         
-                          AND (created_at < ? OR (created_at = ? AND slug > ?))
+                          AND (d.created_at < ? OR (d.created_at = ? AND d.slug > ?))
                         """);
                 parameters.add(createdAt);
                 parameters.add(createdAt);
@@ -1389,7 +1546,7 @@ public class PostgresLinkStore implements LinkStore {
             case SLUG_ASC -> {
                 sql.append("""
                         
-                          AND slug > ?
+                          AND d.slug > ?
                         """);
                 parameters.add(decodedCursor.slug());
             }
@@ -1398,9 +1555,9 @@ public class PostgresLinkStore implements LinkStore {
 
     private String discoveryOrderBy(LinkDiscoverySort sort) {
         return switch (sort) {
-            case UPDATED_DESC -> "updated_at DESC, slug ASC";
-            case CREATED_DESC -> "created_at DESC, slug ASC";
-            case SLUG_ASC -> "slug ASC";
+            case UPDATED_DESC -> "d.updated_at DESC, d.slug ASC";
+            case CREATED_DESC -> "d.created_at DESC, d.slug ASC";
+            case SLUG_ASC -> "d.slug ASC";
         };
     }
 
@@ -1949,9 +2106,20 @@ public class PostgresLinkStore implements LinkStore {
             String title,
             String tagsJson,
             String hostname,
+            LinkAbuseStatus abuseStatus,
             long version,
             long clickTotal) {
-        return new LinkDetails(slug, originalUrl, createdAt, expiresAt, title, deserializeTags(tagsJson), hostname, version, clickTotal);
+        return new LinkDetails(
+                slug,
+                originalUrl,
+                createdAt,
+                expiresAt,
+                title,
+                deserializeTags(tagsJson),
+                hostname,
+                abuseStatus,
+                version,
+                clickTotal);
     }
 
     private String serializeTags(List<String> tags) {

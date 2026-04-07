@@ -152,6 +152,14 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case AMBIGUOUS_CREDENTIAL -> "Conflicting credential rejected";
             case INVALID_CREDENTIAL -> "Invalid credential rejected";
             case RATE_LIMIT_REJECTED -> "Rate limit rejected";
+            case LINK_TARGET_REJECTED -> "Unsafe target rejected";
+            case LINK_FLAGGED_FOR_REVIEW -> "Link flagged for review";
+            case LINK_QUARANTINED -> "Link quarantined";
+            case LINK_RELEASED -> "Link released";
+            case LINK_ABUSE_DISMISSED -> "Link abuse case dismissed";
+            case LINK_QUARANTINED_REDIRECT_ATTEMPT -> "Quarantined redirect blocked";
+            case ABUSE_CASE_OPENED -> "Abuse case opened";
+            case ABUSE_CASE_SIGNAL_INCREMENTED -> "Abuse case signal incremented";
             case QUOTA_REJECTED -> "Quota limit rejected";
             case ANALYTICS_PIPELINE_PAUSED -> "Analytics pipeline paused";
             case ANALYTICS_PIPELINE_RESUMED -> "Analytics pipeline resumed";

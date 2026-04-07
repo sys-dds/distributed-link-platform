@@ -179,8 +179,57 @@ public interface LinkStore {
         return Optional.empty();
     }
 
-    default List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long ownerId) {
+    default List<LinkDetails> findRecent(
+            int limit,
+            OffsetDateTime now,
+            String query,
+            LinkLifecycleState state,
+            LinkAbuseStatus abuseStatus,
+            long ownerId) {
         return List.of();
+    }
+
+    default Optional<LinkAbuseStatus> findAbuseStatusBySlug(String slug, long workspaceId) {
+        return Optional.empty();
+    }
+
+    default boolean flagLinkForAbuse(
+            long workspaceId,
+            String slug,
+            String abuseReason,
+            OffsetDateTime flaggedAt,
+            Long reviewedByOwnerId,
+            String reviewNote,
+            boolean preserveQuarantinedState) {
+        return false;
+    }
+
+    default boolean quarantineLink(
+            long workspaceId,
+            String slug,
+            String abuseReason,
+            OffsetDateTime reviewedAt,
+            Long reviewedByOwnerId,
+            String reviewNote) {
+        return false;
+    }
+
+    default boolean releaseLink(
+            long workspaceId,
+            String slug,
+            Long reviewedByOwnerId,
+            String reviewNote,
+            OffsetDateTime reviewedAt) {
+        return false;
+    }
+
+    default boolean clearFlaggedLink(
+            long workspaceId,
+            String slug,
+            Long reviewedByOwnerId,
+            String reviewNote,
+            OffsetDateTime reviewedAt) {
+        return false;
     }
 
     default List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId) {

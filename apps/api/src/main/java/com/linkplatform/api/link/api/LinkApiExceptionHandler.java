@@ -1,6 +1,8 @@
 package com.linkplatform.api.link.api;
 
+import com.linkplatform.api.link.application.AbuseCaseNotFoundException;
 import com.linkplatform.api.link.application.DuplicateLinkSlugException;
+import com.linkplatform.api.link.application.InvalidAbuseCaseTransitionException;
 import com.linkplatform.api.link.application.LinkMutationConflictException;
 import com.linkplatform.api.link.application.LinkNotFoundException;
 import com.linkplatform.api.link.application.LinkPreconditionRequiredException;
@@ -8,6 +10,7 @@ import com.linkplatform.api.link.application.RedirectLookupUnavailableException;
 import com.linkplatform.api.link.application.RedirectRateLimitExceededException;
 import com.linkplatform.api.link.application.ReservedLinkSlugException;
 import com.linkplatform.api.link.application.SelfTargetLinkException;
+import com.linkplatform.api.link.application.UnsafeLinkTargetException;
 import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
 import com.linkplatform.api.owner.application.ControlPlaneRateLimitExceededException;
 import com.linkplatform.api.owner.application.DuplicateWorkspaceMemberException;
@@ -116,6 +119,27 @@ public class LinkApiExceptionHandler {
     public ProblemDetail handleMissingSlug(LinkNotFoundException exception) {
         ProblemDetail problemDetail = problemDetail(HttpStatus.NOT_FOUND, exception.getMessage());
         problemDetail.setProperty("category", "not-found");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(AbuseCaseNotFoundException.class)
+    public ProblemDetail handleAbuseCaseNotFound(AbuseCaseNotFoundException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+        problemDetail.setProperty("category", "case-not-found");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(InvalidAbuseCaseTransitionException.class)
+    public ProblemDetail handleInvalidAbuseCaseTransition(InvalidAbuseCaseTransitionException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problemDetail.setProperty("category", "invalid-case-transition");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(UnsafeLinkTargetException.class)
+    public ProblemDetail handleUnsafeLinkTarget(UnsafeLinkTargetException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        problemDetail.setProperty("category", "bad-request");
         return problemDetail;
     }
 

@@ -11,5 +11,6 @@ public record LinkResponse(
         String title,
         List<String> tags,
         String hostname,
+        String abuseStatus,
         long version) {
 }

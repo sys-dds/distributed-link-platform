@@ -43,6 +43,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private final LinkMutationIdempotencyStore linkMutationIdempotencyStore;
     private final OwnerStore ownerStore;
     private final SecurityEventStore securityEventStore;
+    private final LinkTargetPolicyService linkTargetPolicyService;
+    private final LinkAbuseReviewService linkAbuseReviewService;
     private final LinkReadCache linkReadCache;
     private final URI publicBaseUri;
     private final Clock clock;
@@ -54,6 +56,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             LinkMutationIdempotencyStore linkMutationIdempotencyStore,
             OwnerStore ownerStore,
             SecurityEventStore securityEventStore,
+            LinkTargetPolicyService linkTargetPolicyService,
+            LinkAbuseReviewService linkAbuseReviewService,
             LinkReadCache linkReadCache,
             @Value("${link-platform.public-base-url}") String publicBaseUrl) {
         this.linkStore = linkStore;
@@ -62,6 +66,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         this.linkMutationIdempotencyStore = linkMutationIdempotencyStore;
         this.ownerStore = ownerStore;
         this.securityEventStore = securityEventStore;
+        this.linkTargetPolicyService = linkTargetPolicyService;
+        this.linkAbuseReviewService = linkAbuseReviewService;
         this.linkReadCache = linkReadCache;
         this.publicBaseUri = URI.create(publicBaseUrl);
         this.clock = Clock.systemUTC();
@@ -74,6 +80,10 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         Link link = new Link(new LinkSlug(command.slug()), new OriginalUrl(command.originalUrl()));
         rejectReservedSlug(link.slug());
         rejectSelfTargetUrl(link.originalUrl());
+        TargetRiskAssessment targetRiskAssessment = linkTargetPolicyService.assess(link.originalUrl().value());
+        if (targetRiskAssessment.reject()) {
+            linkAbuseReviewService.rejectUnsafeTarget(context, link.slug().value(), targetRiskAssessment);
+        }
         String normalizedTitle = normalizeTitle(command.title());
         List<String> normalizedTags = normalizeTags(command.tags());
         String hostname = extractHostname(link.originalUrl().value());
@@ -88,6 +98,9 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
         if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname, 1L, context.workspaceId())) {
             throw new DuplicateLinkSlugException(link.slug().value());
+        }
+        if (targetRiskAssessment.review()) {
+            linkAbuseReviewService.flagTargetForReview(context, link.slug().value(), targetRiskAssessment);
         }
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(link.slug().value(), context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(link.slug().value()));
@@ -128,6 +141,10 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         LinkSlug linkSlug = new LinkSlug(slug);
         OriginalUrl validatedOriginalUrl = new OriginalUrl(originalUrl);
         rejectSelfTargetUrl(validatedOriginalUrl);
+        TargetRiskAssessment targetRiskAssessment = linkTargetPolicyService.assess(validatedOriginalUrl.value());
+        if (targetRiskAssessment.reject()) {
+            linkAbuseReviewService.rejectUnsafeTarget(context, linkSlug.value(), targetRiskAssessment);
+        }
         String normalizedTitle = normalizeTitle(title);
         List<String> normalizedTags = normalizeTags(tags);
         String hostname = extractHostname(validatedOriginalUrl.value());
@@ -157,6 +174,9 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 nextVersion,
                 context.workspaceId())) {
             throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
+        }
+        if (targetRiskAssessment.review()) {
+            linkAbuseReviewService.flagTargetForReview(context, linkSlug.value(), targetRiskAssessment);
         }
 
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId())
@@ -203,6 +223,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 storedDetails.title(),
                 storedDetails.tags(),
                 storedDetails.hostname(),
+                storedDetails.abuseStatus(),
                 storedDetails.version() + 1,
                 true);
         LinkLifecycleEvent lifecycleEvent = toLifecycleEvent(
@@ -418,15 +439,22 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<LinkDetails> listRecentLinks(WorkspaceAccessContext context, int limit, String query, LinkLifecycleState state) {
+    public List<LinkDetails> listRecentLinks(
+            WorkspaceAccessContext context,
+            int limit,
+            String query,
+            LinkLifecycleState state,
+            LinkAbuseStatus abuseStatus) {
         long generation = linkReadCache.getOwnerControlPlaneGeneration(context.workspaceId());
-        if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return linkStore.findRecent(limit, now(), query, state, context.workspaceId());
+        if (abuseStatus != null || !linkReadCache.isCacheGenerationAvailable(generation)) {
+            return linkStore.findRecent(limit, now(), query, state, abuseStatus, context.workspaceId());
         }
         return linkReadCache.getOwnerRecentLinks(context.workspaceId(), generation, limit, query, state)
                 .orElseGet(() -> {
-                    List<LinkDetails> linkDetails = linkStore.findRecent(limit, now(), query, state, context.workspaceId());
-                    linkReadCache.putOwnerRecentLinks(context.workspaceId(), generation, limit, query, state, linkDetails);
+                    List<LinkDetails> linkDetails = linkStore.findRecent(limit, now(), query, state, abuseStatus, context.workspaceId());
+                    if (abuseStatus == null) {
+                        linkReadCache.putOwnerRecentLinks(context.workspaceId(), generation, limit, query, state, linkDetails);
+                    }
                     return linkDetails;
                 });
     }
