@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 public class ProjectionJobRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectionJobRunner.class);
+    private static final long FAILED_ITEMS_INCREMENT = 1L;
 
     private final ProjectionJobStore projectionJobStore;
     private final ProjectionJobService projectionJobService;
@@ -91,7 +92,11 @@ public class ProjectionJobRunner {
                 completedCounter.increment();
             }
         } catch (RuntimeException exception) {
-            projectionJobStore.markFailed(job.id(), OffsetDateTime.now(clock), 0L, compactErrorSummary(exception));
+            projectionJobStore.markFailed(
+                    job.id(),
+                    OffsetDateTime.now(clock),
+                    FAILED_ITEMS_INCREMENT,
+                    compactErrorSummary(exception));
             failedCounter.increment();
             log.warn("projection_job_failed id={} type={} reason={}", job.id(), job.jobType(), compactErrorSummary(exception));
             throw exception;

@@ -126,20 +126,17 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                     }
                     jdbcTemplate.update(
                             """
-                            UPDATE projection_jobs
-                            SET status = ?,
-                                started_at = COALESCE(started_at, ?),
-                                completed_at = NULL,
-                                error_summary = NULL,
-                                claimed_by = ?,
-                                claimed_until = ?
-                            WHERE id = ?
-                            """,
-                            ProjectionJobStatus.RUNNING.name(),
-                            now,
-                            workerId,
-                            claimedUntil,
-                            job.id());
+                    UPDATE projection_jobs
+                    SET status = ?,
+                        completed_at = NULL,
+                        claimed_by = ?,
+                        claimed_until = ?
+                    WHERE id = ?
+                    """,
+                    ProjectionJobStatus.RUNNING.name(),
+                    workerId,
+                    claimedUntil,
+                    job.id());
                     return findById(job.id()).orElseThrow();
                 }));
     }
@@ -150,6 +147,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 """
                 UPDATE projection_jobs
                 SET status = ?,
+                    started_at = COALESCE(started_at, ?),
                     last_chunk_at = ?,
                     processed_count = processed_count + ?,
                     processed_items = processed_items + ?,
@@ -161,6 +159,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 WHERE id = ?
                 """,
                 ProjectionJobStatus.QUEUED.name(),
+                occurredAt,
                 occurredAt,
                 processedCountIncrement,
                 processedCountIncrement,
@@ -174,6 +173,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 """
                 UPDATE projection_jobs
                 SET status = ?,
+                    started_at = COALESCE(started_at, ?),
                     completed_at = ?,
                     last_chunk_at = ?,
                     processed_count = processed_count + ?,
@@ -188,6 +188,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 ProjectionJobStatus.COMPLETED.name(),
                 completedAt,
                 completedAt,
+                completedAt,
                 processedCountIncrement,
                 processedCountIncrement,
                 checkpointId,
@@ -200,6 +201,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 """
                 UPDATE projection_jobs
                 SET status = ?,
+                    started_at = COALESCE(started_at, ?),
                     completed_at = ?,
                     failed_items = failed_items + ?,
                     claimed_by = NULL,
@@ -209,6 +211,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 WHERE id = ?
                 """,
                 ProjectionJobStatus.FAILED.name(),
+                completedAt,
                 completedAt,
                 failedItemsIncrement,
                 shorten(errorSummary, 255),

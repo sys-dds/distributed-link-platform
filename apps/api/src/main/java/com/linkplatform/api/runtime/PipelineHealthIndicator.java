@@ -74,7 +74,7 @@ public class PipelineHealthIndicator extends AbstractHealthIndicator {
         return details;
     }
 
-    private Object ageSeconds(OffsetDateTime timestamp, OffsetDateTime now) {
+    private Double ageSeconds(OffsetDateTime timestamp, OffsetDateTime now) {
         if (timestamp == null) {
             return null;
         }

@@ -22,4 +22,27 @@ public record ProjectionJobResponse(
         OffsetDateTime claimedUntil,
         Long ownerId,
         String slug) {
+
+    static ProjectionJobResponse from(ProjectionJob job) {
+        return new ProjectionJobResponse(
+                job.id(),
+                job.jobType(),
+                job.status(),
+                job.requestedAt(),
+                job.startedAt(),
+                job.lastChunkAt(),
+                job.completedAt(),
+                job.processedItems(),
+                job.processedItems(),
+                job.failedItems(),
+                job.checkpointId(),
+                null,
+                null,
+                job.lastError(),
+                job.lastError(),
+                job.claimedBy(),
+                job.claimedUntil(),
+                job.ownerId(),
+                job.slug());
+    }
 }

@@ -67,10 +67,11 @@ public class ProjectionJobService {
             case LINK_CATALOG_REBUILD -> rebuildCatalogChunk(job);
             case LINK_DISCOVERY_REBUILD -> rebuildDiscoveryChunk(job);
         };
+        OffsetDateTime occurredAt = OffsetDateTime.now(clock);
         if (result.completed()) {
-            projectionJobStore.markCompleted(job.id(), OffsetDateTime.now(clock), result.processedCount(), result.checkpointId());
+            projectionJobStore.markCompleted(job.id(), occurredAt, result.processedCount(), result.checkpointId());
         } else {
-            projectionJobStore.markProgress(job.id(), OffsetDateTime.now(clock), result.processedCount(), result.checkpointId());
+            projectionJobStore.markProgress(job.id(), occurredAt, result.processedCount(), result.checkpointId());
         }
         return result;
     }
