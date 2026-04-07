@@ -47,6 +47,16 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
+    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+        return createJob(jobType, requestedAt, null, null, null, null, null, null, null);
+    }
+
+    @Override
+    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
+        return createJob(jobType, requestedAt, ownerId, null, slug, null, null, null, null);
+    }
+
+    @Override
     public ProjectionJob createJob(
             ProjectionJobType jobType,
             OffsetDateTime requestedAt,
@@ -114,6 +124,11 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
+    public List<ProjectionJob> findRecent(int limit) {
+        return jdbcTemplate.query(selectJobsSql() + " ORDER BY requested_at DESC, id DESC LIMIT ?", this::mapJob, limit);
+    }
+
+    @Override
     public List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace) {
         if (personalWorkspace) {
             return jdbcTemplate.query(
@@ -167,6 +182,11 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
+    public Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
+        return claimNext(workerId, now, claimedUntil);
+    }
+
+    @Override
     public void markProgress(long id, OffsetDateTime occurredAt, long processedCountIncrement, Long checkpointId) {
         jdbcTemplate.update(
                 """
@@ -190,6 +210,11 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 processedCountIncrement,
                 checkpointId,
                 id);
+    }
+
+    @Override
+    public void markProgress(long id, long processedCountIncrement, Long checkpointId) {
+        markProgress(id, OffsetDateTime.now(clock), processedCountIncrement, checkpointId);
     }
 
     @Override
@@ -242,6 +267,11 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 shorten(errorSummary, 255),
                 shorten(errorSummary, 1024),
                 id);
+    }
+
+    @Override
+    public void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
+        markFailed(id, completedAt, 0L, errorSummary);
     }
 
     @Override

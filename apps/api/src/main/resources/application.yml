@@ -43,7 +43,7 @@ link-platform:
       url: ${QUERY_DB_URL:}
       username: ${QUERY_DB_USERNAME:}
       password: ${QUERY_DB_PASSWORD:}
-      driver-class-name: ${QUERY_DB_DRIVER_CLASS_NAME:${spring.datasource.driver-class-name}}
+      driver-class-name: ${QUERY_DB_DRIVER_CLASS_NAME:}
   analytics:
     click-topic: ${LINK_PLATFORM_ANALYTICS_CLICK_TOPIC:link-platform.analytics.redirect-clicks}
     outbox-relay-batch-size: ${LINK_PLATFORM_ANALYTICS_OUTBOX_BATCH_SIZE:50}
@@ -71,6 +71,8 @@ link-platform:
     analytics-ttl: ${LINK_PLATFORM_CACHE_ANALYTICS_TTL:PT15S}
   webhooks:
     enabled: ${LINK_PLATFORM_WEBHOOKS_ENABLED:true}
+    allow-private-callback-hosts: ${LINK_PLATFORM_WEBHOOKS_ALLOW_PRIVATE_CALLBACK_HOSTS:false}
+    allow-http-callbacks: ${LINK_PLATFORM_WEBHOOKS_ALLOW_HTTP_CALLBACKS:false}
     runner-delay-ms: ${LINK_PLATFORM_WEBHOOKS_RUNNER_DELAY_MS:5000}
     delivery-batch-size: ${LINK_PLATFORM_WEBHOOKS_DELIVERY_BATCH_SIZE:20}
     parked-threshold: ${LINK_PLATFORM_WEBHOOKS_PARKED_THRESHOLD:5}

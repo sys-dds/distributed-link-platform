@@ -26,8 +26,7 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
     public void afterSingletonsInstantiated() {
         boolean partialQueryDatasourceConfig = queryProperties.getUrl() == null
                 && (queryProperties.getUsername() != null
-                        || queryProperties.getPassword() != null
-                        || queryProperties.getDriverClassName() != null);
+                        || queryProperties.getPassword() != null);
         if (partialQueryDatasourceConfig) {
             throw new IllegalStateException(
                     "link-platform.query.datasource.url must be set when any dedicated query datasource property is configured");
@@ -116,6 +115,13 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
         if (runtimeProperties.getWebhooks().getConnectTimeoutSeconds() <= 0
                 || runtimeProperties.getWebhooks().getRequestTimeoutSeconds() <= 0) {
             throw new IllegalStateException("Webhook timeouts must be greater than 0");
+        }
+        // Private or non-HTTPS callbacks are only allowed in explicit test/docker-style runtimes.
+        if ((runtimeProperties.getWebhooks().isAllowPrivateCallbackHosts()
+                || runtimeProperties.getWebhooks().isAllowHttpCallbacks())
+                && !runtimeProperties.getWebhooks().isEnabled()) {
+            throw new IllegalStateException(
+                    "link-platform.webhooks.enabled must be true when private or http callback allowances are enabled");
         }
         if (runtimeProperties.getExports().getRunnerDelayMs() <= 0) {
             throw new IllegalStateException("link-platform.exports.runner-delay-ms must be greater than 0");

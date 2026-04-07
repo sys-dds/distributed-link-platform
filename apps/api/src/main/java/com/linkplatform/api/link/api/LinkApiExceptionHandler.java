@@ -74,7 +74,7 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(WorkspaceQuotaExceededException.class)
     public ProblemDetail handleWorkspaceQuotaExceeded(WorkspaceQuotaExceededException exception) {
-        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.detail());
         problemDetail.setProperty("quotaMetric", exception.quotaMetric().name());
         problemDetail.setProperty("currentUsage", exception.currentUsage());
         problemDetail.setProperty("limit", exception.limit());

@@ -36,10 +36,13 @@ public class JdbcRedirectRateLimitStore implements RedirectRateLimitStore {
         if (updated == 0) {
             jdbcTemplate.update(
                     """
-                    MERGE INTO redirect_rate_limits (
+                    INSERT INTO redirect_rate_limits (
                         subject_hash, slug, bucket_started_at, window_seconds, request_count, expires_at
-                    ) KEY (subject_hash, slug, bucket_started_at, window_seconds)
+                    )
                     VALUES (?, ?, ?, ?, 1, ?)
+                    ON CONFLICT (subject_hash, slug, bucket_started_at, window_seconds) DO UPDATE
+                    SET request_count = redirect_rate_limits.request_count + 1,
+                        expires_at = EXCLUDED.expires_at
                     """,
                     subjectHash,
                     slug,

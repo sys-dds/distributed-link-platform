@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ public class RedirectRateLimitService {
     private final Clock clock;
     private volatile String lastStoreMode = "startup";
 
+    @Autowired
     public RedirectRateLimitService(
             RedirectRateLimitStore fallbackStore,
             ObjectProvider<RedisRedirectRateLimitStore> redisStoreProvider,
