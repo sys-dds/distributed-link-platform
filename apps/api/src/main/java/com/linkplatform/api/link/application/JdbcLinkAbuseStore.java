@@ -108,6 +108,27 @@ public class JdbcLinkAbuseStore implements LinkAbuseStore {
     }
 
     @Override
+    public Optional<LinkAbuseCaseRecord> findOpenCase(long workspaceId, String slug, LinkAbuseSource source) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT *
+                        FROM link_abuse_cases
+                        WHERE workspace_id = ?
+                          AND slug = ?
+                          AND source = ?
+                          AND status = 'OPEN'
+                        ORDER BY updated_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                        (resultSet, rowNum) -> mapRecord(resultSet),
+                        workspaceId,
+                        slug,
+                        source.name())
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public List<LinkAbuseCaseRecord> findQueue(long workspaceId, LinkAbuseQueueQuery query) {
         StringBuilder sql = new StringBuilder("""
                 SELECT *
@@ -178,6 +199,56 @@ public class JdbcLinkAbuseStore implements LinkAbuseStore {
                 workspaceId,
                 slug);
         return count == null ? 0L : count;
+    }
+
+    @Override
+    public long countCasesByStatus(long workspaceId, LinkAbuseCaseStatus status) {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM link_abuse_cases
+                WHERE workspace_id = ?
+                  AND status = ?
+                """,
+                Long.class,
+                workspaceId,
+                status.name());
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public long countCasesResolvedOnDay(long workspaceId, LinkAbuseCaseStatus status, java.time.LocalDate day) {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM link_abuse_cases
+                WHERE workspace_id = ?
+                  AND status = ?
+                  AND reviewed_at >= ?
+                  AND reviewed_at < ?
+                """,
+                Long.class,
+                workspaceId,
+                status.name(),
+                day.atStartOfDay().atOffset(java.time.ZoneOffset.UTC),
+                day.plusDays(1).atStartOfDay().atOffset(java.time.ZoneOffset.UTC));
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public Optional<OffsetDateTime> findLatestUpdatedAt(long workspaceId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT updated_at
+                        FROM link_abuse_cases
+                        WHERE workspace_id = ?
+                        ORDER BY updated_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                        (resultSet, rowNum) -> resultSet.getObject("updated_at", OffsetDateTime.class),
+                        workspaceId)
+                .stream()
+                .findFirst();
     }
 
     @Override

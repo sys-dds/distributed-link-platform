@@ -79,8 +79,11 @@ class RedirectAbuseAutoQuarantineIntegrationTest {
                 "SELECT COUNT(*) FROM link_abuse_cases WHERE slug = 'limited-abuse' AND source = 'REDIRECT_RATE_LIMIT'",
                 Long.class);
         Long signalCount = jdbcTemplate.queryForObject(
-                "SELECT signal_count FROM link_abuse_cases WHERE slug = 'limited-abuse' AND source = 'REDIRECT_RATE_LIMIT' AND status = 'OPEN'",
+                "SELECT signal_count FROM link_abuse_cases WHERE slug = 'limited-abuse' AND source = 'REDIRECT_RATE_LIMIT'",
                 Long.class);
+        String caseStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM link_abuse_cases WHERE slug = 'limited-abuse' AND source = 'REDIRECT_RATE_LIMIT'",
+                String.class);
         String abuseStatus = jdbcTemplate.queryForObject(
                 "SELECT abuse_status FROM links WHERE slug = 'limited-abuse'",
                 String.class);
@@ -90,6 +93,7 @@ class RedirectAbuseAutoQuarantineIntegrationTest {
 
         assertEquals(1L, caseCount);
         assertEquals(2L, signalCount);
+        assertEquals("QUARANTINED", caseStatus);
         assertEquals("QUARANTINED", abuseStatus);
         assertEquals(1L, quarantinedEvents);
     }

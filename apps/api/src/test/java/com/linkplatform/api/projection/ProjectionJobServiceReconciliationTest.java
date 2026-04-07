@@ -10,6 +10,7 @@ import com.linkplatform.api.link.application.LinkClickHistoryRecord;
 import com.linkplatform.api.link.application.LinkDetails;
 import com.linkplatform.api.link.application.LinkDiscoveryPage;
 import com.linkplatform.api.link.application.LinkDiscoveryQuery;
+import com.linkplatform.api.link.application.LinkAbuseStatus;
 import com.linkplatform.api.link.application.LinkLifecycleEvent;
 import com.linkplatform.api.link.application.LinkLifecycleState;
 import com.linkplatform.api.link.application.LinkReadCache;
@@ -114,7 +115,7 @@ class ProjectionJobServiceReconciliationTest {
         @Override public Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now, long ownerId) { return Optional.empty(); }
         @Override public Optional<LinkDetails> findStoredDetailsBySlug(String slug) { return Optional.empty(); }
         @Override public Optional<LinkDetails> findStoredDetailsBySlug(String slug, long ownerId) { return Optional.empty(); }
-        @Override public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long ownerId) { return List.of(); }
+        @Override public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, LinkAbuseStatus abuseStatus, long ownerId) { return List.of(); }
         @Override public List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId) { return List.of(); }
         @Override public LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long ownerId, LinkDiscoveryQuery query) { return new LinkDiscoveryPage(List.of(), null, false); }
         @Override public List<LinkActivityEvent> findRecentActivity(int limit, long ownerId) { return List.of(); }

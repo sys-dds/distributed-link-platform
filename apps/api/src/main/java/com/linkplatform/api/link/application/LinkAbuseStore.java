@@ -19,11 +19,19 @@ public interface LinkAbuseStore {
 
     Optional<LinkAbuseCaseRecord> findCaseById(long workspaceId, long caseId);
 
+    Optional<LinkAbuseCaseRecord> findOpenCase(long workspaceId, String slug, LinkAbuseSource source);
+
     List<LinkAbuseCaseRecord> findQueue(long workspaceId, LinkAbuseQueueQuery query);
 
     Optional<LinkScopeRecord> findLinkScope(String slug);
 
     long countOpenCases(long workspaceId, String slug);
+
+    long countCasesByStatus(long workspaceId, LinkAbuseCaseStatus status);
+
+    long countCasesResolvedOnDay(long workspaceId, LinkAbuseCaseStatus status, java.time.LocalDate day);
+
+    Optional<OffsetDateTime> findLatestUpdatedAt(long workspaceId);
 
     boolean resolveCase(
             long workspaceId,

@@ -47,20 +47,47 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
+    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+        return createJob(jobType, requestedAt, null, null, null, null, null, null, null);
+    }
+
+    @Override
     public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
+        return createJob(jobType, requestedAt, ownerId, null, slug, null, null, null, null);
+    }
+
+    @Override
+    public ProjectionJob createJob(
+            ProjectionJobType jobType,
+            OffsetDateTime requestedAt,
+            Long ownerId,
+            Long workspaceId,
+            String slug,
+            OffsetDateTime rangeStart,
+            OffsetDateTime rangeEnd,
+            Long requestedByOwnerId,
+            String operatorNote) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement statement = connection.prepareStatement(
                     """
-                    INSERT INTO projection_jobs (job_type, status, requested_at, checkpoint_id, owner_id, slug)
-                    VALUES (?, ?, ?, NULL, ?, ?)
+                    INSERT INTO projection_jobs (
+                        job_type, status, requested_at, checkpoint_id, owner_id, workspace_id,
+                        slug, range_start, range_end, requested_by_owner_id, operator_note
+                    )
+                    VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     new String[]{"id"});
             statement.setString(1, jobType.name());
             statement.setString(2, ProjectionJobStatus.QUEUED.name());
             statement.setObject(3, requestedAt);
             statement.setObject(4, ownerId);
-            statement.setString(5, slug);
+            statement.setObject(5, workspaceId);
+            statement.setString(6, slug);
+            statement.setObject(7, rangeStart);
+            statement.setObject(8, rangeEnd);
+            statement.setObject(9, requestedByOwnerId);
+            statement.setString(10, shorten(operatorNote, 512));
             return statement;
         }, keyHolder);
         Number id = keyHolder.getKey();
@@ -72,51 +99,29 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
 
     @Override
     public Optional<ProjectionJob> findById(long id) {
-        return jdbcTemplate.query(
-                        """
-                        SELECT id, job_type, status, requested_at, started_at, completed_at,
-                               last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
-                               error_summary, last_error, claimed_by, claimed_until, owner_id, slug
-                        FROM projection_jobs
-                        WHERE id = ?
-                        """,
-                        (resultSet, rowNum) -> mapJob(resultSet),
-                        id)
-                .stream()
-                .findFirst();
+        return jdbcTemplate.query(selectJobsSql() + " WHERE id = ?", this::mapJob, id).stream().findFirst();
     }
 
     @Override
     public List<ProjectionJob> findRecent(int limit) {
         return jdbcTemplate.query(
-                """
-                SELECT id, job_type, status, requested_at, started_at, completed_at,
-                       last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
-                       error_summary, last_error, claimed_by, claimed_until, owner_id, slug
-                FROM projection_jobs
-                ORDER BY requested_at DESC, id DESC
-                LIMIT ?
-                """,
-                (resultSet, rowNum) -> mapJob(resultSet),
+                selectJobsSql() + " ORDER BY requested_at DESC, id DESC LIMIT ?",
+                this::mapJob,
                 limit);
     }
 
     @Override
     public Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
         return transactionTemplate.execute(status -> jdbcTemplate.query(
-                        """
-                        SELECT id, job_type, status, requested_at, started_at, completed_at,
-                               last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
-                               error_summary, last_error, claimed_by, claimed_until, owner_id, slug
-                        FROM projection_jobs
-                        WHERE (status = 'QUEUED'
-                               OR status = 'FAILED'
-                               OR (status = 'RUNNING' AND claimed_until IS NOT NULL AND claimed_until < ?))
-                        ORDER BY requested_at ASC, id ASC
-                        LIMIT 1
-                        FOR UPDATE SKIP LOCKED
-                        """,
-                        (resultSet, rowNum) -> mapJob(resultSet),
+                        selectJobsSql() + """
+                                WHERE (status = 'QUEUED'
+                                       OR status = 'FAILED'
+                                       OR (status = 'RUNNING' AND claimed_until IS NOT NULL AND claimed_until < ?))
+                                ORDER BY requested_at ASC, id ASC
+                                LIMIT 1
+                                FOR UPDATE SKIP LOCKED
+                                """,
+                        this::mapJob,
                         now)
                 .stream()
                 .findFirst()
@@ -126,17 +131,17 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                     }
                     jdbcTemplate.update(
                             """
-                    UPDATE projection_jobs
-                    SET status = ?,
-                        completed_at = NULL,
-                        claimed_by = ?,
-                        claimed_until = ?
-                    WHERE id = ?
-                    """,
-                    ProjectionJobStatus.RUNNING.name(),
-                    workerId,
-                    claimedUntil,
-                    job.id());
+                            UPDATE projection_jobs
+                            SET status = ?,
+                                completed_at = NULL,
+                                claimed_by = ?,
+                                claimed_until = ?
+                            WHERE id = ?
+                            """,
+                            ProjectionJobStatus.RUNNING.name(),
+                            workerId,
+                            claimedUntil,
+                            job.id());
                     return findById(job.id()).orElseThrow();
                 }));
     }
@@ -221,18 +226,54 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
 
     @Override
     public long countQueued() {
-        Long count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM projection_jobs WHERE status IN ('QUEUED', 'FAILED')",
-                Long.class);
-        return count == null ? 0L : count;
+        return countByStatuses(null, "('QUEUED', 'FAILED')");
     }
 
     @Override
     public long countActive() {
-        Long count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM projection_jobs WHERE status = 'RUNNING'",
-                Long.class);
-        return count == null ? 0L : count;
+        return countActive(null);
+    }
+
+    @Override
+    public long countQueued(Long workspaceId) {
+        return countByStatuses(workspaceId, "('QUEUED')");
+    }
+
+    @Override
+    public long countActive(Long workspaceId) {
+        return countByStatuses(workspaceId, "('RUNNING')");
+    }
+
+    @Override
+    public long countFailed(Long workspaceId) {
+        return countByStatuses(workspaceId, "('FAILED')");
+    }
+
+    @Override
+    public long countCompleted(Long workspaceId) {
+        return countByStatuses(workspaceId, "('COMPLETED')");
+    }
+
+    @Override
+    public Optional<OffsetDateTime> findLatestStartedAt(Long workspaceId) {
+        return findLatestTimestamp(workspaceId, "started_at");
+    }
+
+    @Override
+    public Optional<OffsetDateTime> findLatestFailedAt(Long workspaceId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT completed_at
+                        FROM projection_jobs
+                        WHERE status = 'FAILED'
+                          AND workspace_id = ?
+                        ORDER BY completed_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                        (resultSet, rowNum) -> resultSet.getObject("completed_at", OffsetDateTime.class),
+                        workspaceId)
+                .stream()
+                .findFirst();
     }
 
     Double findOldestQueuedAgeSeconds(OffsetDateTime now) {
@@ -254,7 +295,17 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         return (double) java.time.Duration.between(oldestRequestedAt.toInstant(), now.toInstant()).getSeconds();
     }
 
-    private ProjectionJob mapJob(ResultSet resultSet) throws SQLException {
+    private String selectJobsSql() {
+        return """
+                SELECT id, job_type, status, requested_at, started_at, completed_at,
+                       last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
+                       error_summary, last_error, claimed_by, claimed_until, owner_id, workspace_id,
+                       slug, range_start, range_end, requested_by_owner_id, operator_note
+                FROM projection_jobs
+                """;
+    }
+
+    private ProjectionJob mapJob(ResultSet resultSet, int rowNum) throws SQLException {
         return new ProjectionJob(
                 resultSet.getLong("id"),
                 ProjectionJobType.valueOf(resultSet.getString("job_type")),
@@ -272,12 +323,56 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 resultSet.getString("claimed_by"),
                 resultSet.getObject("claimed_until", OffsetDateTime.class),
                 getNullableLong(resultSet, "owner_id"),
-                resultSet.getString("slug"));
+                getNullableLong(resultSet, "workspace_id"),
+                resultSet.getString("slug"),
+                resultSet.getObject("range_start", OffsetDateTime.class),
+                resultSet.getObject("range_end", OffsetDateTime.class),
+                getNullableLong(resultSet, "requested_by_owner_id"),
+                resultSet.getString("operator_note"));
     }
 
-    @Override
-    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
-        return createJob(jobType, requestedAt, null, null);
+    private long countByStatuses(Long workspaceId, String statusesSql) {
+        Long count;
+        if (workspaceId == null) {
+            count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM projection_jobs WHERE status IN " + statusesSql,
+                    Long.class);
+        } else {
+            count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM projection_jobs WHERE status IN " + statusesSql + " AND workspace_id = ?",
+                    Long.class,
+                    workspaceId);
+        }
+        return count == null ? 0L : count;
+    }
+
+    private Optional<OffsetDateTime> findLatestTimestamp(Long workspaceId, String column) {
+        if (workspaceId == null) {
+            return jdbcTemplate.query(
+                            """
+                            SELECT %s
+                            FROM projection_jobs
+                            WHERE %s IS NOT NULL
+                            ORDER BY %s DESC, id DESC
+                            LIMIT 1
+                            """.formatted(column, column, column),
+                            (resultSet, rowNum) -> resultSet.getObject(column, OffsetDateTime.class))
+                    .stream()
+                    .findFirst();
+        }
+        return jdbcTemplate.query(
+                        """
+                        SELECT %s
+                        FROM projection_jobs
+                        WHERE %s IS NOT NULL
+                          AND workspace_id = ?
+                        ORDER BY %s DESC, id DESC
+                        LIMIT 1
+                        """.formatted(column, column, column),
+                        (resultSet, rowNum) -> resultSet.getObject(column, OffsetDateTime.class),
+                        workspaceId)
+                .stream()
+                .findFirst();
     }
 
     private Long getNullableLong(ResultSet resultSet, String column) throws SQLException {

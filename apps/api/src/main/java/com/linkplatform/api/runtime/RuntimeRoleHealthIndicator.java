@@ -26,4 +26,8 @@ public class RuntimeRoleHealthIndicator extends AbstractHealthIndicator {
                 .withDetail("controlPlaneSurfaceExposed", runtimeProperties.controlPlaneEnabled() && runtimeProperties.httpEnabled())
                 .withDetail("workerSurfaceExposed", runtimeProperties.workerEnabled() && runtimeProperties.httpEnabled());
     }
+
+    public RuntimeMode runtimeMode() {
+        return runtimeProperties.getMode();
+    }
 }

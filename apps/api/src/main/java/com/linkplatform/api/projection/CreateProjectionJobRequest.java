@@ -1,7 +1,13 @@
 package com.linkplatform.api.projection;
 
+import java.time.OffsetDateTime;
+
 public record CreateProjectionJobRequest(
         ProjectionJobType jobType,
         Long ownerId,
-        String slug) {
+        String workspaceSlug,
+        String slug,
+        OffsetDateTime from,
+        OffsetDateTime to,
+        String operatorNote) {
 }

@@ -1,5 +1,7 @@
 package com.linkplatform.api.projection;
 
+import com.linkplatform.api.link.application.ClickRollupDriftRecord;
+import com.linkplatform.api.link.application.ClickRollupRepairStatus;
 import com.linkplatform.api.link.application.LinkActivityEvent;
 import com.linkplatform.api.link.application.LinkActivityType;
 import com.linkplatform.api.link.application.LinkClickHistoryRecord;
@@ -11,6 +13,7 @@ import com.linkplatform.api.link.application.LinkStore;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
@@ -25,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ProjectionJobService {
+
+    private static final long MAX_RANGE_DAYS = 90;
 
     private final ProjectionJobStore projectionJobStore;
     private final LinkLifecycleOutboxStore linkLifecycleOutboxStore;
@@ -51,11 +56,33 @@ public class ProjectionJobService {
     }
 
     public ProjectionJob createJob(ProjectionJobType jobType) {
-        return createJob(jobType, null, null);
+        return createJob(jobType, null, null, null, null, null, null, null);
     }
 
     public ProjectionJob createJob(ProjectionJobType jobType, Long ownerId, String slug) {
-        return projectionJobStore.createJob(jobType, OffsetDateTime.now(clock), ownerId, slug);
+        return createJob(jobType, ownerId, null, slug, null, null, null, null);
+    }
+
+    public ProjectionJob createJob(
+            ProjectionJobType jobType,
+            Long ownerId,
+            Long workspaceId,
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            Long requestedByOwnerId,
+            String operatorNote) {
+        validateScope(jobType, from, to);
+        return projectionJobStore.createJob(
+                jobType,
+                OffsetDateTime.now(clock),
+                ownerId,
+                workspaceId,
+                blankToNull(slug),
+                from,
+                to,
+                requestedByOwnerId,
+                blankToNull(operatorNote));
     }
 
     @Transactional
@@ -81,8 +108,11 @@ public class ProjectionJobService {
         List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(
                 afterId,
                 chunkSize + 1,
+                job.workspaceId(),
                 job.ownerId(),
-                job.slug());
+                job.slug(),
+                job.rangeStart(),
+                job.rangeEnd());
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
         Set<Long> ownerIds = new HashSet<>();
@@ -100,11 +130,23 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildClickRollupsChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
-            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory(job.ownerId(), job.slug())));
-            linkStore.resetClickDailyRollups(job.ownerId(), job.slug());
+            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory(
+                    job.workspaceId(),
+                    job.ownerId(),
+                    job.slug(),
+                    job.rangeStart(),
+                    job.rangeEnd())));
+            linkStore.resetClickDailyRollups(job.workspaceId(), job.ownerId(), job.slug(), job.rangeStart(), job.rangeEnd());
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
-        List<LinkClickHistoryRecord> fetchedChunk = linkStore.findClickHistoryChunkAfter(afterId, chunkSize + 1, job.ownerId(), job.slug());
+        List<LinkClickHistoryRecord> fetchedChunk = linkStore.findClickHistoryChunkAfter(
+                afterId,
+                chunkSize + 1,
+                job.workspaceId(),
+                job.ownerId(),
+                job.slug(),
+                job.rangeStart(),
+                job.rangeEnd());
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkClickHistoryRecord> clickHistoryChunk = limitToChunk(fetchedChunk);
         long processedCount = linkStore.applyClickHistoryChunkToDailyRollups(clickHistoryChunk);
@@ -115,7 +157,12 @@ public class ProjectionJobService {
                 .flatMap(Optional::stream)
                 .forEach(this::invalidateOwnerAnalyticsCaches);
         if (completed) {
-            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory(job.ownerId(), job.slug())));
+            invalidateOwnerAnalyticsCaches(new HashSet<>(linkStore.findOwnerIdsWithClickHistory(
+                    job.workspaceId(),
+                    job.ownerId(),
+                    job.slug(),
+                    job.rangeStart(),
+                    job.rangeEnd())));
         }
         return new ProjectionJobChunkResult(
                 completed,
@@ -125,14 +172,17 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildCatalogChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
-            linkStore.resetCatalogProjection(job.ownerId(), job.slug());
+            linkStore.resetCatalogProjection(job.workspaceId(), job.ownerId(), job.slug());
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
         List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(
                 afterId,
                 chunkSize + 1,
+                job.workspaceId(),
                 job.ownerId(),
-                job.slug());
+                job.slug(),
+                null,
+                null);
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
         Set<Long> ownerIds = new HashSet<>();
@@ -152,8 +202,11 @@ public class ProjectionJobService {
         List<LinkClickHistoryRecord> fetchedChunk = linkStore.findClickHistoryChunkForReconciliationAfter(
                 afterId,
                 chunkSize + 1,
+                job.workspaceId(),
                 job.ownerId(),
-                job.slug());
+                job.slug(),
+                job.rangeStart(),
+                job.rangeEnd());
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkClickHistoryRecord> clickHistoryChunk = limitToChunk(fetchedChunk);
         Map<String, Long> rawCounts = new HashMap<>();
@@ -179,7 +232,7 @@ public class ProjectionJobService {
             if (rawClickCount != rollupClickCount) {
                 Long ownerId = linkStore.findOwnerIdBySlug(slug).orElse(null);
                 driftCount++;
-                linkStore.upsertClickRollupReconciliation(new com.linkplatform.api.link.application.ClickRollupDriftRecord(
+                linkStore.upsertClickRollupReconciliation(new ClickRollupDriftRecord(
                         ownerId,
                         slug,
                         bucketDay,
@@ -188,7 +241,7 @@ public class ProjectionJobService {
                         rawClickCount - rollupClickCount,
                         now,
                         now,
-                        com.linkplatform.api.link.application.ClickRollupRepairStatus.REPAIRED,
+                        ClickRollupRepairStatus.REPAIRED,
                         "Rollup overwritten from raw click history"));
                 linkStore.repairDailyRollupTotal(slug, bucketDay, rawClickCount);
                 repairCount++;
@@ -210,14 +263,17 @@ public class ProjectionJobService {
 
     private ProjectionJobChunkResult rebuildDiscoveryChunk(ProjectionJob job) {
         if (job.checkpointId() == null) {
-            linkStore.resetDiscoveryProjection(job.ownerId(), job.slug());
+            linkStore.resetDiscoveryProjection(job.workspaceId(), job.ownerId(), job.slug());
         }
         long afterId = job.checkpointId() == null ? 0L : job.checkpointId();
         List<LinkLifecycleHistoryRecord> fetchedChunk = linkLifecycleOutboxStore.findHistoryChunkAfter(
                 afterId,
                 chunkSize + 1,
+                job.workspaceId(),
                 job.ownerId(),
-                job.slug());
+                job.slug(),
+                null,
+                null);
         boolean completed = fetchedChunk.size() <= chunkSize;
         List<LinkLifecycleHistoryRecord> historyChunk = limitToChunk(fetchedChunk);
         Set<Long> ownerIds = new HashSet<>();
@@ -279,5 +335,28 @@ public class ProjectionJobService {
                 null,
                 "Click rollup reconciliation for " + slug,
                 occurredAt);
+    }
+
+    private void validateScope(ProjectionJobType jobType, OffsetDateTime from, OffsetDateTime to) {
+        if ((from == null) != (to == null)) {
+            throw new IllegalArgumentException("from and to must be provided together");
+        }
+        if (from != null && !from.isBefore(to)) {
+            throw new IllegalArgumentException("from must be strictly before to");
+        }
+        if (from != null && Duration.between(from, to).compareTo(Duration.ofDays(MAX_RANGE_DAYS)) > 0) {
+            throw new IllegalArgumentException("Maximum range is 90 days");
+        }
+        if (from != null && (jobType == ProjectionJobType.LINK_CATALOG_REBUILD || jobType == ProjectionJobType.LINK_DISCOVERY_REBUILD)) {
+            throw new IllegalArgumentException("from/to is not supported for " + jobType.name());
+        }
+    }
+
+    private String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

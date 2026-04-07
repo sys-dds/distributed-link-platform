@@ -184,7 +184,8 @@ class ProjectionJobRunnerTest {
         ProjectionJob job = jdbcTemplate.queryForObject(
                 """
                 SELECT id, job_type, status, requested_at, started_at, completed_at,
-                       processed_count, checkpoint_id, error_summary, claimed_by, claimed_until
+                       processed_count, checkpoint_id, error_summary, claimed_by, claimed_until, owner_id, workspace_id, slug,
+                       range_start, range_end, requested_by_owner_id, operator_note
                 FROM projection_jobs
                 WHERE id = ?
                 """,
@@ -201,7 +202,12 @@ class ProjectionJobRunnerTest {
                         resultSet.getString("claimed_by"),
                         resultSet.getObject("claimed_until", OffsetDateTime.class),
                         resultSet.getObject("owner_id", Long.class),
-                        resultSet.getString("slug")),
+                        resultSet.getObject("workspace_id", Long.class),
+                        resultSet.getString("slug"),
+                        resultSet.getObject("range_start", OffsetDateTime.class),
+                        resultSet.getObject("range_end", OffsetDateTime.class),
+                        resultSet.getObject("requested_by_owner_id", Long.class),
+                        resultSet.getString("operator_note")),
                 jobId);
         assertEquals(status, job.status());
         assertEquals(processedCount, job.processedCount());

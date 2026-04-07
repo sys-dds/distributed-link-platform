@@ -90,7 +90,11 @@ class AnalyticsPipelineControllerIntegrationTest {
                   AND event_type IN ('ANALYTICS_PIPELINE_PAUSED', 'ANALYTICS_PIPELINE_RESUMED', 'ANALYTICS_PIPELINE_FORCE_TICKED')
                 """,
                 Integer.class);
+        Integer operatorActions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM operator_action_log WHERE subsystem = 'PIPELINE' AND action_type IN ('analytics_pipeline_pause', 'analytics_pipeline_resume', 'analytics_pipeline_force_tick')",
+                Integer.class);
         Assertions.assertEquals(3, securityEvents);
+        Assertions.assertEquals(3, operatorActions);
     }
 
     @Test
@@ -120,6 +124,11 @@ class AnalyticsPipelineControllerIntegrationTest {
                 .andExpect(jsonPath("$.appliedLimit").value(100))
                 .andExpect(jsonPath("$.movedCount").value(100))
                 .andExpect(jsonPath("$.remainingParkedCount").value(20));
+
+        Integer drainActions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM operator_action_log WHERE action_type = 'analytics_pipeline_parked_drain'",
+                Integer.class);
+        Assertions.assertEquals(2, drainActions);
     }
 
     private void insertOutbox(String eventId, OffsetDateTime createdAt, OffsetDateTime parkedAt) {

@@ -4,6 +4,8 @@ import com.linkplatform.api.link.application.LinkAbuseCaseStatus;
 import com.linkplatform.api.link.application.LinkAbuseQueueQuery;
 import com.linkplatform.api.link.application.LinkAbuseReviewService;
 import com.linkplatform.api.link.application.LinkAbuseSource;
+import com.linkplatform.api.owner.application.JdbcOperatorActionLogStore;
+import com.linkplatform.api.owner.application.OperatorActionLogStore;
 import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
@@ -27,14 +29,17 @@ public class AbuseReviewController {
     private final LinkAbuseReviewService linkAbuseReviewService;
     private final OwnerAccessService ownerAccessService;
     private final LinkPlatformRuntimeProperties runtimeProperties;
+    private final OperatorActionLogStore operatorActionLogStore;
 
     public AbuseReviewController(
             LinkAbuseReviewService linkAbuseReviewService,
             OwnerAccessService ownerAccessService,
-            LinkPlatformRuntimeProperties runtimeProperties) {
+            LinkPlatformRuntimeProperties runtimeProperties,
+            OperatorActionLogStore operatorActionLogStore) {
         this.linkAbuseReviewService = linkAbuseReviewService;
         this.ownerAccessService = ownerAccessService;
         this.runtimeProperties = runtimeProperties;
+        this.operatorActionLogStore = operatorActionLogStore;
     }
 
     @GetMapping
@@ -94,13 +99,24 @@ public class AbuseReviewController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
-        return AbuseReviewCaseResponse.from(linkAbuseReviewService.createManualCase(
+        var record = linkAbuseReviewService.createManualCase(
                 context,
                 request.slug().trim(),
                 request.summary().trim(),
                 request.detailSummary(),
                 request.riskScore(),
-                request.quarantineNowValue()));
+                request.quarantineNowValue());
+        operatorActionLogStore.record(
+                context.workspaceId(),
+                context.ownerId(),
+                "ABUSE",
+                "abuse_manual_case_create",
+                record.slug(),
+                record.id(),
+                null,
+                JdbcOperatorActionLogStore.sanitizeNote(request.summary()),
+                record.updatedAt());
+        return AbuseReviewCaseResponse.from(record);
     }
 
     @PostMapping("/{caseId}/quarantine")
@@ -153,11 +169,26 @@ public class AbuseReviewController {
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
         String note = request == null ? null : request.resolutionNote();
-        return switch (action) {
-            case QUARANTINE -> AbuseReviewCaseResponse.from(linkAbuseReviewService.quarantineCase(context, caseId, note));
-            case RELEASE -> AbuseReviewCaseResponse.from(linkAbuseReviewService.releaseCase(context, caseId, note));
-            case DISMISS -> AbuseReviewCaseResponse.from(linkAbuseReviewService.dismissCase(context, caseId, note));
+        var record = switch (action) {
+            case QUARANTINE -> linkAbuseReviewService.quarantineCase(context, caseId, note);
+            case RELEASE -> linkAbuseReviewService.releaseCase(context, caseId, note);
+            case DISMISS -> linkAbuseReviewService.dismissCase(context, caseId, note);
         };
+        operatorActionLogStore.record(
+                context.workspaceId(),
+                context.ownerId(),
+                "ABUSE",
+                switch (action) {
+                    case QUARANTINE -> "abuse_quarantine";
+                    case RELEASE -> "abuse_release";
+                    case DISMISS -> "abuse_dismiss";
+                },
+                record.slug(),
+                record.id(),
+                null,
+                JdbcOperatorActionLogStore.sanitizeNote(note),
+                record.updatedAt());
+        return AbuseReviewCaseResponse.from(record);
     }
 
     private enum ResolutionAction {

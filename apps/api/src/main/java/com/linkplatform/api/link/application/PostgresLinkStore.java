@@ -377,6 +377,11 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public List<Long> findOwnerIdsWithClickHistory(Long ownerId, String slug) {
+        return findOwnerIdsWithClickHistory(null, ownerId, slug, null, null);
+    }
+
+    @Override
+    public List<Long> findOwnerIdsWithClickHistory(Long workspaceId, Long ownerId, String slug, OffsetDateTime from, OffsetDateTime to) {
         StringBuilder sql = new StringBuilder("""
                 SELECT DISTINCT l.owner_id
                 FROM links l
@@ -391,6 +396,18 @@ public class PostgresLinkStore implements LinkStore {
         if (slug != null && !slug.isBlank()) {
             sql.append(" AND l.slug = ?");
             parameters.add(slug);
+        }
+        if (workspaceId != null) {
+            sql.append(" AND l.workspace_id = ?");
+            parameters.add(workspaceId);
+        }
+        if (from != null) {
+            sql.append(" AND c.clicked_at >= ?");
+            parameters.add(from);
+        }
+        if (to != null) {
+            sql.append(" AND c.clicked_at < ?");
+            parameters.add(to);
         }
         sql.append(" ORDER BY l.owner_id ASC");
         return jdbcTemplate.query(
@@ -455,6 +472,11 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public void resetCatalogProjection(Long workspaceId, Long ownerId, String slug) {
+        deleteProjectionRows("link_catalog_projection", workspaceId, ownerId, slug);
+    }
+
+    @Override
     public void resetDiscoveryProjection() {
         resetDiscoveryProjection(null, null);
     }
@@ -465,12 +487,29 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public void resetDiscoveryProjection(Long workspaceId, Long ownerId, String slug) {
+        deleteProjectionRows("link_discovery_projection", workspaceId, ownerId, slug);
+    }
+
+    @Override
     public List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit) {
         return findClickHistoryChunkAfter(afterId, limit, null, null);
     }
 
     @Override
     public List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit, Long ownerId, String slug) {
+        return findClickHistoryChunkAfter(afterId, limit, null, ownerId, slug, null, null);
+    }
+
+    @Override
+    public List<LinkClickHistoryRecord> findClickHistoryChunkAfter(
+            long afterId,
+            int limit,
+            Long workspaceId,
+            Long ownerId,
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to) {
         StringBuilder sql = new StringBuilder("""
                 SELECT c.id, c.slug, CAST(c.clicked_at AS DATE) AS rollup_date
                 FROM link_clicks c
@@ -486,6 +525,18 @@ public class PostgresLinkStore implements LinkStore {
         if (slug != null && !slug.isBlank()) {
             sql.append(" AND c.slug = ?");
             parameters.add(slug);
+        }
+        if (workspaceId != null) {
+            sql.append(" AND l.workspace_id = ?");
+            parameters.add(workspaceId);
+        }
+        if (from != null) {
+            sql.append(" AND c.clicked_at >= ?");
+            parameters.add(from);
+        }
+        if (to != null) {
+            sql.append(" AND c.clicked_at < ?");
+            parameters.add(to);
         }
         sql.append("""
                 ORDER BY c.id ASC
@@ -527,7 +578,12 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public void resetClickDailyRollups(Long ownerId, String slug) {
-        if (ownerId == null && (slug == null || slug.isBlank())) {
+        resetClickDailyRollups(null, ownerId, slug, null, null);
+    }
+
+    @Override
+    public void resetClickDailyRollups(Long workspaceId, Long ownerId, String slug, OffsetDateTime from, OffsetDateTime to) {
+        if (workspaceId == null && ownerId == null && (slug == null || slug.isBlank()) && from == null && to == null) {
             jdbcTemplate.update("DELETE FROM link_click_daily_rollups");
             return;
         }
@@ -547,6 +603,19 @@ public class PostgresLinkStore implements LinkStore {
             sql.append(" AND l.slug = ?");
             parameters.add(slug);
         }
+        if (workspaceId != null) {
+            sql.append(" AND l.workspace_id = ?");
+            parameters.add(workspaceId);
+        }
+        if (from != null) {
+            sql.append(" AND EXISTS (SELECT 1 FROM link_clicks c WHERE c.slug = l.slug AND c.clicked_at >= ?");
+            parameters.add(from);
+            if (to != null) {
+                sql.append(" AND c.clicked_at < ?");
+                parameters.add(to);
+            }
+            sql.append(")");
+        }
         sql.append(")");
         jdbcTemplate.update(sql.toString(), parameters.toArray());
     }
@@ -558,7 +627,19 @@ public class PostgresLinkStore implements LinkStore {
 
     @Override
     public List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit, Long ownerId, String slug) {
-        return findClickHistoryChunkAfter(afterId, limit, ownerId, slug);
+        return findClickHistoryChunkForReconciliationAfter(afterId, limit, null, ownerId, slug, null, null);
+    }
+
+    @Override
+    public List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(
+            long afterId,
+            int limit,
+            Long workspaceId,
+            Long ownerId,
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to) {
+        return findClickHistoryChunkAfter(afterId, limit, workspaceId, ownerId, slug, from, to);
     }
 
     @Override
@@ -1816,12 +1897,20 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     private void deleteProjectionRows(String tableName, Long ownerId, String slug) {
-        if (ownerId == null && (slug == null || slug.isBlank())) {
+        deleteProjectionRows(tableName, null, ownerId, slug);
+    }
+
+    private void deleteProjectionRows(String tableName, Long workspaceId, Long ownerId, String slug) {
+        if (workspaceId == null && ownerId == null && (slug == null || slug.isBlank())) {
             jdbcTemplate.update("DELETE FROM " + tableName);
             return;
         }
         StringBuilder sql = new StringBuilder("DELETE FROM " + tableName + " WHERE 1 = 1");
         List<Object> parameters = new ArrayList<>();
+        if (workspaceId != null) {
+            sql.append(" AND workspace_id = ?");
+            parameters.add(workspaceId);
+        }
         if (ownerId != null) {
             sql.append(" AND owner_id = ?");
             parameters.add(ownerId);
