@@ -47,16 +47,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
-        return createJob(jobType, requestedAt, null, null, null, null, null, null, null);
-    }
-
-    @Override
-    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
-        return createJob(jobType, requestedAt, ownerId, null, slug, null, null, null, null);
-    }
-
-    @Override
     public ProjectionJob createJob(
             ProjectionJobType jobType,
             OffsetDateTime requestedAt,
@@ -94,12 +84,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         if (id == null) {
             throw new IllegalStateException("Projection job id was not generated");
         }
-        return findById(id.longValue()).orElseThrow();
-    }
-
-    @Override
-    public Optional<ProjectionJob> findById(long id) {
-        return jdbcTemplate.query(selectJobsSql() + " WHERE id = ?", this::mapJob, id).stream().findFirst();
+        return jdbcTemplate.query(selectJobsSql() + " WHERE id = ?", this::mapJob, id.longValue()).stream().findFirst().orElseThrow();
     }
 
     @Override
@@ -124,11 +109,8 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public List<ProjectionJob> findRecent(int limit) {
-        return jdbcTemplate.query(
-                selectJobsSql() + " ORDER BY requested_at DESC, id DESC LIMIT ?",
-                this::mapJob,
-                limit);
+    public Optional<ProjectionJob> findById(long id) {
+        return jdbcTemplate.query(selectJobsSql() + " WHERE id = ?", this::mapJob, id).stream().findFirst();
     }
 
     @Override
@@ -180,7 +162,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                             workerId,
                             claimedUntil,
                             job.id());
-                    return findById(job.id()).orElseThrow();
+                    return jdbcTemplate.query(selectJobsSql() + " WHERE id = ?", this::mapJob, job.id()).stream().findFirst().orElseThrow();
                 }));
     }
 

@@ -103,16 +103,22 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
         if (runtimeProperties.getWebhooks().getDeliveryBatchSize() <= 0) {
             throw new IllegalStateException("link-platform.webhooks.delivery-batch-size must be greater than 0");
         }
-        if (runtimeProperties.getWebhooks().getMaxAttempts() <= 0) {
-            throw new IllegalStateException("link-platform.webhooks.max-attempts must be greater than 0");
+        if (runtimeProperties.getWebhooks().getRunnerDelayMs() <= 0) {
+            throw new IllegalStateException("link-platform.webhooks.runner-delay-ms must be greater than 0");
         }
-        if (runtimeProperties.getWebhooks().getDisableThreshold() < runtimeProperties.getWebhooks().getMaxAttempts()) {
+        if (runtimeProperties.getWebhooks().getParkedThreshold() <= 0) {
+            throw new IllegalStateException("link-platform.webhooks.parked-threshold must be greater than 0");
+        }
+        if (runtimeProperties.getWebhooks().getDisableThreshold() < runtimeProperties.getWebhooks().getParkedThreshold()) {
             throw new IllegalStateException(
-                    "link-platform.webhooks.disable-threshold must be greater than or equal to link-platform.webhooks.max-attempts");
+                    "link-platform.webhooks.disable-threshold must be greater than or equal to link-platform.webhooks.parked-threshold");
         }
         if (runtimeProperties.getWebhooks().getConnectTimeoutSeconds() <= 0
                 || runtimeProperties.getWebhooks().getRequestTimeoutSeconds() <= 0) {
             throw new IllegalStateException("Webhook timeouts must be greater than 0");
+        }
+        if (runtimeProperties.getExports().getRunnerDelayMs() <= 0) {
+            throw new IllegalStateException("link-platform.exports.runner-delay-ms must be greater than 0");
         }
         if (runtimeProperties.getExports().getMaxPayloadBytes() <= 0) {
             throw new IllegalStateException("link-platform.exports.max-payload-bytes must be greater than 0");

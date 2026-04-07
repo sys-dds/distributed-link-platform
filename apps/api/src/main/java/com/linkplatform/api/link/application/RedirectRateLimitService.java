@@ -50,6 +50,15 @@ public class RedirectRateLimitService {
         this.clock = Clock.systemUTC();
     }
 
+    public RedirectRateLimitService(
+            RedirectRateLimitStore fallbackStore,
+            ObjectProvider<RedisRedirectRateLimitStore> redisStoreProvider,
+            SecurityEventStore securityEventStore,
+            LinkPlatformRuntimeProperties runtimeProperties,
+            MeterRegistry meterRegistry) {
+        this(fallbackStore, redisStoreProvider, securityEventStore, null, runtimeProperties, meterRegistry);
+    }
+
     public RedirectRateLimitDecision check(String slug, String requestPath, String remoteAddress) {
         if (!runtimeProperties.getRedirect().getRateLimit().isEnabled() || isTrustedInternalPath(requestPath)) {
             lastStoreMode = "bypass";
@@ -76,7 +85,9 @@ public class RedirectRateLimitService {
                         null,
                         "Redirect rate limit rejected",
                         now);
-                linkAbuseReviewService.recordRedirectRateLimitSignal(slug);
+                if (linkAbuseReviewService != null) {
+                    linkAbuseReviewService.recordRedirectRateLimitSignal(slug);
+                }
                 return RedirectRateLimitDecision.rejected(false, false, count, limit);
             }
             return RedirectRateLimitDecision.allowed(false, false, count, limit);
@@ -96,7 +107,9 @@ public class RedirectRateLimitService {
                         null,
                         "Redirect rate limit rejected",
                         now);
-                linkAbuseReviewService.recordRedirectRateLimitSignal(slug);
+                if (linkAbuseReviewService != null) {
+                    linkAbuseReviewService.recordRedirectRateLimitSignal(slug);
+                }
                 return RedirectRateLimitDecision.rejected(true, true, count, limit);
             }
             allowedCounter.increment();

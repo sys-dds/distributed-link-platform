@@ -28,7 +28,7 @@ public record ProjectionJobResponse(
         Long requestedByOwnerId,
         String operatorNote) {
 
-    static ProjectionJobResponse from(ProjectionJob job, String workspaceSlug) {
+    public static ProjectionJobResponse from(ProjectionJob job, String workspaceSlug) {
         return new ProjectionJobResponse(
                 job.id(),
                 job.jobType(),
@@ -56,7 +56,7 @@ public record ProjectionJobResponse(
                 job.operatorNote());
     }
 
-    static ProjectionJobResponse from(ProjectionJob job) {
+    public static ProjectionJobResponse from(ProjectionJob job) {
         return from(job, null);
     }
 }

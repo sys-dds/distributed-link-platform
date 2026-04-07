@@ -66,7 +66,7 @@ public class WorkspaceExportService {
         operatorActionLogStore.record(
                 context.workspaceId(),
                 context.ownerId(),
-                "PROJECTION",
+                "PIPELINE",
                 "workspace_export_create",
                 null,
                 null,

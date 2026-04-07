@@ -69,6 +69,18 @@ link-platform:
     redirect-ttl: ${LINK_PLATFORM_CACHE_REDIRECT_TTL:PT5M}
     owner-read-ttl: ${LINK_PLATFORM_CACHE_OWNER_READ_TTL:PT30S}
     analytics-ttl: ${LINK_PLATFORM_CACHE_ANALYTICS_TTL:PT15S}
+  webhooks:
+    enabled: ${LINK_PLATFORM_WEBHOOKS_ENABLED:true}
+    runner-delay-ms: ${LINK_PLATFORM_WEBHOOKS_RUNNER_DELAY_MS:5000}
+    delivery-batch-size: ${LINK_PLATFORM_WEBHOOKS_DELIVERY_BATCH_SIZE:20}
+    parked-threshold: ${LINK_PLATFORM_WEBHOOKS_PARKED_THRESHOLD:5}
+    disable-threshold: ${LINK_PLATFORM_WEBHOOKS_DISABLE_THRESHOLD:10}
+    connect-timeout-seconds: ${LINK_PLATFORM_WEBHOOKS_CONNECT_TIMEOUT_SECONDS:5}
+    request-timeout-seconds: ${LINK_PLATFORM_WEBHOOKS_REQUEST_TIMEOUT_SECONDS:10}
+  exports:
+    enabled: ${LINK_PLATFORM_EXPORTS_ENABLED:true}
+    runner-delay-ms: ${LINK_PLATFORM_EXPORTS_RUNNER_DELAY_MS:10000}
+    max-payload-bytes: ${LINK_PLATFORM_EXPORTS_MAX_PAYLOAD_BYTES:5000000}
 
 management:
   endpoints:

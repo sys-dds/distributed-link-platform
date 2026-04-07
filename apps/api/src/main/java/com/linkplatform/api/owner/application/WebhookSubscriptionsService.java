@@ -1,7 +1,6 @@
 package com.linkplatform.api.owner.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.InetAddress;
 import java.net.URI;
 import java.time.Clock;
@@ -23,7 +22,6 @@ public class WebhookSubscriptionsService {
     private final SecurityEventStore securityEventStore;
     private final OperatorActionLogStore operatorActionLogStore;
     private final WebhookSigningService webhookSigningService;
-    private final ObjectMapper objectMapper;
     private final Clock clock;
 
     public WebhookSubscriptionsService(
@@ -33,8 +31,7 @@ public class WebhookSubscriptionsService {
             WorkspacePermissionService workspacePermissionService,
             SecurityEventStore securityEventStore,
             OperatorActionLogStore operatorActionLogStore,
-            WebhookSigningService webhookSigningService,
-            ObjectMapper objectMapper) {
+            WebhookSigningService webhookSigningService) {
         this.webhookSubscriptionsStore = webhookSubscriptionsStore;
         this.webhookDeliveryStore = webhookDeliveryStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
@@ -42,7 +39,6 @@ public class WebhookSubscriptionsService {
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
         this.webhookSigningService = webhookSigningService;
-        this.objectMapper = objectMapper;
         this.clock = Clock.systemUTC();
     }
 
@@ -66,9 +62,7 @@ public class WebhookSubscriptionsService {
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (enabled) {
-            workspaceEntitlementService.enforceWebhooksQuota(
-                    context.workspaceId(),
-                    webhookSubscriptionsStore.countEnabledByWorkspaceId(context.workspaceId()));
+            workspaceEntitlementService.enforceWebhooksQuota(context.workspaceId(), enabledWebhookCount(context.workspaceId()));
         }
         WebhookSigningService.GeneratedSecret secret = webhookSigningService.generateSecret();
         WebhookSubscriptionRecord record = webhookSubscriptionsStore.create(
@@ -82,7 +76,7 @@ public class WebhookSubscriptionsService {
                 now);
         workspaceEntitlementService.recordWebhooksSnapshot(
                 context.workspaceId(),
-                webhookSubscriptionsStore.countEnabledByWorkspaceId(context.workspaceId()),
+                enabledWebhookCount(context.workspaceId()),
                 "webhook_create",
                 Long.toString(record.id()),
                 now);
@@ -93,6 +87,16 @@ public class WebhookSubscriptionsService {
                 context.apiKeyHash(),
                 "POST",
                 "/api/v1/workspaces/current/webhooks",
+                null,
+                "Webhook subscription created",
+                now);
+        operatorActionLogStore.record(
+                context.workspaceId(),
+                context.ownerId(),
+                "PIPELINE",
+                "webhook_subscription_create",
+                null,
+                null,
                 null,
                 "Webhook subscription created",
                 now);
@@ -110,9 +114,7 @@ public class WebhookSubscriptionsService {
         WebhookSubscriptionRecord existing = requireSubscription(context.workspaceId(), subscriptionId);
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (Boolean.TRUE.equals(enabled) && (!existing.enabled() || existing.disabledAt() != null)) {
-            workspaceEntitlementService.enforceWebhooksQuota(
-                    context.workspaceId(),
-                    webhookSubscriptionsStore.countEnabledByWorkspaceId(context.workspaceId()));
+            workspaceEntitlementService.enforceWebhooksQuota(context.workspaceId(), enabledWebhookCount(context.workspaceId()));
         }
         WebhookSubscriptionRecord updated = webhookSubscriptionsStore.update(
                 context.workspaceId(),
@@ -123,7 +125,7 @@ public class WebhookSubscriptionsService {
                 now);
         workspaceEntitlementService.recordWebhooksSnapshot(
                 context.workspaceId(),
-                webhookSubscriptionsStore.countEnabledByWorkspaceId(context.workspaceId()),
+                enabledWebhookCount(context.workspaceId()),
                 "webhook_update",
                 Long.toString(updated.id()),
                 now);
@@ -134,6 +136,16 @@ public class WebhookSubscriptionsService {
                 context.apiKeyHash(),
                 "PATCH",
                 "/api/v1/workspaces/current/webhooks/" + subscriptionId,
+                null,
+                "Webhook subscription updated",
+                now);
+        operatorActionLogStore.record(
+                context.workspaceId(),
+                context.ownerId(),
+                "PIPELINE",
+                "webhook_subscription_update",
+                null,
+                null,
                 null,
                 "Webhook subscription updated",
                 now);
@@ -159,6 +171,16 @@ public class WebhookSubscriptionsService {
                 context.apiKeyHash(),
                 "POST",
                 "/api/v1/workspaces/current/webhooks/" + subscriptionId + "/rotate-secret",
+                null,
+                "Webhook secret rotated",
+                now);
+        operatorActionLogStore.record(
+                context.workspaceId(),
+                context.ownerId(),
+                "PIPELINE",
+                "webhook_secret_rotate",
+                null,
+                null,
                 null,
                 "Webhook secret rotated",
                 now);
@@ -198,34 +220,26 @@ public class WebhookSubscriptionsService {
                 null,
                 "Webhook delivery replayed",
                 now);
+        operatorActionLogStore.record(
+                context.workspaceId(),
+                context.ownerId(),
+                "PIPELINE",
+                "webhook_delivery_replay",
+                null,
+                null,
+                null,
+                "Webhook delivery replayed",
+                now);
         return replay;
-    }
-
-    @Transactional
-    public void publish(
-            long workspaceId,
-            String workspaceSlug,
-            WebhookEventType eventType,
-            String eventId,
-            Object payloadObject) {
-        JsonNode payload = objectMapper.valueToTree(payloadObject);
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        for (WebhookSubscriptionRecord subscription : webhookSubscriptionsStore.findEnabledByWorkspaceIdAndEventType(workspaceId, eventType)) {
-            webhookDeliveryStore.create(
-                    subscription.id(),
-                    workspaceId,
-                    eventType,
-                    eventId,
-                    payload,
-                    WebhookDeliveryStatus.PENDING,
-                    now,
-                    now);
-        }
     }
 
     private WebhookSubscriptionRecord requireSubscription(long workspaceId, long subscriptionId) {
         return webhookSubscriptionsStore.findById(workspaceId, subscriptionId)
                 .orElseThrow(() -> new IllegalArgumentException("Webhook subscription not found: " + subscriptionId));
+    }
+
+    private long enabledWebhookCount(long workspaceId) {
+        return webhookSubscriptionsStore.countEnabledByWorkspaceId(workspaceId);
     }
 
     private void validateCallbackUrl(String callbackUrl) {

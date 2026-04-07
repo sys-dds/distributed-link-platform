@@ -1,22 +1,48 @@
 package com.linkplatform.api.owner.application;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class WebhookEventPublisher {
 
-    private WebhookSubscriptionsService webhookSubscriptionsService;
+    private final WebhookSubscriptionsStore webhookSubscriptionsStore;
+    private final WebhookDeliveryStore webhookDeliveryStore;
+    private final ObjectMapper objectMapper;
+    private final Clock clock;
 
-    @Autowired
-    void setWebhookSubscriptionsService(WebhookSubscriptionsService webhookSubscriptionsService) {
-        this.webhookSubscriptionsService = webhookSubscriptionsService;
+    public WebhookEventPublisher(
+            WebhookSubscriptionsStore webhookSubscriptionsStore,
+            WebhookDeliveryStore webhookDeliveryStore,
+            ObjectMapper objectMapper) {
+        this.webhookSubscriptionsStore = webhookSubscriptionsStore;
+        this.webhookDeliveryStore = webhookDeliveryStore;
+        this.objectMapper = objectMapper;
+        this.clock = Clock.systemUTC();
     }
 
-    public void publish(long workspaceId, String workspaceSlug, WebhookEventType eventType, String eventId, Object payload) {
-        if (webhookSubscriptionsService == null) {
-            return;
+    @Transactional
+    public void publish(long workspaceId, WebhookEventType eventType, String eventId, JsonNode payloadJson) {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        for (WebhookSubscriptionRecord subscription : webhookSubscriptionsStore.findEnabledByWorkspaceIdAndEventType(workspaceId, eventType)) {
+            webhookDeliveryStore.create(
+                    subscription.id(),
+                    workspaceId,
+                    eventType,
+                    eventId,
+                    payloadJson,
+                    WebhookDeliveryStatus.PENDING,
+                    now,
+                    now);
         }
-        webhookSubscriptionsService.publish(workspaceId, workspaceSlug, eventType, eventId, payload);
+    }
+
+    @Transactional
+    public void publish(long workspaceId, WebhookEventType eventType, String eventId, Object payload) {
+        publish(workspaceId, eventType, eventId, objectMapper.valueToTree(payload));
     }
 }

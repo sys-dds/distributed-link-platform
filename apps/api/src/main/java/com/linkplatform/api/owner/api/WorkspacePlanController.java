@@ -4,6 +4,7 @@ import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
+import com.linkplatform.api.owner.application.OperatorActionLogStore;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.owner.application.WorkspaceEntitlementService;
 import com.linkplatform.api.owner.application.WorkspacePlanCode;
@@ -35,6 +36,7 @@ public class WorkspacePlanController {
     private final WorkspaceRetentionPurgeRunner workspaceRetentionPurgeRunner;
     private final WorkspaceStore workspaceStore;
     private final SecurityEventStore securityEventStore;
+    private final OperatorActionLogStore operatorActionLogStore;
     private final Clock clock;
 
     public WorkspacePlanController(
@@ -44,7 +46,8 @@ public class WorkspacePlanController {
             WorkspaceRetentionService workspaceRetentionService,
             WorkspaceRetentionPurgeRunner workspaceRetentionPurgeRunner,
             WorkspaceStore workspaceStore,
-            SecurityEventStore securityEventStore) {
+            SecurityEventStore securityEventStore,
+            OperatorActionLogStore operatorActionLogStore) {
         this.ownerAccessService = ownerAccessService;
         this.workspacePlanStore = workspacePlanStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
@@ -52,6 +55,7 @@ public class WorkspacePlanController {
         this.workspaceRetentionPurgeRunner = workspaceRetentionPurgeRunner;
         this.workspaceStore = workspaceStore;
         this.securityEventStore = securityEventStore;
+        this.operatorActionLogStore = operatorActionLogStore;
         this.clock = Clock.systemUTC();
     }
 
@@ -127,14 +131,25 @@ public class WorkspacePlanController {
             HttpServletRequest request) {
         WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.RETENTION_WRITE);
-        return toRetentionResponse(workspaceRetentionService.updatePolicy(
+        WorkspaceRetentionPolicyRecord updated = workspaceRetentionService.updatePolicy(
                 context.workspaceId(),
                 requestBody.clickHistoryDays(),
                 requestBody.securityEventsDays(),
                 requestBody.webhookDeliveriesDays(),
                 requestBody.abuseCasesDays(),
                 requestBody.operatorActionLogDays(),
-                context.ownerId()));
+                context.ownerId());
+        operatorActionLogStore.record(
+                context.workspaceId(),
+                context.ownerId(),
+                "PIPELINE",
+                "workspace_retention_update",
+                null,
+                null,
+                null,
+                "Workspace retention updated",
+                OffsetDateTime.now(clock));
+        return toRetentionResponse(updated);
     }
 
     @PatchMapping("/api/v1/ops/workspaces/{workspaceSlug}/plan")
@@ -158,6 +173,16 @@ public class WorkspacePlanController {
                 request.getRemoteAddr(),
                 "Workspace plan updated",
                 OffsetDateTime.now(clock));
+        operatorActionLogStore.record(
+                workspace.id(),
+                context.ownerId(),
+                "PIPELINE",
+                "workspace_plan_update",
+                null,
+                null,
+                null,
+                "Workspace plan updated to " + plan.planCode().name(),
+                OffsetDateTime.now(clock));
         return new WorkspacePlanResponse(
                 workspace.slug(),
                 plan.planCode().name(),
@@ -179,6 +204,16 @@ public class WorkspacePlanController {
         WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.RETENTION_WRITE);
         var result = workspaceRetentionPurgeRunner.runForWorkspace(context);
+        operatorActionLogStore.record(
+                context.workspaceId(),
+                context.ownerId(),
+                "PIPELINE",
+                "workspace_retention_purge",
+                null,
+                null,
+                null,
+                "Workspace retention purge executed",
+                OffsetDateTime.now(clock));
         return new WorkspaceRetentionPurgeResponse(
                 result.webhookDeliveriesDeleted(),
                 result.securityEventsDeleted(),

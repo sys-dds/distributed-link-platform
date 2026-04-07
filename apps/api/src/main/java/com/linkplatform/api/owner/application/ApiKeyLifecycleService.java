@@ -40,6 +40,13 @@ public class ApiKeyLifecycleService {
 
     public ApiKeyLifecycleService(
             OwnerApiKeyStore ownerApiKeyStore,
+            SecurityEventStore securityEventStore,
+            WorkspacePermissionService workspacePermissionService) {
+        this(ownerApiKeyStore, securityEventStore, workspacePermissionService, null);
+    }
+
+    public ApiKeyLifecycleService(
+            OwnerApiKeyStore ownerApiKeyStore,
             SecurityEventStore securityEventStore) {
         this(ownerApiKeyStore, securityEventStore, new WorkspacePermissionService(), null);
     }
@@ -197,12 +204,7 @@ public class ApiKeyLifecycleService {
         if (workspaceEntitlementService == null) {
             return;
         }
-        workspaceEntitlementService.recordApiKeysSnapshot(
-                workspaceId,
-                ownerApiKeyStore.findActiveByWorkspaceId(workspaceId, now).size(),
-                source,
-                Long.toString(recordId),
-                now);
+        workspaceEntitlementService.recordCurrentApiKeysSnapshot(workspaceId, source, Long.toString(recordId), now);
     }
 
     private String normalizeLabel(String label) {

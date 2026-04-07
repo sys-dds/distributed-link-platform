@@ -34,18 +34,20 @@ public class ProjectionJobRunner {
     private final Counter completedCounter;
     private final Counter failedCounter;
     private final Timer durationTimer;
-    private WebhookEventPublisher webhookEventPublisher;
+    private final WebhookEventPublisher webhookEventPublisher;
 
     @Autowired
     public ProjectionJobRunner(
             ProjectionJobStore projectionJobStore,
             ProjectionJobService projectionJobService,
             MeterRegistry meterRegistry,
+            WebhookEventPublisher webhookEventPublisher,
             @Value("${link-platform.projection-jobs.lease-duration}") String leaseDuration) {
         this(
                 projectionJobStore,
                 projectionJobService,
                 meterRegistry,
+                webhookEventPublisher,
                 Duration.parse(leaseDuration),
                 Clock.systemUTC(),
                 UUID.randomUUID().toString());
@@ -55,6 +57,7 @@ public class ProjectionJobRunner {
             ProjectionJobStore projectionJobStore,
             ProjectionJobService projectionJobService,
             MeterRegistry meterRegistry,
+            WebhookEventPublisher webhookEventPublisher,
             Duration leaseDuration,
             Clock clock,
             String workerId) {
@@ -75,10 +78,6 @@ public class ProjectionJobRunner {
         this.durationTimer = Timer.builder("link.projection.jobs.duration")
                 .description("Duration of projection jobs")
                 .register(meterRegistry);
-    }
-
-    @Autowired(required = false)
-    void setWebhookEventPublisher(WebhookEventPublisher webhookEventPublisher) {
         this.webhookEventPublisher = webhookEventPublisher;
     }
 
@@ -97,10 +96,9 @@ public class ProjectionJobRunner {
             ProjectionJobChunkResult result = projectionJobService.executeClaimedJobChunk(job);
             if (result.completed()) {
                 completedCounter.increment();
-                if (webhookEventPublisher != null && job.workspaceId() != null) {
+                if (job.workspaceId() != null) {
                     webhookEventPublisher.publish(
                             job.workspaceId(),
-                            null,
                             WebhookEventType.PROJECTION_JOB_COMPLETED,
                             "projection-job:" + job.id(),
                             job);

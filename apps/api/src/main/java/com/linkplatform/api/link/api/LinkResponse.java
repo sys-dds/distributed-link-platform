@@ -13,4 +13,16 @@ public record LinkResponse(
         String hostname,
         String abuseStatus,
         long version) {
+
+    public LinkResponse(
+            String slug,
+            String originalUrl,
+            OffsetDateTime createdAt,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags,
+            String hostname,
+            long version) {
+        this(slug, originalUrl, createdAt, expiresAt, title, tags, hostname, null, version);
+    }
 }

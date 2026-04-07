@@ -187,12 +187,7 @@ public class WorkspacesController {
         OffsetDateTime now = OffsetDateTime.now(clock);
         workspaceEntitlementService.enforceMembersQuota(context.workspaceId());
         workspaceStore.addMember(context.workspaceId(), ownerId, role, now, context.ownerId());
-        workspaceEntitlementService.recordMembersSnapshot(
-                context.workspaceId(),
-                workspaceStore.findActiveMembers(context.workspaceId()).size(),
-                "workspace_member_add",
-                Long.toString(ownerId),
-                now);
+        workspaceEntitlementService.recordCurrentMembersSnapshot(context.workspaceId(), "workspace_member_add", Long.toString(ownerId), now);
         securityEventStore.record(
                 SecurityEventType.WORKSPACE_MEMBER_ADDED,
                 context.ownerId(),
@@ -265,9 +260,8 @@ public class WorkspacesController {
             throw new InvalidWorkspaceRoleChangeException("Cannot remove the last OWNER");
         }
         workspaceStore.removeMember(context.workspaceId(), ownerId, OffsetDateTime.now(clock));
-        workspaceEntitlementService.recordMembersSnapshot(
+        workspaceEntitlementService.recordCurrentMembersSnapshot(
                 context.workspaceId(),
-                workspaceStore.findActiveMembers(context.workspaceId()).size(),
                 "workspace_member_remove",
                 Long.toString(ownerId),
                 OffsetDateTime.now(clock));

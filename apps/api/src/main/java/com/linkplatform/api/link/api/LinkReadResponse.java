@@ -14,4 +14,17 @@ public record LinkReadResponse(
         String abuseStatus,
         long version,
         long clickTotal) {
+
+    public LinkReadResponse(
+            String slug,
+            String originalUrl,
+            OffsetDateTime createdAt,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags,
+            String hostname,
+            long version,
+            long clickTotal) {
+        this(slug, originalUrl, createdAt, expiresAt, title, tags, hostname, null, version, clickTotal);
+    }
 }

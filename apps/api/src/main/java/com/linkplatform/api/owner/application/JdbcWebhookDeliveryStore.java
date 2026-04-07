@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -43,28 +44,44 @@ public class JdbcWebhookDeliveryStore implements WebhookDeliveryStore {
             WebhookDeliveryStatus status,
             OffsetDateTime createdAt,
             OffsetDateTime nextAttemptAt) {
-        KeyHolder keyHolder = new GeneratedKeyHolder();
-        jdbcTemplate.update(connection -> {
-            var statement = connection.prepareStatement(
-                    """
-                    INSERT INTO webhook_deliveries (
-                        subscription_id, workspace_id, event_type, event_id, payload_json, status,
-                        attempt_count, next_attempt_at, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, CAST(? AS JSONB), ?, 0, ?, ?, ?)
-                    """,
-                    new String[] {"id"});
-            statement.setLong(1, subscriptionId);
-            statement.setLong(2, workspaceId);
-            statement.setString(3, eventType.value());
-            statement.setString(4, eventId);
-            statement.setString(5, serialize(payload));
-            statement.setString(6, status.name());
-            statement.setObject(7, nextAttemptAt);
-            statement.setObject(8, createdAt);
-            statement.setObject(9, createdAt);
-            return statement;
-        }, keyHolder);
-        return findById(workspaceId, subscriptionId, keyHolder.getKey().longValue()).orElseThrow();
+        try {
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbcTemplate.update(connection -> {
+                var statement = connection.prepareStatement(
+                        """
+                        INSERT INTO webhook_deliveries (
+                            subscription_id, workspace_id, event_type, event_id, payload_json, status,
+                            attempt_count, next_attempt_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, CAST(? AS JSONB), ?, 0, ?, ?, ?)
+                        """,
+                        new String[] {"id"});
+                statement.setLong(1, subscriptionId);
+                statement.setLong(2, workspaceId);
+                statement.setString(3, eventType.value());
+                statement.setString(4, eventId);
+                statement.setString(5, serialize(payload));
+                statement.setString(6, status.name());
+                statement.setObject(7, nextAttemptAt);
+                statement.setObject(8, createdAt);
+                statement.setObject(9, createdAt);
+                return statement;
+            }, keyHolder);
+            return findById(workspaceId, subscriptionId, keyHolder.getKey().longValue()).orElseThrow();
+        } catch (DuplicateKeyException exception) {
+            return findBySubscriptionAndEventId(subscriptionId, eventId)
+                    .orElseThrow(() -> exception);
+        }
+    }
+
+    @Override
+    public java.util.Optional<WebhookDeliveryRecord> findBySubscriptionAndEventId(long subscriptionId, String eventId) {
+        return jdbcTemplate.query(
+                        selectSql() + " WHERE d.subscription_id = ? AND d.event_id = ?",
+                        this::mapDelivery,
+                        subscriptionId,
+                        eventId)
+                .stream()
+                .findFirst();
     }
 
     @Override

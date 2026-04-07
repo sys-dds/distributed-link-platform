@@ -52,7 +52,29 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private final LinkReadCache linkReadCache;
     private final URI publicBaseUri;
     private final Clock clock;
-    private WebhookEventPublisher webhookEventPublisher;
+    private final WebhookEventPublisher webhookEventPublisher;
+
+    public DefaultLinkApplicationService(
+            LinkStore linkStore,
+            AnalyticsOutboxStore analyticsOutboxStore,
+            LinkLifecycleOutboxStore linkLifecycleOutboxStore,
+            LinkMutationIdempotencyStore linkMutationIdempotencyStore,
+            OwnerStore ownerStore,
+            SecurityEventStore securityEventStore,
+            LinkReadCache linkReadCache,
+            String publicBaseUrl) {
+        this(
+                linkStore,
+                analyticsOutboxStore,
+                linkLifecycleOutboxStore,
+                linkMutationIdempotencyStore,
+                ownerStore,
+                securityEventStore,
+                new LinkTargetPolicyService(),
+                null,
+                linkReadCache,
+                publicBaseUrl);
+    }
 
     public DefaultLinkApplicationService(
             LinkStore linkStore,
@@ -65,18 +87,19 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             LinkAbuseReviewService linkAbuseReviewService,
             LinkReadCache linkReadCache,
             String publicBaseUrl) {
-        this(
-                linkStore,
-                analyticsOutboxStore,
-                linkLifecycleOutboxStore,
-                linkMutationIdempotencyStore,
-                ownerStore,
-                securityEventStore,
-                null,
-                linkTargetPolicyService,
-                linkAbuseReviewService,
-                linkReadCache,
-                publicBaseUrl);
+        this.linkStore = linkStore;
+        this.analyticsOutboxStore = analyticsOutboxStore;
+        this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
+        this.linkMutationIdempotencyStore = linkMutationIdempotencyStore;
+        this.ownerStore = ownerStore;
+        this.securityEventStore = securityEventStore;
+        this.workspaceEntitlementService = null;
+        this.webhookEventPublisher = null;
+        this.linkTargetPolicyService = linkTargetPolicyService;
+        this.linkAbuseReviewService = linkAbuseReviewService;
+        this.linkReadCache = linkReadCache;
+        this.publicBaseUri = URI.create(publicBaseUrl);
+        this.clock = Clock.systemUTC();
     }
 
     public DefaultLinkApplicationService(
@@ -87,6 +110,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             OwnerStore ownerStore,
             SecurityEventStore securityEventStore,
             WorkspaceEntitlementService workspaceEntitlementService,
+            WebhookEventPublisher webhookEventPublisher,
             LinkTargetPolicyService linkTargetPolicyService,
             LinkAbuseReviewService linkAbuseReviewService,
             LinkReadCache linkReadCache,
@@ -98,16 +122,12 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         this.ownerStore = ownerStore;
         this.securityEventStore = securityEventStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
+        this.webhookEventPublisher = webhookEventPublisher;
         this.linkTargetPolicyService = linkTargetPolicyService;
         this.linkAbuseReviewService = linkAbuseReviewService;
         this.linkReadCache = linkReadCache;
         this.publicBaseUri = URI.create(publicBaseUrl);
         this.clock = Clock.systemUTC();
-    }
-
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    void setWebhookEventPublisher(WebhookEventPublisher webhookEventPublisher) {
-        this.webhookEventPublisher = webhookEventPublisher;
     }
 
     @Override
@@ -119,7 +139,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         rejectSelfTargetUrl(link.originalUrl());
         TargetRiskAssessment targetRiskAssessment = linkTargetPolicyService.assess(link.originalUrl().value());
         if (targetRiskAssessment.reject()) {
-            linkAbuseReviewService.rejectUnsafeTarget(context, link.slug().value(), targetRiskAssessment);
+            rejectUnsafeTarget(context, link.slug().value(), targetRiskAssessment);
         }
         String normalizedTitle = normalizeTitle(command.title());
         List<String> normalizedTags = normalizeTags(command.tags());
@@ -137,7 +157,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             throw new DuplicateLinkSlugException(link.slug().value());
         }
         if (targetRiskAssessment.review()) {
-            linkAbuseReviewService.flagTargetForReview(context, link.slug().value(), targetRiskAssessment);
+            flagTargetForReview(context, link.slug().value(), targetRiskAssessment);
         }
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(link.slug().value(), context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(link.slug().value()));
@@ -182,7 +202,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         rejectSelfTargetUrl(validatedOriginalUrl);
         TargetRiskAssessment targetRiskAssessment = linkTargetPolicyService.assess(validatedOriginalUrl.value());
         if (targetRiskAssessment.reject()) {
-            linkAbuseReviewService.rejectUnsafeTarget(context, linkSlug.value(), targetRiskAssessment);
+            rejectUnsafeTarget(context, linkSlug.value(), targetRiskAssessment);
         }
         String normalizedTitle = normalizeTitle(title);
         List<String> normalizedTags = normalizeTags(tags);
@@ -215,7 +235,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
         }
         if (targetRiskAssessment.review()) {
-            linkAbuseReviewService.flagTargetForReview(context, linkSlug.value(), targetRiskAssessment);
+            flagTargetForReview(context, linkSlug.value(), targetRiskAssessment);
         }
 
         LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId())
@@ -1245,10 +1265,22 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     private void publishWebhook(long workspaceId, String workspaceSlug, WebhookEventType eventType, String eventId, Object payload) {
-        if (webhookEventPublisher == null) {
-            return;
+        if (webhookEventPublisher != null) {
+            webhookEventPublisher.publish(workspaceId, eventType, eventId, payload);
         }
-        webhookEventPublisher.publish(workspaceId, workspaceSlug, eventType, eventId, payload);
+    }
+
+    private void rejectUnsafeTarget(WorkspaceAccessContext context, String slug, TargetRiskAssessment targetRiskAssessment) {
+        if (linkAbuseReviewService == null) {
+            throw new UnsafeLinkTargetException(targetRiskAssessment.summary());
+        }
+        linkAbuseReviewService.rejectUnsafeTarget(context, slug, targetRiskAssessment);
+    }
+
+    private void flagTargetForReview(WorkspaceAccessContext context, String slug, TargetRiskAssessment targetRiskAssessment) {
+        if (linkAbuseReviewService != null) {
+            linkAbuseReviewService.flagTargetForReview(context, slug, targetRiskAssessment);
+        }
     }
 
     private String workspaceScopedIdempotencyKey(WorkspaceAccessContext context, String idempotencyKey) {
