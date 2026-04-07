@@ -61,6 +61,14 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
         }
     }
 
+    public RedirectRuntimeSnapshot snapshot() {
+        return new RedirectRuntimeSnapshot(
+                runtimeProperties.redirectEnabled(),
+                redirectRuntimeState.getLastDegradedAt() != null,
+                runtimeProperties.getRedirect().failoverConfigured(),
+                redirectRuntimeState.getLastDecision());
+    }
+
     private String runtimeStateLabel(boolean failoverConfigured) {
         if ("cache-bypass".equals(redirectRuntimeState.getLastDegradedPath())
                 || "cache-degraded".equals(redirectRuntimeState.getLastDegradedPath())) {
@@ -70,5 +78,12 @@ public class RedirectRuntimeHealthIndicator extends AbstractHealthIndicator {
             return "failover-ready";
         }
         return "single-region";
+    }
+
+    public record RedirectRuntimeSnapshot(
+            boolean enabled,
+            boolean degraded,
+            boolean failoverConfigured,
+            String lastDecision) {
     }
 }

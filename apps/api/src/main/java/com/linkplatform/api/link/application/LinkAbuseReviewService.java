@@ -5,6 +5,7 @@ import com.linkplatform.api.owner.application.SecurityEventType;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.runtime.LinkPlatformRuntimeProperties;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -107,6 +108,15 @@ public class LinkAbuseReviewService {
         if (record.signalCount() >= runtimeProperties.getAbuse().getAutoQuarantineThreshold()
                 && link.abuseStatus() != LinkAbuseStatus.QUARANTINED) {
             linkStore.quarantineLink(link.workspaceId(), slug, record.summary(), now, null, null);
+            linkAbuseStore.resolveCase(
+                    link.workspaceId(),
+                    record.id(),
+                    LinkAbuseCaseStatus.OPEN,
+                    LinkAbuseCaseStatus.QUARANTINED,
+                    "QUARANTINE",
+                    null,
+                    null,
+                    now);
             record(SecurityEventType.LINK_QUARANTINED, link.ownerId(), link.workspaceId(), slug, record.summary());
         }
     }
@@ -233,5 +243,20 @@ public class LinkAbuseReviewService {
     }
 
     public record AbuseReviewPage(List<LinkAbuseCaseRecord> items, String nextCursor, boolean hasMore) {
+    }
+
+    @Transactional(readOnly = true)
+    public long countCasesByStatus(long workspaceId, LinkAbuseCaseStatus status) {
+        return linkAbuseStore.countCasesByStatus(workspaceId, status);
+    }
+
+    @Transactional(readOnly = true)
+    public long countCasesResolvedOnDay(long workspaceId, LinkAbuseCaseStatus status, LocalDate day) {
+        return linkAbuseStore.countCasesResolvedOnDay(workspaceId, status, day);
+    }
+
+    @Transactional(readOnly = true)
+    public OffsetDateTime findLatestUpdatedAt(long workspaceId) {
+        return linkAbuseStore.findLatestUpdatedAt(workspaceId).orElse(null);
     }
 }

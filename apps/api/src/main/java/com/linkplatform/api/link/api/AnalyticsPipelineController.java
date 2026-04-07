@@ -6,6 +6,8 @@ import com.linkplatform.api.link.application.AnalyticsOutboxStore;
 import com.linkplatform.api.link.application.PipelineControl;
 import com.linkplatform.api.link.application.PipelineControlStore;
 import com.linkplatform.api.owner.application.ApiKeyScope;
+import com.linkplatform.api.owner.application.JdbcOperatorActionLogStore;
+import com.linkplatform.api.owner.application.OperatorActionLogStore;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
@@ -44,6 +46,7 @@ public class AnalyticsPipelineController {
     private final AnalyticsOutboxRelay analyticsOutboxRelay;
     private final OwnerAccessService ownerAccessService;
     private final SecurityEventStore securityEventStore;
+    private final OperatorActionLogStore operatorActionLogStore;
     private final Clock clock;
 
     public AnalyticsPipelineController(
@@ -51,12 +54,14 @@ public class AnalyticsPipelineController {
             PipelineControlStore pipelineControlStore,
             AnalyticsOutboxRelay analyticsOutboxRelay,
             OwnerAccessService ownerAccessService,
-            SecurityEventStore securityEventStore) {
+            SecurityEventStore securityEventStore,
+            OperatorActionLogStore operatorActionLogStore) {
         this.analyticsOutboxStore = analyticsOutboxStore;
         this.pipelineControlStore = pipelineControlStore;
         this.analyticsOutboxRelay = analyticsOutboxRelay;
         this.ownerAccessService = ownerAccessService;
         this.securityEventStore = securityEventStore;
+        this.operatorActionLogStore = operatorActionLogStore;
         this.clock = Clock.systemUTC();
     }
 
@@ -161,6 +166,16 @@ public class AnalyticsPipelineController {
         httpServletRequest.setAttribute("operatorOperation", "analytics_pipeline_pause");
         httpServletRequest.setAttribute("operatorDetail", truncate(reason));
         pipelineControlStore.pause(PIPELINE_NAME, reason, now);
+        operatorActionLogStore.record(
+                owner.workspaceId(),
+                owner.ownerId(),
+                "PIPELINE",
+                "analytics_pipeline_pause",
+                null,
+                null,
+                null,
+                JdbcOperatorActionLogStore.sanitizeNote(reason),
+                now);
         securityEventStore.record(
                 SecurityEventType.ANALYTICS_PIPELINE_PAUSED,
                 owner.ownerId(),
@@ -190,6 +205,16 @@ public class AnalyticsPipelineController {
         OffsetDateTime now = OffsetDateTime.now(clock);
         httpServletRequest.setAttribute("operatorOperation", "analytics_pipeline_resume");
         pipelineControlStore.resume(PIPELINE_NAME, now);
+        operatorActionLogStore.record(
+                owner.workspaceId(),
+                owner.ownerId(),
+                "PIPELINE",
+                "analytics_pipeline_resume",
+                null,
+                null,
+                null,
+                null,
+                now);
         securityEventStore.record(
                 SecurityEventType.ANALYTICS_PIPELINE_RESUMED,
                 owner.ownerId(),
@@ -219,6 +244,16 @@ public class AnalyticsPipelineController {
         OffsetDateTime now = OffsetDateTime.now(clock);
         httpServletRequest.setAttribute("operatorOperation", "analytics_pipeline_force_tick");
         pipelineControlStore.recordForceTick(PIPELINE_NAME, now);
+        operatorActionLogStore.record(
+                owner.workspaceId(),
+                owner.ownerId(),
+                "PIPELINE",
+                "analytics_pipeline_force_tick",
+                null,
+                null,
+                null,
+                null,
+                now);
         securityEventStore.record(
                 SecurityEventType.ANALYTICS_PIPELINE_FORCE_TICKED,
                 owner.ownerId(),
@@ -262,6 +297,16 @@ public class AnalyticsPipelineController {
         PipelineControl control = movedCount > 0
                 ? pipelineControlStore.recordRequeue(PIPELINE_NAME, now)
                 : pipelineControlStore.get(PIPELINE_NAME);
+        operatorActionLogStore.record(
+                owner.workspaceId(),
+                owner.ownerId(),
+                "PIPELINE",
+                "analytics_pipeline_parked_drain",
+                null,
+                null,
+                null,
+                "limit=" + appliedLimit,
+                now);
         securityEventStore.record(
                 SecurityEventType.ANALYTICS_PIPELINE_DRAINED,
                 owner.ownerId(),

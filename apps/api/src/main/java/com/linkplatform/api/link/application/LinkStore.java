@@ -98,6 +98,10 @@ public interface LinkStore {
         return findOwnerIdsWithClickHistory();
     }
 
+    default List<Long> findOwnerIdsWithClickHistory(Long workspaceId, Long ownerId, String slug, OffsetDateTime from, OffsetDateTime to) {
+        return findOwnerIdsWithClickHistory(ownerId, slug);
+    }
+
     default long rebuildClickDailyRollups() {
         return 0L;
     }
@@ -115,11 +119,19 @@ public interface LinkStore {
         resetCatalogProjection();
     }
 
+    default void resetCatalogProjection(Long workspaceId, Long ownerId, String slug) {
+        resetCatalogProjection(ownerId, slug);
+    }
+
     default void resetDiscoveryProjection() {
     }
 
     default void resetDiscoveryProjection(Long ownerId, String slug) {
         resetDiscoveryProjection();
+    }
+
+    default void resetDiscoveryProjection(Long workspaceId, Long ownerId, String slug) {
+        resetDiscoveryProjection(ownerId, slug);
     }
 
     default List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit) {
@@ -128,6 +140,17 @@ public interface LinkStore {
 
     default List<LinkClickHistoryRecord> findClickHistoryChunkAfter(long afterId, int limit, Long ownerId, String slug) {
         return findClickHistoryChunkAfter(afterId, limit);
+    }
+
+    default List<LinkClickHistoryRecord> findClickHistoryChunkAfter(
+            long afterId,
+            int limit,
+            Long workspaceId,
+            Long ownerId,
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to) {
+        return findClickHistoryChunkAfter(afterId, limit, ownerId, slug);
     }
 
     default long applyClickHistoryChunkToDailyRollups(List<LinkClickHistoryRecord> clickHistoryChunk) {
@@ -141,12 +164,27 @@ public interface LinkStore {
         resetClickDailyRollups();
     }
 
+    default void resetClickDailyRollups(Long workspaceId, Long ownerId, String slug, OffsetDateTime from, OffsetDateTime to) {
+        resetClickDailyRollups(ownerId, slug);
+    }
+
     default List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit) {
         return List.of();
     }
 
     default List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(long afterId, int limit, Long ownerId, String slug) {
         return findClickHistoryChunkForReconciliationAfter(afterId, limit);
+    }
+
+    default List<LinkClickHistoryRecord> findClickHistoryChunkForReconciliationAfter(
+            long afterId,
+            int limit,
+            Long workspaceId,
+            Long ownerId,
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to) {
+        return findClickHistoryChunkForReconciliationAfter(afterId, limit, ownerId, slug);
     }
 
     default java.util.Map<String, Long> findDailyRollupTotalsBySlugAndDay(java.util.Set<String> slugDayKeys) {

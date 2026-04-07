@@ -89,7 +89,11 @@ class LifecyclePipelineControllerIntegrationTest {
                   AND event_type IN ('LIFECYCLE_PIPELINE_PAUSED', 'LIFECYCLE_PIPELINE_RESUMED', 'LIFECYCLE_PIPELINE_FORCE_TICKED')
                 """,
                 Integer.class);
+        Integer operatorActions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM operator_action_log WHERE subsystem = 'PIPELINE' AND action_type IN ('lifecycle_pipeline_pause', 'lifecycle_pipeline_resume', 'lifecycle_pipeline_force_tick')",
+                Integer.class);
         Assertions.assertEquals(3, securityEvents);
+        Assertions.assertEquals(3, operatorActions);
     }
 
     @Test
@@ -125,6 +129,11 @@ class LifecyclePipelineControllerIntegrationTest {
                 .andExpect(jsonPath("$.appliedLimit").value(500))
                 .andExpect(jsonPath("$.movedCount").value(140))
                 .andExpect(jsonPath("$.remainingParkedCount").value(0));
+
+        Integer drainActions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM operator_action_log WHERE action_type = 'lifecycle_pipeline_parked_drain'",
+                Integer.class);
+        Assertions.assertEquals(2, drainActions);
     }
 
     private void insertOutbox(String eventId, OffsetDateTime createdAt, OffsetDateTime parkedAt) {

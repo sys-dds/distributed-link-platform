@@ -56,6 +56,17 @@ public interface LinkLifecycleOutboxStore {
         return findHistoryChunkAfter(afterId, limit);
     }
 
+    default List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(
+            long afterId,
+            int limit,
+            Long workspaceId,
+            Long ownerId,
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to) {
+        return findHistoryChunkAfter(afterId, limit, ownerId, slug);
+    }
+
     List<LinkLifecycleOutboxRecord> findParked(int limit);
 
     boolean requeueParked(long id, OffsetDateTime nextAttemptAt);

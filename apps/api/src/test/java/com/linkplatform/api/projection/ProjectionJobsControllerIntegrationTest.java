@@ -51,6 +51,7 @@ class ProjectionJobsControllerIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").value(1))
+                .andExpect(jsonPath("$.workspaceSlug").doesNotExist())
                 .andExpect(jsonPath("$.slug").value("alpha"))
                 .andExpect(jsonPath("$.startedAt").doesNotExist())
                 .andExpect(jsonPath("$.lastChunkAt").doesNotExist())
@@ -72,6 +73,7 @@ class ProjectionJobsControllerIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").doesNotExist())
+                .andExpect(jsonPath("$.workspaceSlug").doesNotExist())
                 .andExpect(jsonPath("$.slug").doesNotExist());
 
         projectionJobRunner.runPendingJobs();
@@ -158,7 +160,8 @@ class ProjectionJobsControllerIntegrationTest {
                 """
                 SELECT id, job_type, status, requested_at, started_at, completed_at,
                        last_chunk_at, processed_count, processed_items, failed_items, checkpoint_id,
-                       error_summary, last_error, claimed_by, claimed_until, owner_id, slug
+                       error_summary, last_error, claimed_by, claimed_until, owner_id, workspace_id, slug,
+                       range_start, range_end, requested_by_owner_id, operator_note
                 FROM projection_jobs
                 WHERE id = ?
                 """,
@@ -179,7 +182,12 @@ class ProjectionJobsControllerIntegrationTest {
                         resultSet.getString("claimed_by"),
                         resultSet.getObject("claimed_until", OffsetDateTime.class),
                         resultSet.getObject("owner_id", Long.class),
-                        resultSet.getString("slug")),
+                        resultSet.getObject("workspace_id", Long.class),
+                        resultSet.getString("slug"),
+                        resultSet.getObject("range_start", OffsetDateTime.class),
+                        resultSet.getObject("range_end", OffsetDateTime.class),
+                        resultSet.getObject("requested_by_owner_id", Long.class),
+                        resultSet.getString("operator_note")),
                 jobId);
 
         JsonNode controllerJob = jsonMapper.readTree(mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId)

@@ -21,10 +21,15 @@ public record ProjectionJobResponse(
         String claimedBy,
         OffsetDateTime claimedUntil,
         Long ownerId,
-        String slug) {
+        String workspaceSlug,
+        String slug,
+        OffsetDateTime from,
+        OffsetDateTime to,
+        Long requestedByOwnerId,
+        String operatorNote) {
 
-    static ProjectionJobResponse from(ProjectionJob job) {
-        return canonical(
+    static ProjectionJobResponse from(ProjectionJob job, String workspaceSlug) {
+        return new ProjectionJobResponse(
                 job.id(),
                 job.jobType(),
                 job.status(),
@@ -33,62 +38,25 @@ public record ProjectionJobResponse(
                 job.lastChunkAt(),
                 job.completedAt(),
                 job.processedItems(),
+                job.processedItems(),
                 job.failedItems(),
                 job.checkpointId(),
                 null,
                 null,
                 job.lastError(),
+                job.lastError(),
                 job.claimedBy(),
                 job.claimedUntil(),
                 job.ownerId(),
-                job.slug());
+                workspaceSlug,
+                job.slug(),
+                job.rangeStart(),
+                job.rangeEnd(),
+                job.requestedByOwnerId(),
+                job.operatorNote());
     }
 
-    private static ProjectionJobResponse canonical(
-            long id,
-            ProjectionJobType jobType,
-            ProjectionJobStatus status,
-            OffsetDateTime requestedAt,
-            OffsetDateTime startedAt,
-            OffsetDateTime lastChunkAt,
-            OffsetDateTime completedAt,
-            long processedItems,
-            long failedItems,
-            Long checkpointId,
-            Long driftCount,
-            Long repairCount,
-            String lastError,
-            String claimedBy,
-            OffsetDateTime claimedUntil,
-            Long ownerId,
-            String slug) {
-        return new ProjectionJobResponse(
-                id,
-                jobType,
-                status,
-                requestedAt,
-                startedAt,
-                lastChunkAt,
-                completedAt,
-                compatibilityProcessedCount(processedItems),
-                processedItems,
-                failedItems,
-                checkpointId,
-                driftCount,
-                repairCount,
-                compatibilityErrorSummary(lastError),
-                lastError,
-                claimedBy,
-                claimedUntil,
-                ownerId,
-                slug);
-    }
-
-    private static long compatibilityProcessedCount(long processedItems) {
-        return processedItems;
-    }
-
-    private static String compatibilityErrorSummary(String lastError) {
-        return lastError;
+    static ProjectionJobResponse from(ProjectionJob job) {
+        return from(job, null);
     }
 }

@@ -159,6 +159,11 @@ class AbuseReviewControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("released"))
                 .andExpect(jsonPath("$.resolution").value("release"));
+
+        Integer operatorActions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM operator_action_log WHERE subsystem = 'ABUSE' AND action_type IN ('abuse_manual_case_create', 'abuse_quarantine', 'abuse_dismiss', 'abuse_release')",
+                Integer.class);
+        org.junit.jupiter.api.Assertions.assertEquals(4, operatorActions);
     }
 
     private void createWorkspace(String slug) throws Exception {

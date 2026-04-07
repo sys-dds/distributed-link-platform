@@ -41,4 +41,17 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
             builder.withDetail("lastFallbackAt", queryRoutingDataSource.getLastFallbackAt());
         }
     }
+
+    public QueryRuntimeSnapshot snapshot() {
+        return new QueryRuntimeSnapshot(
+                queryRoutingDataSource.isDedicatedConfigured(),
+                queryRoutingDataSource.isFallbackActive(),
+                queryRoutingDataSource.getLastFallbackReason());
+    }
+
+    public record QueryRuntimeSnapshot(
+            boolean dedicatedQueryConfigured,
+            boolean fallbackActive,
+            String lastFallbackReason) {
+    }
 }

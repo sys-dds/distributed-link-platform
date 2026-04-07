@@ -19,7 +19,12 @@ public record ProjectionJob(
         String claimedBy,
         OffsetDateTime claimedUntil,
         Long ownerId,
-        String slug) {
+        Long workspaceId,
+        String slug,
+        OffsetDateTime rangeStart,
+        OffsetDateTime rangeEnd,
+        Long requestedByOwnerId,
+        String operatorNote) {
 
     public ProjectionJob(
             long id,
@@ -53,6 +58,11 @@ public record ProjectionJob(
                 lastError,
                 claimedBy,
                 claimedUntil,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null);
     }
@@ -88,7 +98,12 @@ public record ProjectionJob(
                 claimedBy,
                 claimedUntil,
                 ownerId,
-                slug);
+                null,
+                slug,
+                null,
+                null,
+                null,
+                null);
     }
 
     public ProjectionJob(

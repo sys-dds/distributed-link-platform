@@ -248,6 +248,18 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
 
     @Override
     public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(long afterId, int limit, Long ownerId, String slug) {
+        return findHistoryChunkAfter(afterId, limit, null, ownerId, slug, null, null);
+    }
+
+    @Override
+    public List<LinkLifecycleHistoryRecord> findHistoryChunkAfter(
+            long afterId,
+            int limit,
+            Long workspaceId,
+            Long ownerId,
+            String slug,
+            OffsetDateTime from,
+            OffsetDateTime to) {
         StringBuilder sql = new StringBuilder("""
                 SELECT o.id, o.payload_json
                 FROM link_lifecycle_outbox o
@@ -262,6 +274,18 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
         if (ownerId != null) {
             sql.append(" AND o.payload_json LIKE ?");
             parameters.add("%\"ownerId\":" + ownerId + "%");
+        }
+        if (workspaceId != null) {
+            sql.append(" AND o.payload_json LIKE ?");
+            parameters.add("%\"workspaceId\":" + workspaceId + "%");
+        }
+        if (from != null) {
+            sql.append(" AND o.created_at >= ?");
+            parameters.add(from);
+        }
+        if (to != null) {
+            sql.append(" AND o.created_at < ?");
+            parameters.add(to);
         }
         sql.append("""
                 ORDER BY o.id ASC

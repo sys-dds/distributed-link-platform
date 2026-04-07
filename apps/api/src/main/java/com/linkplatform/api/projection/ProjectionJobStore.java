@@ -15,6 +15,22 @@ public interface ProjectionJobStore {
         return createJob(jobType, requestedAt);
     }
 
+    default ProjectionJob createJob(
+            ProjectionJobType jobType,
+            OffsetDateTime requestedAt,
+            Long ownerId,
+            Long workspaceId,
+            String slug,
+            OffsetDateTime rangeStart,
+            OffsetDateTime rangeEnd,
+            Long requestedByOwnerId,
+            String operatorNote) {
+        if (workspaceId != null || rangeStart != null || rangeEnd != null || requestedByOwnerId != null || operatorNote != null) {
+            throw new UnsupportedOperationException("Extended scoped projection jobs are not supported");
+        }
+        return createJob(jobType, requestedAt, ownerId, slug);
+    }
+
     Optional<ProjectionJob> findById(long id);
 
     List<ProjectionJob> findRecent(int limit);
@@ -49,5 +65,29 @@ public interface ProjectionJobStore {
 
     default long countActive() {
         return 0L;
+    }
+
+    default long countQueued(Long workspaceId) {
+        return countQueued();
+    }
+
+    default long countActive(Long workspaceId) {
+        return countActive();
+    }
+
+    default long countFailed(Long workspaceId) {
+        return 0L;
+    }
+
+    default long countCompleted(Long workspaceId) {
+        return 0L;
+    }
+
+    default Optional<OffsetDateTime> findLatestStartedAt(Long workspaceId) {
+        return Optional.empty();
+    }
+
+    default Optional<OffsetDateTime> findLatestFailedAt(Long workspaceId) {
+        return Optional.empty();
     }
 }
