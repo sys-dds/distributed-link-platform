@@ -100,6 +100,23 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
             throw new IllegalStateException(
                     "link-platform.abuse.review-page-size-max must be greater than or equal to link-platform.abuse.review-page-size-default");
         }
+        if (runtimeProperties.getWebhooks().getDeliveryBatchSize() <= 0) {
+            throw new IllegalStateException("link-platform.webhooks.delivery-batch-size must be greater than 0");
+        }
+        if (runtimeProperties.getWebhooks().getMaxAttempts() <= 0) {
+            throw new IllegalStateException("link-platform.webhooks.max-attempts must be greater than 0");
+        }
+        if (runtimeProperties.getWebhooks().getDisableThreshold() < runtimeProperties.getWebhooks().getMaxAttempts()) {
+            throw new IllegalStateException(
+                    "link-platform.webhooks.disable-threshold must be greater than or equal to link-platform.webhooks.max-attempts");
+        }
+        if (runtimeProperties.getWebhooks().getConnectTimeoutSeconds() <= 0
+                || runtimeProperties.getWebhooks().getRequestTimeoutSeconds() <= 0) {
+            throw new IllegalStateException("Webhook timeouts must be greater than 0");
+        }
+        if (runtimeProperties.getExports().getMaxPayloadBytes() <= 0) {
+            throw new IllegalStateException("link-platform.exports.max-payload-bytes must be greater than 0");
+        }
     }
 
     private void validateAbsoluteHttpUrl(String value, String propertyName) {

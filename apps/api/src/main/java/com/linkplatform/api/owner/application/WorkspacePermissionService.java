@@ -46,6 +46,30 @@ public class WorkspacePermissionService {
         requireScope(context, ApiKeyScope.OPS_WRITE);
     }
 
+    public void requireWebhooksRead(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.WEBHOOKS_READ);
+    }
+
+    public void requireWebhooksWrite(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.WEBHOOKS_WRITE);
+    }
+
+    public void requireExportsRead(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.EXPORTS_READ);
+    }
+
+    public void requireExportsWrite(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.EXPORTS_WRITE);
+    }
+
+    public void requireRetentionRead(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.RETENTION_READ);
+    }
+
+    public void requireRetentionWrite(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.RETENTION_WRITE);
+    }
+
     public Set<ApiKeyScope> validateRequestedScopes(WorkspaceRole role, List<String> requestedScopes) {
         Set<ApiKeyScope> parsed = EnumSet.noneOf(ApiKeyScope.class);
         if (requestedScopes != null) {

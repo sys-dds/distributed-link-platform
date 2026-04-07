@@ -15,7 +15,9 @@ import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
 import com.linkplatform.api.owner.application.ControlPlaneRateLimitExceededException;
 import com.linkplatform.api.owner.application.DuplicateWorkspaceMemberException;
 import com.linkplatform.api.owner.application.InvalidWorkspaceRoleChangeException;
+import com.linkplatform.api.owner.application.InvalidWebhookCallbackUrlException;
 import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
+import com.linkplatform.api.owner.application.WorkspaceQuotaExceededException;
 import com.linkplatform.api.owner.application.WorkspaceAccessDeniedException;
 import com.linkplatform.api.owner.application.WorkspaceNotFoundException;
 import com.linkplatform.api.owner.application.WorkspaceScopeDeniedException;
@@ -68,6 +70,23 @@ public class LinkApiExceptionHandler {
     @ExceptionHandler(OwnerQuotaExceededException.class)
     public ProblemDetail handleOwnerQuotaExceeded(OwnerQuotaExceededException exception) {
         return problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    @ExceptionHandler(WorkspaceQuotaExceededException.class)
+    public ProblemDetail handleWorkspaceQuotaExceeded(WorkspaceQuotaExceededException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problemDetail.setProperty("type", "about:blank");
+        problemDetail.setProperty("quotaMetric", exception.quotaMetric().name());
+        problemDetail.setProperty("currentUsage", exception.currentUsage());
+        problemDetail.setProperty("limit", exception.limit());
+        return problemDetail;
+    }
+
+    @ExceptionHandler(InvalidWebhookCallbackUrlException.class)
+    public ProblemDetail handleInvalidWebhookCallbackUrl(InvalidWebhookCallbackUrlException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+        problemDetail.setProperty("category", "bad-request");
+        return problemDetail;
     }
 
     @ExceptionHandler(WorkspaceNotFoundException.class)
