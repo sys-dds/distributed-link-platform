@@ -1,24 +1,26 @@
 spring:
+  task:
+    scheduling:
+      enabled: false
   datasource:
-    url: jdbc:h2:mem:linkplatform-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
+    url: jdbc:tc:postgresql:16.8:///link_platform_test_${random.uuid}
+    username: link_platform
+    password: link_platform
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
   kafka:
-    bootstrap-servers: localhost:9092
     listener:
       auto-startup: false
 
 link-platform:
-  public-base-url: http://localhost:8080
-  query:
-    datasource:
-      url:
-      username:
-      password:
-      driver-class-name:
-  cache:
-    enabled: true
+  analytics:
+    outbox-relay-delay: 600000
+  lifecycle:
+    outbox-relay-delay: 600000
+  projection-jobs:
+    runner-delay: 600000
+  webhooks:
+    allow-private-callback-hosts: true
+    allow-http-callbacks: true
+    runner-delay-ms: 600000
+  exports:
+    runner-delay-ms: 600000

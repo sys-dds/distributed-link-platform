@@ -538,10 +538,7 @@ public class PostgresLinkStore implements LinkStore {
             sql.append(" AND c.clicked_at < ?");
             parameters.add(to);
         }
-        sql.append("""
-                ORDER BY c.id ASC
-                LIMIT ?
-                """);
+        sql.append("\nORDER BY c.id ASC\nLIMIT ?\n");
         parameters.add(limit);
         return jdbcTemplate.query(
                 sql.toString(),
@@ -667,11 +664,19 @@ public class PostgresLinkStore implements LinkStore {
     public void upsertClickRollupReconciliation(ClickRollupDriftRecord driftRecord) {
         jdbcTemplate.update(
                 """
-                MERGE INTO click_rollup_reconciliation (
+                INSERT INTO click_rollup_reconciliation (
                     owner_id, slug, bucket_day, raw_click_count, rollup_click_count, drift_count,
                     detected_at, repaired_at, repair_status, repair_note
-                ) KEY (owner_id, slug, bucket_day)
+                )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (owner_id, slug, bucket_day) DO UPDATE
+                SET raw_click_count = EXCLUDED.raw_click_count,
+                    rollup_click_count = EXCLUDED.rollup_click_count,
+                    drift_count = EXCLUDED.drift_count,
+                    detected_at = EXCLUDED.detected_at,
+                    repaired_at = EXCLUDED.repaired_at,
+                    repair_status = EXCLUDED.repair_status,
+                    repair_note = EXCLUDED.repair_note
                 """,
                 driftRecord.ownerId(),
                 driftRecord.slug(),
@@ -689,9 +694,10 @@ public class PostgresLinkStore implements LinkStore {
     public void repairDailyRollupTotal(String slug, LocalDate bucketDay, long rawClickCount) {
         jdbcTemplate.update(
                 """
-                MERGE INTO link_click_daily_rollups (slug, rollup_date, click_count)
-                KEY (slug, rollup_date)
+                INSERT INTO link_click_daily_rollups (slug, rollup_date, click_count)
                 VALUES (?, ?, ?)
+                ON CONFLICT (slug, rollup_date) DO UPDATE
+                SET click_count = EXCLUDED.click_count
                 """,
                 slug,
                 bucketDay,

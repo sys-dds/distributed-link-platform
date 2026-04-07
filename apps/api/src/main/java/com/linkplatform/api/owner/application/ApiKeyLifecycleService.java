@@ -195,8 +195,13 @@ public class ApiKeyLifecycleService {
             return;
         }
         int activeKeyLimit = context.plan() == OwnerPlan.FREE ? 2 : 10;
-        if (ownerApiKeyStore.findActiveByWorkspaceId(context.workspaceId(), now).size() >= activeKeyLimit) {
-            throw new IllegalArgumentException("Active API key limit exceeded for owner " + context.ownerKey());
+        long currentUsage = ownerApiKeyStore.findActiveByWorkspaceId(context.workspaceId(), now).size();
+        if (currentUsage >= activeKeyLimit) {
+            throw new WorkspaceQuotaExceededException(
+                    WorkspaceUsageMetric.API_KEYS,
+                    currentUsage,
+                    activeKeyLimit,
+                    "Workspace API key quota exceeded");
         }
     }
 

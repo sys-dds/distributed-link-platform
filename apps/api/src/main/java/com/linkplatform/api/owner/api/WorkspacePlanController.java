@@ -65,14 +65,14 @@ public class WorkspacePlanController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeReadAny(
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
                 request.getMethod(),
                 request.getRequestURI(),
                 request.getRemoteAddr(),
-                java.util.Set.of(ApiKeyScope.MEMBERS_READ, ApiKeyScope.API_KEYS_READ, ApiKeyScope.LINKS_READ));
+                ApiKeyScope.MEMBERS_READ);
         var plan = workspaceEntitlementService.currentPlan(context.workspaceId());
         return new WorkspacePlanResponse(
                 context.workspaceSlug(),
@@ -91,14 +91,14 @@ public class WorkspacePlanController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeReadAny(
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
                 request.getMethod(),
                 request.getRequestURI(),
                 request.getRemoteAddr(),
-                java.util.Set.of(ApiKeyScope.MEMBERS_READ, ApiKeyScope.API_KEYS_READ, ApiKeyScope.LINKS_READ));
+                ApiKeyScope.MEMBERS_READ);
         var usage = workspaceEntitlementService.currentUsage(context.workspaceId());
         return new WorkspaceUsageSummaryResponse(
                 context.workspaceSlug(),

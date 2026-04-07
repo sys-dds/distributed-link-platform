@@ -155,9 +155,13 @@ public class JdbcWorkspaceStore implements WorkspaceStore {
     public boolean addMember(long workspaceId, long ownerId, WorkspaceRole role, OffsetDateTime joinedAt, Long addedByOwnerId) {
         return jdbcTemplate.update(
                 """
-                MERGE INTO workspace_members (workspace_id, owner_id, role, joined_at, added_by_owner_id, removed_at)
-                KEY (workspace_id, owner_id)
+                INSERT INTO workspace_members (workspace_id, owner_id, role, joined_at, added_by_owner_id, removed_at)
                 VALUES (?, ?, ?, ?, ?, NULL)
+                ON CONFLICT (workspace_id, owner_id) DO UPDATE
+                SET role = EXCLUDED.role,
+                    joined_at = EXCLUDED.joined_at,
+                    added_by_owner_id = EXCLUDED.added_by_owner_id,
+                    removed_at = NULL
                 """,
                 workspaceId,
                 ownerId,

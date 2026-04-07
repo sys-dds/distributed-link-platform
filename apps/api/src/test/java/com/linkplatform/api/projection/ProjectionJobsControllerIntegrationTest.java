@@ -1,6 +1,7 @@
 package com.linkplatform.api.projection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -10,8 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import java.time.OffsetDateTime;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -33,13 +36,15 @@ class ProjectionJobsControllerIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    @Qualifier("dataSource")
+    private DataSource dataSource;
 
     @Autowired
     private ProjectionJobRunner projectionJobRunner;
 
     @Test
     void projectionJobsPersistScopeAndScopedAndUnscopedRunsWork() throws Exception {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         String personalWorkspaceSlug = personalWorkspaceSlug();
         insertLifecycleHistory(1L, "scope-1", "alpha", OffsetDateTime.parse("2026-04-06T10:00:00Z"));
         insertLifecycleHistory(2L, "scope-2", "beta", OffsetDateTime.parse("2026-04-06T10:05:00Z"));
@@ -82,6 +87,7 @@ class ProjectionJobsControllerIntegrationTest {
         mockMvc.perform(get("/api/v1/projection-jobs").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].jobType").value("LINK_CATALOG_REBUILD"))
+                .andExpect(jsonPath("$[0].workspaceSlug").value(personalWorkspaceSlug))
                 .andExpect(jsonPath("$[0].startedAt").isNotEmpty())
                 .andExpect(jsonPath("$[0].lastChunkAt").isNotEmpty())
                 .andExpect(jsonPath("$[0].processedItems").isNumber())
@@ -91,12 +97,17 @@ class ProjectionJobsControllerIntegrationTest {
 
     @Test
     void failedScopedJobExposesConsistentUnknownFailedItemsAndCompatibilityAlias() throws Exception {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         String personalWorkspaceSlug = personalWorkspaceSlug();
+        Long workspaceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM workspaces WHERE personal_workspace = TRUE AND created_by_owner_id = 1",
+                Long.class);
         jdbcTemplate.update(
                 """
                 INSERT INTO link_lifecycle_outbox (event_id, event_type, event_key, payload_json, created_at, published_at)
-                VALUES ('bad-scope', 'CREATED', 'broken', '{bad-json', ?, ?)
+                VALUES ('bad-scope', 'CREATED', 'broken', ?, ?, ?)
                 """,
+                "{\"workspaceId\":" + workspaceId + ",\"ownerId\":1,\"slug\":\"broken\",bad-json",
                 OffsetDateTime.parse("2026-04-06T10:00:00Z"),
                 OffsetDateTime.parse("2026-04-06T10:00:00Z"));
 
@@ -118,7 +129,7 @@ class ProjectionJobsControllerIntegrationTest {
                 .get("id")
                 .asLong();
 
-        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class, () -> projectionJobRunner.runPendingJobs());
+        assertThrows(IllegalArgumentException.class, () -> projectionJobRunner.runPendingJobs());
 
         JsonNode failedJob = jsonMapper.readTree(mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId)
                         .header("X-API-Key", FREE_API_KEY))
@@ -136,6 +147,7 @@ class ProjectionJobsControllerIntegrationTest {
 
     @Test
     void controllerResponseMatchesPersistedProjectionProgressState() throws Exception {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         String personalWorkspaceSlug = personalWorkspaceSlug();
         insertLifecycleHistory(1L, "progress-1", "gamma", OffsetDateTime.parse("2026-04-06T11:00:00Z"));
         insertLifecycleHistory(1L, "progress-2", "gamma", OffsetDateTime.parse("2026-04-06T11:01:00Z"));
@@ -214,6 +226,11 @@ class ProjectionJobsControllerIntegrationTest {
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        Long workspaceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM workspaces WHERE personal_workspace = TRUE AND created_by_owner_id = ?",
+                Long.class,
+                ownerId);
         jdbcTemplate.update(
                 """
                 INSERT INTO link_lifecycle_outbox (event_id, event_type, event_key, payload_json, created_at, published_at)
@@ -222,13 +239,14 @@ class ProjectionJobsControllerIntegrationTest {
                 eventId,
                 slug,
                 """
-                {"eventId":"%s","eventType":"CREATED","ownerId":%d,"slug":"%s","originalUrl":"https://example.com/%s","title":"%s","tags":["docs"],"hostname":"example.com","expiresAt":null,"lifecycleState":"ACTIVE","version":1,"occurredAt":"%s"}
-                """.formatted(eventId, ownerId, slug, slug, slug, occurredAt),
+                {"eventId":"%s","eventType":"CREATED","ownerId":%d,"workspaceId":%d,"slug":"%s","originalUrl":"https://example.com/%s","title":"%s","tags":["docs"],"hostname":"example.com","expiresAt":null,"lifecycleState":"ACTIVE","version":1,"occurredAt":"%s"}
+                """.formatted(eventId, ownerId, workspaceId, slug, slug, slug, occurredAt),
                 occurredAt,
                 occurredAt);
     }
 
     private String personalWorkspaceSlug() {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         return jdbcTemplate.queryForObject(
                 "SELECT slug FROM workspaces WHERE personal_workspace = TRUE AND created_by_owner_id = 1",
                 String.class);

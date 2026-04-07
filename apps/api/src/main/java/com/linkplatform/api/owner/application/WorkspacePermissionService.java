@@ -70,6 +70,10 @@ public class WorkspacePermissionService {
         requireScope(context, ApiKeyScope.RETENTION_WRITE);
     }
 
+    public void requireMembersRead(WorkspaceAccessContext context) {
+        requireScope(context, ApiKeyScope.MEMBERS_READ);
+    }
+
     public Set<ApiKeyScope> validateRequestedScopes(WorkspaceRole role, List<String> requestedScopes) {
         Set<ApiKeyScope> parsed = EnumSet.noneOf(ApiKeyScope.class);
         if (requestedScopes != null) {

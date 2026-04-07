@@ -1,6 +1,7 @@
 package com.linkplatform.api.owner.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.linkplatform.api.runtime.LinkPlatformRuntimeProperties;
 import java.net.InetAddress;
 import java.net.URI;
 import java.time.Clock;
@@ -22,6 +23,7 @@ public class WebhookSubscriptionsService {
     private final SecurityEventStore securityEventStore;
     private final OperatorActionLogStore operatorActionLogStore;
     private final WebhookSigningService webhookSigningService;
+    private final LinkPlatformRuntimeProperties runtimeProperties;
     private final Clock clock;
 
     public WebhookSubscriptionsService(
@@ -31,7 +33,8 @@ public class WebhookSubscriptionsService {
             WorkspacePermissionService workspacePermissionService,
             SecurityEventStore securityEventStore,
             OperatorActionLogStore operatorActionLogStore,
-            WebhookSigningService webhookSigningService) {
+            WebhookSigningService webhookSigningService,
+            LinkPlatformRuntimeProperties runtimeProperties) {
         this.webhookSubscriptionsStore = webhookSubscriptionsStore;
         this.webhookDeliveryStore = webhookDeliveryStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
@@ -39,6 +42,7 @@ public class WebhookSubscriptionsService {
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
         this.webhookSigningService = webhookSigningService;
+        this.runtimeProperties = runtimeProperties;
         this.clock = Clock.systemUTC();
     }
 
@@ -245,18 +249,22 @@ public class WebhookSubscriptionsService {
     private void validateCallbackUrl(String callbackUrl) {
         try {
             URI uri = URI.create(callbackUrl);
-            if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            String scheme = uri.getScheme();
+            if (scheme == null || scheme.isBlank()) {
+                throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must be a valid absolute https URL");
+            }
+            boolean https = "https".equalsIgnoreCase(scheme);
+            boolean http = "http".equalsIgnoreCase(scheme);
+            if (!https && !(http && runtimeProperties.getWebhooks().isAllowHttpCallbacks())) {
                 throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must use https");
             }
             if (uri.getHost() == null || uri.getHost().isBlank()) {
                 throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl host is required");
             }
             String host = uri.getHost().trim().toLowerCase(java.util.Locale.ROOT);
-            if ("localhost".equals(host)) {
-                throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must not target localhost");
-            }
-            if (isPrivateLiteral(host)) {
-                throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must not target private or loopback addresses");
+            boolean privateHost = "localhost".equals(host) || isPrivateLiteral(host);
+            if (privateHost && !runtimeProperties.getWebhooks().isAllowPrivateCallbackHosts()) {
+                throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must not target localhost or private addresses");
             }
         } catch (RuntimeException exception) {
             if (exception instanceof InvalidWebhookCallbackUrlException) {

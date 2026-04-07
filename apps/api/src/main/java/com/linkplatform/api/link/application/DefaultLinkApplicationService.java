@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -99,9 +100,10 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         this.linkAbuseReviewService = linkAbuseReviewService;
         this.linkReadCache = linkReadCache;
         this.publicBaseUri = URI.create(publicBaseUrl);
-        this.clock = Clock.systemUTC();
+            this.clock = Clock.systemUTC();
     }
 
+    @Autowired
     public DefaultLinkApplicationService(
             LinkStore linkStore,
             AnalyticsOutboxStore analyticsOutboxStore,

@@ -189,6 +189,8 @@ public class LinkPlatformRuntimeProperties {
     public static class Webhooks {
 
         private boolean enabled = true;
+        private boolean allowPrivateCallbackHosts = false;
+        private boolean allowHttpCallbacks = false;
         private long runnerDelayMs = 5_000L;
         private int deliveryBatchSize = 20;
         private int parkedThreshold = 5;
@@ -202,6 +204,22 @@ public class LinkPlatformRuntimeProperties {
 
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+
+        public boolean isAllowPrivateCallbackHosts() {
+            return allowPrivateCallbackHosts;
+        }
+
+        public void setAllowPrivateCallbackHosts(boolean allowPrivateCallbackHosts) {
+            this.allowPrivateCallbackHosts = allowPrivateCallbackHosts;
+        }
+
+        public boolean isAllowHttpCallbacks() {
+            return allowHttpCallbacks;
+        }
+
+        public void setAllowHttpCallbacks(boolean allowHttpCallbacks) {
+            this.allowHttpCallbacks = allowHttpCallbacks;
         }
 
         public int getDeliveryBatchSize() {
@@ -307,6 +325,16 @@ public class LinkPlatformRuntimeProperties {
     @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.enabled:true}")
     void bindWebhooksEnabled(boolean enabled) {
         webhooks.setEnabled(enabled);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.allow-private-callback-hosts:false}")
+    void bindWebhookAllowPrivateCallbackHosts(boolean allowPrivateCallbackHosts) {
+        webhooks.setAllowPrivateCallbackHosts(allowPrivateCallbackHosts);
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.allow-http-callbacks:false}")
+    void bindWebhookAllowHttpCallbacks(boolean allowHttpCallbacks) {
+        webhooks.setAllowHttpCallbacks(allowHttpCallbacks);
     }
 
     @org.springframework.beans.factory.annotation.Value("${link-platform.webhooks.delivery-batch-size:20}")

@@ -13,6 +13,16 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   webhook-sink:
     image: mendhak/http-https-echo:35
     ports:
@@ -30,6 +40,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       webhook-sink:
         condition: service_healthy
     environment:
@@ -37,12 +49,13 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/link_platform
       DB_USERNAME: link_platform
       DB_PASSWORD: link_platform
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8080
       LINK_PLATFORM_RUNTIME_MODE: all
       LINK_PLATFORM_WEBHOOKS_ENABLED: "true"
+      LINK_PLATFORM_WEBHOOKS_ALLOW_PRIVATE_CALLBACK_HOSTS: "true"
+      LINK_PLATFORM_WEBHOOKS_ALLOW_HTTP_CALLBACKS: "true"
       LINK_PLATFORM_EXPORTS_ENABLED: "true"
     ports:
       - "8080:8080"

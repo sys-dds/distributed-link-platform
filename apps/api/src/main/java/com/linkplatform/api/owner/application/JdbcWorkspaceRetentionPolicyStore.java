@@ -43,12 +43,19 @@ public class JdbcWorkspaceRetentionPolicyStore implements WorkspaceRetentionPoli
             long updatedByOwnerId) {
         jdbcTemplate.update(
                 """
-                MERGE INTO workspace_retention_policies (
+                INSERT INTO workspace_retention_policies (
                     workspace_id, click_history_days, security_events_days, webhook_deliveries_days,
                     abuse_cases_days, operator_action_log_days, updated_at, updated_by_owner_id
                 )
-                KEY (workspace_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (workspace_id) DO UPDATE
+                SET click_history_days = EXCLUDED.click_history_days,
+                    security_events_days = EXCLUDED.security_events_days,
+                    webhook_deliveries_days = EXCLUDED.webhook_deliveries_days,
+                    abuse_cases_days = EXCLUDED.abuse_cases_days,
+                    operator_action_log_days = EXCLUDED.operator_action_log_days,
+                    updated_at = EXCLUDED.updated_at,
+                    updated_by_owner_id = EXCLUDED.updated_by_owner_id
                 """,
                 workspaceId,
                 clickHistoryDays,

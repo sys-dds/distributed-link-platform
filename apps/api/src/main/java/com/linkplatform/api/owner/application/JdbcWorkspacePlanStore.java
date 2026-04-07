@@ -37,12 +37,20 @@ public class JdbcWorkspacePlanStore implements WorkspacePlanStore {
         PlanDefaults defaults = PlanDefaults.forCode(planCode);
         jdbcTemplate.update(
                 """
-                MERGE INTO workspace_plans (
+                INSERT INTO workspace_plans (
                     workspace_id, plan_code, active_links_limit, members_limit, api_keys_limit,
                     webhooks_limit, monthly_webhook_deliveries_limit, exports_enabled, created_at, updated_at
                 )
-                KEY (workspace_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM workspace_plans WHERE workspace_id = ?), ?), ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (workspace_id) DO UPDATE
+                SET plan_code = EXCLUDED.plan_code,
+                    active_links_limit = EXCLUDED.active_links_limit,
+                    members_limit = EXCLUDED.members_limit,
+                    api_keys_limit = EXCLUDED.api_keys_limit,
+                    webhooks_limit = EXCLUDED.webhooks_limit,
+                    monthly_webhook_deliveries_limit = EXCLUDED.monthly_webhook_deliveries_limit,
+                    exports_enabled = EXCLUDED.exports_enabled,
+                    updated_at = EXCLUDED.updated_at
                 """,
                 workspaceId,
                 planCode.name(),
@@ -52,7 +60,6 @@ public class JdbcWorkspacePlanStore implements WorkspacePlanStore {
                 defaults.webhooksLimit(),
                 defaults.monthlyWebhookDeliveriesLimit(),
                 defaults.exportsEnabled(),
-                workspaceId,
                 updatedAt,
                 updatedAt);
         return findByWorkspaceId(workspaceId).orElseThrow();

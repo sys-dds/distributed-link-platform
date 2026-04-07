@@ -162,14 +162,27 @@ class ProjectionJobServiceReconciliationTest {
 
     private static final class NoOpProjectionJobStore implements ProjectionJobStore {
         @Override public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) { return null; }
+        @Override public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) { return null; }
+        @Override public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, Long workspaceId, String slug, OffsetDateTime rangeStart, OffsetDateTime rangeEnd, Long requestedByOwnerId, String operatorNote) { return null; }
         @Override public Optional<ProjectionJob> findById(long id) { return Optional.empty(); }
         @Override public Optional<ProjectionJob> findByIdVisibleToWorkspace(long id, long workspaceId, long ownerId, boolean personalWorkspace) { return Optional.empty(); }
         @Override public List<ProjectionJob> findRecent(int limit) { return List.of(); }
         @Override public List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace) { return List.of(); }
+        @Override public Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) { return Optional.empty(); }
         @Override public Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) { return Optional.empty(); }
+        @Override public void markProgress(long id, OffsetDateTime occurredAt, long processedCount, Long checkpointId) { }
         @Override public void markProgress(long id, long processedCount, Long checkpointId) { }
         @Override public void markCompleted(long id, OffsetDateTime completedAt, long processedCount, Long checkpointId) { }
         @Override public void markFailed(long id, OffsetDateTime failedAt, long failedItemsIncrement, String errorSummary) { }
+        @Override public void markFailed(long id, OffsetDateTime failedAt, String errorSummary) { }
+        @Override public long countQueued() { return 0; }
+        @Override public long countActive() { return 0; }
+        @Override public long countQueued(Long workspaceId) { return 0; }
+        @Override public long countActive(Long workspaceId) { return 0; }
+        @Override public long countFailed(Long workspaceId) { return 0; }
+        @Override public long countCompleted(Long workspaceId) { return 0; }
+        @Override public Optional<OffsetDateTime> findLatestStartedAt(Long workspaceId) { return Optional.empty(); }
+        @Override public Optional<OffsetDateTime> findLatestFailedAt(Long workspaceId) { return Optional.empty(); }
     }
 
     private static final class NoOpLifecycleOutboxStore implements LinkLifecycleOutboxStore {

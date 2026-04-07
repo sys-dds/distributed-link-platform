@@ -3,6 +3,11 @@ spring:
     activate:
       on-profile: docker
 
+link-platform:
+  webhooks:
+    allow-private-callback-hosts: true
+    allow-http-callbacks: true
+
 management:
   endpoint:
     health:

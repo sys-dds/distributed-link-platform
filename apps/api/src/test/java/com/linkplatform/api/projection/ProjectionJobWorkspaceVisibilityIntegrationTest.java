@@ -9,8 +9,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -29,10 +31,12 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    @Qualifier("dataSource")
+    private DataSource dataSource;
 
     @Test
     void projectionJobsDefaultToActiveWorkspaceAndAreIsolatedAcrossWorkspaces() throws Exception {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         createWorkspace("proj-a");
         createWorkspace("proj-b");
         String keyA = bootstrapWorkspaceApiKey("proj-a", "proj-a-ops", "[\"ops:read\",\"ops:write\"]");
@@ -79,6 +83,7 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
 
     @Test
     void legacyNullWorkspaceJobsAreVisibleOnlyFromMatchingPersonalWorkspace() throws Exception {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         String personalWorkspaceSlug = jdbcTemplate.queryForObject(
                 "SELECT slug FROM workspaces WHERE personal_workspace = TRUE AND created_by_owner_id = 1",
                 String.class);
@@ -122,6 +127,7 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
     }
 
     private void createWorkspace(String slug) {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.update(
                 "INSERT INTO workspaces (slug, display_name, personal_workspace, created_at, created_by_owner_id) VALUES (?, ?, FALSE, ?, 1)",
                 slug,
@@ -129,12 +135,13 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
                 OffsetDateTime.now());
         Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, slug);
         jdbcTemplate.update(
-                "INSERT INTO workspace_memberships (workspace_id, owner_id, role, joined_at, added_by_owner_id) VALUES (?, 1, 'OWNER', ?, 1)",
+                "INSERT INTO workspace_members (workspace_id, owner_id, role, joined_at, added_by_owner_id, removed_at) VALUES (?, 1, 'OWNER', ?, 1, NULL)",
                 workspaceId,
                 OffsetDateTime.now());
     }
 
     private String bootstrapWorkspaceApiKey(String workspaceSlug, String plaintextKey, String scopesJson) {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, workspaceSlug);
         jdbcTemplate.update(
                 """

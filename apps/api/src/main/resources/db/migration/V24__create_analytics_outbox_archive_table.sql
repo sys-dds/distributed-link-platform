@@ -4,7 +4,7 @@ CREATE TABLE analytics_outbox_archive (
     event_id VARCHAR(128) NOT NULL,
     event_type VARCHAR(128) NOT NULL,
     event_key VARCHAR(128) NOT NULL,
-    payload_json CLOB NOT NULL,
+    payload_json TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     published_at TIMESTAMP WITH TIME ZONE NOT NULL,
     attempt_count INTEGER NOT NULL DEFAULT 0,

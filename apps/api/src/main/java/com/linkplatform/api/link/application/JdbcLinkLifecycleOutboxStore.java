@@ -287,10 +287,7 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
             sql.append(" AND o.created_at < ?");
             parameters.add(to);
         }
-        sql.append("""
-                ORDER BY o.id ASC
-                LIMIT ?
-                """);
+        sql.append("\nORDER BY o.id ASC\nLIMIT ?\n");
         parameters.add(limit);
         return jdbcTemplate.query(
                 sql.toString(),
