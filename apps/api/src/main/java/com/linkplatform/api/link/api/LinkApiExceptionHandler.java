@@ -10,7 +10,12 @@ import com.linkplatform.api.link.application.ReservedLinkSlugException;
 import com.linkplatform.api.link.application.SelfTargetLinkException;
 import com.linkplatform.api.owner.application.ApiKeyAuthenticationException;
 import com.linkplatform.api.owner.application.ControlPlaneRateLimitExceededException;
+import com.linkplatform.api.owner.application.DuplicateWorkspaceMemberException;
+import com.linkplatform.api.owner.application.InvalidWorkspaceRoleChangeException;
 import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
+import com.linkplatform.api.owner.application.WorkspaceAccessDeniedException;
+import com.linkplatform.api.owner.application.WorkspaceNotFoundException;
+import com.linkplatform.api.owner.application.WorkspaceScopeDeniedException;
 import java.net.URI;
 import java.util.Locale;
 import org.springframework.dao.DataAccessException;
@@ -60,6 +65,41 @@ public class LinkApiExceptionHandler {
     @ExceptionHandler(OwnerQuotaExceededException.class)
     public ProblemDetail handleOwnerQuotaExceeded(OwnerQuotaExceededException exception) {
         return problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    @ExceptionHandler(WorkspaceNotFoundException.class)
+    public ProblemDetail handleWorkspaceNotFound(WorkspaceNotFoundException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+        problemDetail.setProperty("category", "workspace-not-found");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(WorkspaceAccessDeniedException.class)
+    public ProblemDetail handleWorkspaceAccessDenied(WorkspaceAccessDeniedException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.FORBIDDEN, exception.getMessage());
+        problemDetail.setProperty("category", "membership-denied");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(WorkspaceScopeDeniedException.class)
+    public ProblemDetail handleWorkspaceScopeDenied(WorkspaceScopeDeniedException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.FORBIDDEN, exception.getMessage());
+        problemDetail.setProperty("category", "scope-denied");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(DuplicateWorkspaceMemberException.class)
+    public ProblemDetail handleDuplicateWorkspaceMember(DuplicateWorkspaceMemberException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problemDetail.setProperty("category", "duplicate-membership");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(InvalidWorkspaceRoleChangeException.class)
+    public ProblemDetail handleInvalidWorkspaceRoleChange(InvalidWorkspaceRoleChangeException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problemDetail.setProperty("category", "invalid-role-change");
+        return problemDetail;
     }
 
     @ExceptionHandler(ReservedLinkSlugException.class)

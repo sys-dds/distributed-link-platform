@@ -46,12 +46,12 @@ public class PostgresLinkStore implements LinkStore {
             List<String> tags,
             String hostname,
             long version,
-            long ownerId) {
+            long workspaceId) {
         try {
             return jdbcTemplate.update(
                     """
-                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname, version, owner_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname, version, owner_id, workspace_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     link.slug().value(),
                     link.originalUrl().value(),
@@ -60,7 +60,8 @@ public class PostgresLinkStore implements LinkStore {
                     serializeTags(tags),
                     hostname,
                     version,
-                    ownerId) == 1;
+                    resolveLegacyOwnerId(workspaceId),
+                    workspaceId) == 1;
         } catch (DuplicateKeyException exception) {
             return false;
         }
@@ -76,14 +77,14 @@ public class PostgresLinkStore implements LinkStore {
             String hostname,
             long expectedVersion,
             long nextVersion,
-            long ownerId) {
+            long workspaceId) {
         return jdbcTemplate.update(
                 """
                 UPDATE links
                 SET original_url = ?, expires_at = ?, title = ?, tags_json = ?, hostname = ?, version = ?
                 WHERE slug = ?
                   AND version = ?
-                  AND owner_id = ?
+                  AND workspace_id = ?
                 """,
                 originalUrl,
                 expiresAt,
@@ -93,16 +94,16 @@ public class PostgresLinkStore implements LinkStore {
                 nextVersion,
                 slug,
                 expectedVersion,
-                ownerId) == 1;
+                workspaceId) == 1;
     }
 
     @Override
-    public boolean deleteBySlug(String slug, long expectedVersion, long ownerId) {
+    public boolean deleteBySlug(String slug, long expectedVersion, long workspaceId) {
         return jdbcTemplate.update(
-                        "DELETE FROM links WHERE slug = ? AND version = ? AND owner_id = ?",
+                        "DELETE FROM links WHERE slug = ? AND version = ? AND workspace_id = ?",
                         slug,
                         expectedVersion,
-                        ownerId)
+                        workspaceId)
                 == 1;
     }
 
@@ -114,7 +115,7 @@ public class PostgresLinkStore implements LinkStore {
             OffsetDateTime expiresAt,
             long expectedVersion,
             long nextVersion,
-            long ownerId) {
+            long workspaceId) {
         return jdbcTemplate.update(
                 """
                 UPDATE links
@@ -122,7 +123,7 @@ public class PostgresLinkStore implements LinkStore {
                 WHERE slug = ?
                   AND lifecycle_state = ?
                   AND version = ?
-                  AND owner_id = ?
+                  AND workspace_id = ?
                 """,
                 nextState.name(),
                 expiresAt,
@@ -130,7 +131,7 @@ public class PostgresLinkStore implements LinkStore {
                 slug,
                 expectedState.name(),
                 expectedVersion,
-                ownerId) == 1;
+                workspaceId) == 1;
     }
 
     @Override
@@ -138,13 +139,13 @@ public class PostgresLinkStore implements LinkStore {
             DeletedLinkSnapshot deletedLinkSnapshot,
             LinkLifecycleState restoredState,
             long nextVersion,
-            long ownerId) {
+            long workspaceId) {
         try {
             return jdbcTemplate.update(
                     """
                     INSERT INTO links (
-                        slug, original_url, created_at, expires_at, title, tags_json, hostname, version, owner_id, lifecycle_state
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        slug, original_url, created_at, expires_at, title, tags_json, hostname, version, owner_id, workspace_id, lifecycle_state
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     deletedLinkSnapshot.slug(),
                     deletedLinkSnapshot.originalUrl(),
@@ -154,7 +155,8 @@ public class PostgresLinkStore implements LinkStore {
                     serializeTags(deletedLinkSnapshot.tags()),
                     deletedLinkSnapshot.hostname(),
                     nextVersion,
-                    ownerId,
+                    resolveLegacyOwnerId(workspaceId),
+                    workspaceId,
                     restoredState.name()) == 1;
         } catch (DuplicateKeyException exception) {
             return false;
@@ -162,17 +164,17 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public long countActiveLinksByOwner(long ownerId) {
+    public long countActiveLinksByOwner(long workspaceId) {
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
                 FROM links
-                WHERE owner_id = ?
+                WHERE workspace_id = ?
                   AND lifecycle_state = 'ACTIVE'
                   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
                 """,
                 Long.class,
-                ownerId);
+                workspaceId);
         return count == null ? 0L : count;
     }
 
@@ -202,13 +204,14 @@ public class PostgresLinkStore implements LinkStore {
     public boolean recordActivityIfAbsent(String eventId, LinkActivityEvent linkActivityEvent) {
         try {
             jdbcTemplate.update(
-                    """
-                    INSERT INTO link_activity_events (
-                        event_id, owner_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                INSERT INTO link_activity_events (
+                        event_id, owner_id, workspace_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     eventId,
                     linkActivityEvent.ownerId(),
+                    linkActivityEvent.workspaceId(),
                     linkActivityEvent.type().name(),
                     linkActivityEvent.slug(),
                     linkActivityEvent.originalUrl(),
@@ -234,12 +237,12 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public Optional<LinkLifecycleState> findLifecycleStateBySlug(String slug, long ownerId) {
+    public Optional<LinkLifecycleState> findLifecycleStateBySlug(String slug, long workspaceId) {
         return jdbcTemplate.query(
-                        "SELECT lifecycle_state FROM links WHERE slug = ? AND owner_id = ?",
+                        "SELECT lifecycle_state FROM links WHERE slug = ? AND workspace_id = ?",
                         (resultSet, rowNum) -> LinkLifecycleState.valueOf(resultSet.getString("lifecycle_state")),
                         slug,
-                        ownerId)
+                        workspaceId)
                 .stream()
                 .findFirst();
     }
@@ -509,7 +512,7 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now, long ownerId) {
+    public Optional<LinkDetails> findDetailsBySlug(String slug, OffsetDateTime now, long workspaceId) {
         return queryJdbcTemplate.query(
                         """
                         SELECT l.slug,
@@ -523,7 +526,7 @@ public class PostgresLinkStore implements LinkStore {
                                COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                         FROM links l
                         WHERE l.slug = ?
-                          AND l.owner_id = ?
+                          AND l.workspace_id = ?
                           AND l.lifecycle_state <> 'ARCHIVED'
                           AND (expires_at IS NULL OR expires_at > ?)
                         """,
@@ -538,7 +541,7 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
                         slug,
-                        ownerId,
+                        workspaceId,
                         now)
                 .stream()
                 .findFirst();
@@ -576,7 +579,7 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public Optional<LinkDetails> findStoredDetailsBySlug(String slug, long ownerId) {
+    public Optional<LinkDetails> findStoredDetailsBySlug(String slug, long workspaceId) {
         return jdbcTemplate.query(
                         """
                         SELECT l.slug,
@@ -590,7 +593,7 @@ public class PostgresLinkStore implements LinkStore {
                                COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = l.slug), 0) AS click_total
                         FROM links l
                         WHERE l.slug = ?
-                          AND l.owner_id = ?
+                          AND l.workspace_id = ?
                         """,
                         (resultSet, rowNum) -> toLinkDetails(
                                 resultSet.getString("slug"),
@@ -603,13 +606,13 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getLong("version"),
                                 resultSet.getLong("click_total")),
                         slug,
-                        ownerId)
+                        workspaceId)
                 .stream()
                 .findFirst();
     }
 
     @Override
-    public Optional<DeletedLinkSnapshot> findDeletedSnapshotBySlug(String slug, long ownerId) {
+    public Optional<DeletedLinkSnapshot> findDeletedSnapshotBySlug(String slug, long workspaceId) {
         return jdbcTemplate.query(
                         """
                         SELECT slug,
@@ -623,7 +626,7 @@ public class PostgresLinkStore implements LinkStore {
                                lifecycle_state
                         FROM link_catalog_projection
                         WHERE slug = ?
-                          AND owner_id = ?
+                          AND workspace_id = ?
                           AND deleted_at IS NOT NULL
                         """,
                         (resultSet, rowNum) -> new DeletedLinkSnapshot(
@@ -637,13 +640,13 @@ public class PostgresLinkStore implements LinkStore {
                                 resultSet.getLong("version"),
                                 LinkLifecycleState.valueOf(resultSet.getString("lifecycle_state"))),
                         slug,
-                        ownerId)
+                        workspaceId)
                 .stream()
                 .findFirst();
     }
 
     @Override
-    public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long ownerId) {
+    public List<LinkDetails> findRecent(int limit, OffsetDateTime now, String query, LinkLifecycleState state, long workspaceId) {
         StringBuilder sql = new StringBuilder("""
                 SELECT p.slug,
                        p.original_url,
@@ -656,10 +659,10 @@ public class PostgresLinkStore implements LinkStore {
                        COALESCE((SELECT SUM(r.click_count) FROM link_click_daily_rollups r WHERE r.slug = p.slug), 0) AS click_total
                 FROM link_catalog_projection p
                 WHERE 1 = 1
-                  AND p.owner_id = ?
+                  AND p.workspace_id = ?
                   AND p.deleted_at IS NULL
                 """);
-        List<Object> parameters = new ArrayList<>(List.of(ownerId));
+        List<Object> parameters = new ArrayList<>(List.of(workspaceId));
 
         appendLifecycleClause(sql, parameters, now, state);
         appendSearchClause(sql, parameters, query);
@@ -687,14 +690,14 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long ownerId) {
+    public List<LinkSuggestion> findSuggestions(int limit, OffsetDateTime now, String query, long workspaceId) {
         String pattern = "%" + query.toLowerCase(Locale.ROOT).trim() + "%";
 
         return queryJdbcTemplate.query(
                 """
                 SELECT p.slug, p.title, p.hostname
                 FROM link_catalog_projection p
-                WHERE p.owner_id = ?
+                WHERE p.workspace_id = ?
                   AND p.deleted_at IS NULL
                   AND (p.expires_at IS NULL OR p.expires_at > ?)
                   AND (
@@ -711,7 +714,7 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("slug"),
                         resultSet.getString("title"),
                         resultSet.getString("hostname")),
-                ownerId,
+                workspaceId,
                 now,
                 pattern,
                 pattern,
@@ -722,7 +725,7 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long ownerId, LinkDiscoveryQuery query) {
+    public LinkDiscoveryPage searchDiscovery(OffsetDateTime now, long workspaceId, LinkDiscoveryQuery query) {
         StringBuilder sql = new StringBuilder("""
                 SELECT slug,
                        original_url,
@@ -735,10 +738,10 @@ public class PostgresLinkStore implements LinkStore {
                        deleted_at,
                        version
                 FROM link_discovery_projection
-                WHERE owner_id = ?
+                WHERE workspace_id = ?
                 """);
         List<Object> parameters = new ArrayList<>();
-        parameters.add(ownerId);
+        parameters.add(workspaceId);
 
         appendDiscoverySearchClause(sql, parameters, query.searchText());
         appendDiscoveryHostnameClause(sql, parameters, query.hostname());
@@ -775,17 +778,18 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public List<LinkActivityEvent> findRecentActivity(int limit, long ownerId) {
+    public List<LinkActivityEvent> findRecentActivity(int limit, long workspaceId) {
         return queryJdbcTemplate.query(
                 """
-                SELECT owner_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
+                SELECT owner_id, workspace_id, event_type, slug, original_url, title, tags_json, hostname, expires_at, occurred_at
                 FROM link_activity_events
-                WHERE owner_id = ?
+                WHERE workspace_id = ?
                 ORDER BY occurred_at DESC, id DESC
                 LIMIT ?
                 """,
                 (resultSet, rowNum) -> new LinkActivityEvent(
                         resultSet.getLong("owner_id"),
+                        resultSet.getLong("workspace_id"),
                         LinkActivityType.valueOf(resultSet.getString("event_type")),
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
@@ -794,7 +798,7 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getString("hostname"),
                         resultSet.getObject("expires_at", OffsetDateTime.class),
                         resultSet.getObject("occurred_at", OffsetDateTime.class)),
-                ownerId,
+                workspaceId,
                 limit);
     }
 
@@ -804,14 +808,14 @@ public class PostgresLinkStore implements LinkStore {
             String tag,
             LinkLifecycleState lifecycle,
             OffsetDateTime asOf,
-            long ownerId) {
+            long workspaceId) {
         StringBuilder sql = new StringBuilder("""
-                SELECT a.owner_id, a.event_type, a.slug, a.original_url, a.title, a.tags_json, a.hostname, a.expires_at, a.occurred_at
+                SELECT a.owner_id, a.workspace_id, a.event_type, a.slug, a.original_url, a.title, a.tags_json, a.hostname, a.expires_at, a.occurred_at
                 FROM link_activity_events a
-                JOIN link_catalog_projection p ON p.slug = a.slug AND p.owner_id = a.owner_id
-                WHERE a.owner_id = ?
+                JOIN link_catalog_projection p ON p.slug = a.slug AND p.workspace_id = a.workspace_id
+                WHERE a.workspace_id = ?
                 """);
-        List<Object> parameters = new ArrayList<>(List.of(ownerId));
+        List<Object> parameters = new ArrayList<>(List.of(workspaceId));
         appendCatalogTagClause(sql, parameters, tag);
         appendCatalogLifecycleClause(sql, parameters, asOf, lifecycle);
         sql.append("""
@@ -824,6 +828,7 @@ public class PostgresLinkStore implements LinkStore {
                 sql.toString(),
                 (resultSet, rowNum) -> new LinkActivityEvent(
                         resultSet.getLong("owner_id"),
+                        resultSet.getLong("workspace_id"),
                         LinkActivityType.valueOf(resultSet.getString("event_type")),
                         resultSet.getString("slug"),
                         resultSet.getString("original_url"),
@@ -840,7 +845,7 @@ public class PostgresLinkStore implements LinkStore {
             String slug,
             OffsetDateTime last24HoursSince,
             LocalDate last7DaysStartDate,
-            long ownerId) {
+            long workspaceId) {
         return queryJdbcTemplate.query(
                         """
                         SELECT l.slug,
@@ -858,7 +863,7 @@ public class PostgresLinkStore implements LinkStore {
                                            AND r.rollup_date >= ?), 0) AS clicks_last_7_days
                         FROM links l
                         WHERE l.slug = ?
-                          AND l.owner_id = ?
+                          AND l.workspace_id = ?
                         """,
                         (resultSet, rowNum) -> new LinkTrafficSummaryTotals(
                                 resultSet.getString("slug"),
@@ -869,20 +874,20 @@ public class PostgresLinkStore implements LinkStore {
                         last24HoursSince,
                         last7DaysStartDate,
                         slug,
-                        ownerId)
+                        workspaceId)
                 .stream()
                 .findFirst();
     }
 
     @Override
-    public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate, long ownerId) {
+    public List<DailyClickBucket> findRecentDailyClickBuckets(String slug, LocalDate startDate, long workspaceId) {
         return queryJdbcTemplate.query(
                 """
                 SELECT r.rollup_date, r.click_count
                 FROM link_click_daily_rollups r
                 JOIN links l ON l.slug = r.slug
                 WHERE r.slug = ?
-                  AND l.owner_id = ?
+                  AND l.workspace_id = ?
                   AND rollup_date >= ?
                 ORDER BY rollup_date ASC
                 """,
@@ -890,7 +895,7 @@ public class PostgresLinkStore implements LinkStore {
                         resultSet.getObject("rollup_date", LocalDate.class),
                         resultSet.getLong("click_count")),
                 slug,
-                ownerId,
+                workspaceId,
                 startDate);
     }
 
@@ -1020,20 +1025,20 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
-    public long countClicksForSlugInRange(String slug, OffsetDateTime from, OffsetDateTime to, long ownerId) {
+    public long countClicksForSlugInRange(String slug, OffsetDateTime from, OffsetDateTime to, long workspaceId) {
         Long clickCount = queryJdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
                 FROM link_clicks c
                 JOIN links l ON l.slug = c.slug
                 WHERE c.slug = ?
-                  AND l.owner_id = ?
+                  AND l.workspace_id = ?
                   AND c.clicked_at >= ?
                   AND c.clicked_at < ?
                 """,
                 Long.class,
                 slug,
-                ownerId,
+                workspaceId,
                 from,
                 to);
         return clickCount == null ? 0L : clickCount;
@@ -1045,7 +1050,7 @@ public class PostgresLinkStore implements LinkStore {
             OffsetDateTime from,
             OffsetDateTime to,
             String granularity,
-            long ownerId) {
+            long workspaceId) {
         String bucketExpression = switch (granularity) {
             case "hour" -> "DATE_TRUNC('hour', c.clicked_at)";
             case "day" -> "DATE_TRUNC('day', c.clicked_at)";
@@ -1056,7 +1061,7 @@ public class PostgresLinkStore implements LinkStore {
                 FROM link_clicks c
                 JOIN links l ON l.slug = c.slug
                 WHERE c.slug = ?
-                  AND l.owner_id = ?
+                  AND l.workspace_id = ?
                   AND c.clicked_at >= ?
                   AND c.clicked_at < ?
                 GROUP BY %s
@@ -1072,62 +1077,62 @@ public class PostgresLinkStore implements LinkStore {
                             resultSet.getLong("click_total"));
                 },
                 slug,
-                ownerId,
+                workspaceId,
                 from,
                 to);
     }
 
     @Override
-    public Optional<OffsetDateTime> findLatestMaterializedClickAt(long ownerId) {
+    public Optional<OffsetDateTime> findLatestMaterializedClickAt(long workspaceId) {
         return Optional.ofNullable(queryJdbcTemplate.queryForObject(
                 """
                 SELECT MAX(c.clicked_at)
                 FROM link_clicks c
                 JOIN links l ON l.slug = c.slug
-                WHERE l.owner_id = ?
+                WHERE l.workspace_id = ?
                 """,
                 OffsetDateTime.class,
-                ownerId));
+                workspaceId));
     }
 
     @Override
-    public Optional<OffsetDateTime> findLatestMaterializedClickAt(String slug, long ownerId) {
+    public Optional<OffsetDateTime> findLatestMaterializedClickAt(String slug, long workspaceId) {
         return Optional.ofNullable(queryJdbcTemplate.queryForObject(
                 """
                 SELECT MAX(c.clicked_at)
                 FROM link_clicks c
                 JOIN links l ON l.slug = c.slug
-                WHERE l.owner_id = ?
+                WHERE l.workspace_id = ?
                   AND c.slug = ?
                 """,
                 OffsetDateTime.class,
-                ownerId,
+                workspaceId,
                 slug));
     }
 
     @Override
-    public Optional<OffsetDateTime> findLatestMaterializedActivityAt(long ownerId) {
+    public Optional<OffsetDateTime> findLatestMaterializedActivityAt(long workspaceId) {
         return Optional.ofNullable(queryJdbcTemplate.queryForObject(
                 """
                 SELECT MAX(occurred_at)
                 FROM link_activity_events
-                WHERE owner_id = ?
+                WHERE workspace_id = ?
                 """,
                 OffsetDateTime.class,
-                ownerId));
+                workspaceId));
     }
 
     @Override
-    public Optional<OffsetDateTime> findLatestMaterializedActivityAt(String slug, long ownerId) {
+    public Optional<OffsetDateTime> findLatestMaterializedActivityAt(String slug, long workspaceId) {
         return Optional.ofNullable(queryJdbcTemplate.queryForObject(
                 """
                 SELECT MAX(occurred_at)
                 FROM link_activity_events
-                WHERE owner_id = ?
+                WHERE workspace_id = ?
                   AND slug = ?
                 """,
                 OffsetDateTime.class,
-                ownerId,
+                workspaceId,
                 slug));
     }
 
@@ -1483,6 +1488,7 @@ public class PostgresLinkStore implements LinkStore {
                     expires_at = ?,
                     lifecycle_state = ?,
                     deleted_at = ?,
+                    workspace_id = ?,
                     owner_id = ?,
                     version = ?
                 WHERE slug = ?
@@ -1496,6 +1502,7 @@ public class PostgresLinkStore implements LinkStore {
                 linkLifecycleEvent.expiresAt(),
                 linkLifecycleEvent.lifecycleState().name(),
                 deletedAt,
+                linkLifecycleEvent.workspaceId(),
                 linkLifecycleEvent.ownerId(),
                 linkLifecycleEvent.version(),
                 linkLifecycleEvent.slug(),
@@ -1508,8 +1515,8 @@ public class PostgresLinkStore implements LinkStore {
             jdbcTemplate.update(
                     """
                     INSERT INTO link_catalog_projection (
-                        slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, lifecycle_state, deleted_at, version, owner_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        slug, original_url, created_at, updated_at, title, tags_json, hostname, expires_at, lifecycle_state, deleted_at, version, owner_id, workspace_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     linkLifecycleEvent.slug(),
                     linkLifecycleEvent.originalUrl(),
@@ -1522,7 +1529,8 @@ public class PostgresLinkStore implements LinkStore {
                     linkLifecycleEvent.lifecycleState().name(),
                     deletedAt,
                     linkLifecycleEvent.version(),
-                    linkLifecycleEvent.ownerId());
+                    linkLifecycleEvent.ownerId(),
+                    linkLifecycleEvent.workspaceId());
         } catch (DuplicateKeyException exception) {
             jdbcTemplate.update(
                     """
@@ -1535,6 +1543,7 @@ public class PostgresLinkStore implements LinkStore {
                         expires_at = ?,
                         lifecycle_state = ?,
                         deleted_at = ?,
+                        workspace_id = ?,
                         owner_id = ?,
                         version = ?
                     WHERE slug = ?
@@ -1548,6 +1557,7 @@ public class PostgresLinkStore implements LinkStore {
                     linkLifecycleEvent.expiresAt(),
                     linkLifecycleEvent.lifecycleState().name(),
                     deletedAt,
+                    linkLifecycleEvent.workspaceId(),
                     linkLifecycleEvent.ownerId(),
                     linkLifecycleEvent.version(),
                     linkLifecycleEvent.slug(),
@@ -1564,6 +1574,7 @@ public class PostgresLinkStore implements LinkStore {
                 """
                 UPDATE link_discovery_projection
                 SET owner_id = ?,
+                    workspace_id = ?,
                     original_url = ?,
                     title = ?,
                     hostname = ?,
@@ -1577,6 +1588,7 @@ public class PostgresLinkStore implements LinkStore {
                   AND version < ?
                 """,
                 linkLifecycleEvent.ownerId(),
+                linkLifecycleEvent.workspaceId(),
                 linkLifecycleEvent.originalUrl(),
                 linkLifecycleEvent.title(),
                 linkLifecycleEvent.hostname(),
@@ -1596,11 +1608,12 @@ public class PostgresLinkStore implements LinkStore {
             jdbcTemplate.update(
                     """
                     INSERT INTO link_discovery_projection (
-                        slug, owner_id, original_url, title, hostname, tags_json, created_at, updated_at, expires_at, deleted_at, lifecycle_state, version
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        slug, owner_id, workspace_id, original_url, title, hostname, tags_json, created_at, updated_at, expires_at, deleted_at, lifecycle_state, version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     linkLifecycleEvent.slug(),
                     linkLifecycleEvent.ownerId(),
+                    linkLifecycleEvent.workspaceId(),
                     linkLifecycleEvent.originalUrl(),
                     linkLifecycleEvent.title(),
                     linkLifecycleEvent.hostname(),
@@ -1614,9 +1627,10 @@ public class PostgresLinkStore implements LinkStore {
         } catch (DuplicateKeyException exception) {
             jdbcTemplate.update(
                     """
-                    UPDATE link_discovery_projection
-                    SET owner_id = ?,
-                        original_url = ?,
+                UPDATE link_discovery_projection
+                SET owner_id = ?,
+                    workspace_id = ?,
+                    original_url = ?,
                         title = ?,
                         hostname = ?,
                         tags_json = ?,
@@ -1629,6 +1643,7 @@ public class PostgresLinkStore implements LinkStore {
                       AND version < ?
                     """,
                     linkLifecycleEvent.ownerId(),
+                    linkLifecycleEvent.workspaceId(),
                     linkLifecycleEvent.originalUrl(),
                     linkLifecycleEvent.title(),
                     linkLifecycleEvent.hostname(),
@@ -1913,6 +1928,17 @@ public class PostgresLinkStore implements LinkStore {
 
     private Link toLink(String slug, String originalUrl) {
         return new Link(new LinkSlug(slug), new OriginalUrl(originalUrl));
+    }
+
+    private long resolveLegacyOwnerId(long workspaceId) {
+        Long ownerId = jdbcTemplate.queryForObject(
+                "SELECT created_by_owner_id FROM workspaces WHERE id = ?",
+                Long.class,
+                workspaceId);
+        if (ownerId == null) {
+            throw new IllegalArgumentException("Workspace not found: " + workspaceId);
+        }
+        return ownerId;
     }
 
     private LinkDetails toLinkDetails(

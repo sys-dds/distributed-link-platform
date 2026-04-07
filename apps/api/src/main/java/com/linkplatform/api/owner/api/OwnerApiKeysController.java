@@ -1,9 +1,10 @@
 package com.linkplatform.api.owner.api;
 
 import com.linkplatform.api.owner.application.ApiKeyLifecycleService;
-import com.linkplatform.api.owner.application.AuthenticatedOwner;
+import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.OwnerApiKeyRecord;
+import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -41,18 +42,22 @@ public class OwnerApiKeysController {
             @RequestBody CreateApiKeyRequest request,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest servletRequest) {
-        AuthenticatedOwner owner = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 servletRequest.getMethod(),
                 servletRequest.getRequestURI(),
-                servletRequest.getRemoteAddr());
+                servletRequest.getRemoteAddr(),
+                ApiKeyScope.API_KEYS_WRITE);
         ApiKeyLifecycleService.CreatedApiKey created = apiKeyLifecycleService.createKey(
-                owner,
+                context,
                 request == null ? null : request.label(),
                 request == null ? null : request.expiresAt(),
-                owner.ownerKey());
+                request == null ? null : request.scopes(),
+                context.ownerKey());
         return new CreatedApiKeyResponse(toResponse(created.record()), created.plaintextKey());
     }
 
@@ -60,14 +65,17 @@ public class OwnerApiKeysController {
     public List<OwnerApiKeyResponse> list(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest servletRequest) {
-        AuthenticatedOwner owner = ownerAccessService.authorizeRead(
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 servletRequest.getMethod(),
                 servletRequest.getRequestURI(),
-                servletRequest.getRemoteAddr());
-        return apiKeyLifecycleService.listKeys(owner.id()).stream()
+                servletRequest.getRemoteAddr(),
+                ApiKeyScope.API_KEYS_READ);
+        return apiKeyLifecycleService.listKeys(context.workspaceId()).stream()
                 .map(this::toResponse)
                 .toList();
     }
@@ -78,18 +86,22 @@ public class OwnerApiKeysController {
             @RequestBody(required = false) RotateApiKeyRequest request,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest servletRequest) {
-        AuthenticatedOwner owner = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 servletRequest.getMethod(),
                 servletRequest.getRequestURI(),
-                servletRequest.getRemoteAddr());
+                servletRequest.getRemoteAddr(),
+                ApiKeyScope.API_KEYS_WRITE);
         ApiKeyLifecycleService.CreatedApiKey rotated = apiKeyLifecycleService.rotate(
-                owner,
+                context,
                 keyId,
                 request == null ? null : request.expiresAt(),
-                owner.ownerKey());
+                request == null ? null : request.scopes(),
+                context.ownerKey());
         return new CreatedApiKeyResponse(toResponse(rotated.record()), rotated.plaintextKey());
     }
 
@@ -99,21 +111,26 @@ public class OwnerApiKeysController {
             @PathVariable long keyId,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest servletRequest) {
-        AuthenticatedOwner owner = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 servletRequest.getMethod(),
                 servletRequest.getRequestURI(),
-                servletRequest.getRemoteAddr());
-        apiKeyLifecycleService.revoke(owner, keyId, owner.ownerKey());
+                servletRequest.getRemoteAddr(),
+                ApiKeyScope.API_KEYS_WRITE);
+        apiKeyLifecycleService.revoke(context, keyId, context.ownerKey());
     }
 
     private OwnerApiKeyResponse toResponse(OwnerApiKeyRecord record) {
         return new OwnerApiKeyResponse(
                 record.id(),
+                record.workspaceSlug(),
                 record.keyPrefix(),
                 record.label(),
+                record.scopes().stream().map(ApiKeyScope::value).sorted().toList(),
                 record.createdAt(),
                 record.lastUsedAt(),
                 record.revokedAt(),

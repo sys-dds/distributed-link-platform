@@ -1,8 +1,9 @@
 package com.linkplatform.api.link.api;
 
 import com.linkplatform.api.link.application.LinkApplicationService;
-import com.linkplatform.api.owner.application.AuthenticatedOwner;
+import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
+import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,17 +41,20 @@ public class BulkLinksController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new IllegalArgumentException("Idempotency-Key header is required");
         }
         validateRequest(request);
-        AuthenticatedOwner owner = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext owner = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.LINKS_WRITE);
         return new BulkLinkActionResponse(
                 request.action().trim().toLowerCase(Locale.ROOT),
                 linkApplicationService.bulkAction(

@@ -9,6 +9,8 @@ import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,33 +21,52 @@ public class ApiKeyLifecycleService {
 
     private final OwnerApiKeyStore ownerApiKeyStore;
     private final SecurityEventStore securityEventStore;
+    private final WorkspacePermissionService workspacePermissionService;
     private final Clock clock;
+
+    @Autowired
+    public ApiKeyLifecycleService(
+            OwnerApiKeyStore ownerApiKeyStore,
+            SecurityEventStore securityEventStore,
+            WorkspacePermissionService workspacePermissionService) {
+        this.ownerApiKeyStore = ownerApiKeyStore;
+        this.securityEventStore = securityEventStore;
+        this.workspacePermissionService = workspacePermissionService;
+        this.clock = Clock.systemUTC();
+    }
 
     public ApiKeyLifecycleService(
             OwnerApiKeyStore ownerApiKeyStore,
             SecurityEventStore securityEventStore) {
-        this.ownerApiKeyStore = ownerApiKeyStore;
-        this.securityEventStore = securityEventStore;
-        this.clock = Clock.systemUTC();
+        this(ownerApiKeyStore, securityEventStore, new WorkspacePermissionService());
     }
 
     @Transactional
-    public CreatedApiKey createKey(AuthenticatedOwner owner, String label, OffsetDateTime expiresAt, String createdBy) {
+    public CreatedApiKey createKey(
+            WorkspaceAccessContext context,
+            String label,
+            OffsetDateTime expiresAt,
+            List<String> requestedScopes,
+            String createdBy) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        ownerApiKeyStore.lockOwner(owner.id());
-        enforceActiveKeyLimit(owner, now);
+        ownerApiKeyStore.lockWorkspace(context.workspaceId());
+        enforceActiveKeyLimit(context, now);
         GeneratedApiKey generatedApiKey = generateApiKey();
+        Set<ApiKeyScope> scopes = workspacePermissionService.validateRequestedScopes(context.role(), requestedScopes);
         OwnerApiKeyRecord record = ownerApiKeyStore.create(
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 generatedApiKey.keyPrefix(),
                 generatedApiKey.keyHash(),
                 normalizeLabel(label),
+                scopes,
                 now,
                 expiresAt,
-                createdBy == null || createdBy.isBlank() ? owner.ownerKey() : createdBy.trim());
+                createdBy == null || createdBy.isBlank() ? context.ownerKey() : createdBy.trim());
         securityEventStore.record(
                 SecurityEventType.API_KEY_CREATED,
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 generatedApiKey.keyHash(),
                 "POST",
                 "/api/v1/owner/api-keys",
@@ -55,20 +76,31 @@ public class ApiKeyLifecycleService {
         return new CreatedApiKey(record, generatedApiKey.plaintext());
     }
 
+    public CreatedApiKey createKey(
+            AuthenticatedOwner owner,
+            String label,
+            OffsetDateTime expiresAt,
+            String createdBy) {
+        return createKey(compatibilityContext(owner), label, expiresAt, WorkspaceRole.OWNER.impliedScopes().stream()
+                .map(ApiKeyScope::value)
+                .toList(), createdBy);
+    }
+
     @Transactional(readOnly = true)
-    public List<OwnerApiKeyRecord> listKeys(long ownerId) {
-        return ownerApiKeyStore.findByOwnerId(ownerId);
+    public List<OwnerApiKeyRecord> listKeys(long workspaceId) {
+        return ownerApiKeyStore.findByWorkspaceId(workspaceId);
     }
 
     @Transactional
-    public void revoke(AuthenticatedOwner owner, long keyId, String revokedBy) {
+    public void revoke(WorkspaceAccessContext context, long keyId, String revokedBy) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        OwnerApiKeyRecord record = ownerApiKeyStore.findById(owner.id(), keyId)
+        OwnerApiKeyRecord record = ownerApiKeyStore.findById(context.workspaceId(), keyId)
                 .orElseThrow(() -> new ApiKeyAuthenticationException("Owner API key not found"));
-        ownerApiKeyStore.revoke(owner.id(), keyId, now, actor(owner, revokedBy));
+        ownerApiKeyStore.revoke(context.workspaceId(), keyId, now, actor(context, revokedBy));
         securityEventStore.record(
                 SecurityEventType.API_KEY_REVOKED,
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 record.keyHash(),
                 "DELETE",
                 "/api/v1/owner/api-keys/" + keyId,
@@ -78,23 +110,32 @@ public class ApiKeyLifecycleService {
     }
 
     @Transactional
-    public CreatedApiKey rotate(AuthenticatedOwner owner, long keyId, OffsetDateTime expiresAt, String rotatedBy) {
+    public CreatedApiKey rotate(
+            WorkspaceAccessContext context,
+            long keyId,
+            OffsetDateTime expiresAt,
+            List<String> requestedScopes,
+            String rotatedBy) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        OwnerApiKeyRecord existing = ownerApiKeyStore.findById(owner.id(), keyId)
+        OwnerApiKeyRecord existing = ownerApiKeyStore.findById(context.workspaceId(), keyId)
                 .orElseThrow(() -> new ApiKeyAuthenticationException("Owner API key not found"));
         GeneratedApiKey generatedApiKey = generateApiKey();
-        ownerApiKeyStore.expire(owner.id(), keyId, now, actor(owner, rotatedBy));
+        Set<ApiKeyScope> scopes = workspacePermissionService.validateRequestedScopes(context.role(), requestedScopes);
+        ownerApiKeyStore.expire(context.workspaceId(), keyId, now, actor(context, rotatedBy));
         OwnerApiKeyRecord created = ownerApiKeyStore.create(
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 generatedApiKey.keyPrefix(),
                 generatedApiKey.keyHash(),
                 existing.label(),
+                scopes,
                 now,
                 expiresAt,
-                actor(owner, rotatedBy));
+                actor(context, rotatedBy));
         securityEventStore.record(
                 SecurityEventType.API_KEY_ROTATED,
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 generatedApiKey.keyHash(),
                 "POST",
                 "/api/v1/owner/api-keys/" + keyId + "/rotate",
@@ -103,7 +144,8 @@ public class ApiKeyLifecycleService {
                 now);
         securityEventStore.record(
                 SecurityEventType.API_KEY_EXPIRED,
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 existing.keyHash(),
                 "POST",
                 "/api/v1/owner/api-keys/" + keyId + "/rotate",
@@ -111,6 +153,16 @@ public class ApiKeyLifecycleService {
                 "Owner API key expired by rotation",
                 now);
         return new CreatedApiKey(created, generatedApiKey.plaintext());
+    }
+
+    public CreatedApiKey rotate(
+            AuthenticatedOwner owner,
+            long keyId,
+            OffsetDateTime expiresAt,
+            String rotatedBy) {
+        return rotate(compatibilityContext(owner), keyId, expiresAt, WorkspaceRole.OWNER.impliedScopes().stream()
+                .map(ApiKeyScope::value)
+                .toList(), rotatedBy);
     }
 
     @Transactional(readOnly = true)
@@ -124,10 +176,10 @@ public class ApiKeyLifecycleService {
         ownerApiKeyStore.touchLastUsed(record.id(), OffsetDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS));
     }
 
-    private void enforceActiveKeyLimit(AuthenticatedOwner owner, OffsetDateTime now) {
-        int activeKeyLimit = owner.plan() == OwnerPlan.FREE ? 2 : 10;
-        if (ownerApiKeyStore.findActiveByOwnerId(owner.id(), now).size() >= activeKeyLimit) {
-            throw new IllegalArgumentException("Active API key limit exceeded for owner " + owner.ownerKey());
+    private void enforceActiveKeyLimit(WorkspaceAccessContext context, OffsetDateTime now) {
+        int activeKeyLimit = context.plan() == OwnerPlan.FREE ? 2 : 10;
+        if (ownerApiKeyStore.findActiveByWorkspaceId(context.workspaceId(), now).size() >= activeKeyLimit) {
+            throw new IllegalArgumentException("Active API key limit exceeded for owner " + context.ownerKey());
         }
     }
 
@@ -139,8 +191,20 @@ public class ApiKeyLifecycleService {
         return normalized.length() <= 100 ? normalized : normalized.substring(0, 100);
     }
 
-    private String actor(AuthenticatedOwner owner, String value) {
-        return value == null || value.isBlank() ? owner.ownerKey() : value.trim();
+    private String actor(WorkspaceAccessContext context, String value) {
+        return value == null || value.isBlank() ? context.ownerKey() : value.trim();
+    }
+
+    private WorkspaceAccessContext compatibilityContext(AuthenticatedOwner owner) {
+        return new WorkspaceAccessContext(
+                owner,
+                owner.id(),
+                owner.ownerKey(),
+                owner.displayName(),
+                true,
+                WorkspaceRole.OWNER,
+                WorkspaceRole.OWNER.impliedScopes(),
+                null);
     }
 
     private GeneratedApiKey generateApiKey() {

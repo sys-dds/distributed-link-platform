@@ -3,11 +3,11 @@ package com.linkplatform.api.link.application;
 import com.linkplatform.api.link.domain.Link;
 import com.linkplatform.api.link.domain.LinkSlug;
 import com.linkplatform.api.link.domain.OriginalUrl;
-import com.linkplatform.api.owner.application.AuthenticatedOwner;
 import com.linkplatform.api.owner.application.OwnerQuotaExceededException;
 import com.linkplatform.api.owner.application.OwnerStore;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
+import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -69,7 +69,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     @Override
     @Transactional
-    public LinkMutationResult createLink(AuthenticatedOwner owner, CreateLinkCommand command, String idempotencyKey) {
+    public LinkMutationResult createLink(WorkspaceAccessContext context, CreateLinkCommand command, String idempotencyKey) {
         OffsetDateTime now = now();
         Link link = new Link(new LinkSlug(command.slug()), new OriginalUrl(command.originalUrl()));
         rejectReservedSlug(link.slug());
@@ -78,23 +78,24 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         List<String> normalizedTags = normalizeTags(command.tags());
         String hostname = extractHostname(link.originalUrl().value());
         String requestHash = fingerprintCreate(command.slug(), command.originalUrl(), command.expiresAt(), normalizedTitle, normalizedTags);
-        LinkMutationResult replayed = findReplayIfPresent(owner.id(), idempotencyKey, CREATE_OPERATION, requestHash);
+        LinkMutationResult replayed = findReplayIfPresent(context, idempotencyKey, CREATE_OPERATION, requestHash);
         if (replayed != null) {
             return replayed;
         }
 
-        ownerStore.lockById(owner.id());
-        enforceCreateQuota(owner, now);
+        ownerStore.lockById(context.ownerId());
+        enforceCreateQuota(context, now);
 
-        if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname, 1L, owner.id())) {
+        if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname, 1L, context.workspaceId())) {
             throw new DuplicateLinkSlugException(link.slug().value());
         }
-        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(link.slug().value(), owner.id())
+        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(link.slug().value(), context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(link.slug().value()));
         LinkLifecycleEvent lifecycleEvent = new LinkLifecycleEvent(
                 UUID.randomUUID().toString(),
                 LinkLifecycleEventType.CREATED,
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 storedDetails.slug(),
                 storedDetails.originalUrl(),
                 storedDetails.title(),
@@ -107,15 +108,15 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
         applyLifecycleReadModels(lifecycleEvent);
         LinkMutationResult result = LinkMutationResult.fromDetails(storedDetails);
-        saveIdempotentResult(owner.id(), idempotencyKey, CREATE_OPERATION, requestHash, result, now);
-        invalidateWriteCaches(owner.id(), link.slug().value());
+        saveIdempotentResult(context, idempotencyKey, CREATE_OPERATION, requestHash, result, now);
+        invalidateWriteCaches(context.workspaceId(), link.slug().value());
         return result;
     }
 
     @Override
     @Transactional
     public LinkMutationResult updateLink(
-            AuthenticatedOwner owner,
+            WorkspaceAccessContext context,
             String slug,
             String originalUrl,
             OffsetDateTime expiresAt,
@@ -137,12 +138,12 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 normalizedTitle,
                 normalizedTags,
                 expectedVersion);
-        LinkMutationResult replayed = findReplayIfPresent(owner.id(), idempotencyKey, UPDATE_OPERATION, requestHash);
+        LinkMutationResult replayed = findReplayIfPresent(context, idempotencyKey, UPDATE_OPERATION, requestHash);
         if (replayed != null) {
             return replayed;
         }
 
-        LinkDetails beforeUpdate = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
+        LinkDetails beforeUpdate = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         long nextVersion = beforeUpdate.version() + 1;
         if (!linkStore.update(
@@ -154,43 +155,44 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 hostname,
                 expectedVersion,
                 nextVersion,
-                owner.id())) {
+                context.workspaceId())) {
             throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
         }
 
-        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
+        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         LinkLifecycleEvent lifecycleEvent = toLifecycleEvent(
                 determineUpdateEventType(beforeUpdate, storedDetails),
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 storedDetails,
                 now);
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
         applyLifecycleReadModels(lifecycleEvent);
-        LinkDetails visibleDetails = linkStore.findDetailsBySlug(linkSlug.value(), now, owner.id())
+        LinkDetails visibleDetails = linkStore.findDetailsBySlug(linkSlug.value(), now, context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         LinkMutationResult result = LinkMutationResult.fromDetails(visibleDetails);
-        saveIdempotentResult(owner.id(), idempotencyKey, UPDATE_OPERATION, requestHash, result, now);
-        invalidateWriteCaches(owner.id(), linkSlug.value());
+        saveIdempotentResult(context, idempotencyKey, UPDATE_OPERATION, requestHash, result, now);
+        invalidateWriteCaches(context.workspaceId(), linkSlug.value());
         return result;
     }
 
     @Override
     @Transactional
-    public LinkMutationResult deleteLink(AuthenticatedOwner owner, String slug, long expectedVersion, String idempotencyKey) {
+    public LinkMutationResult deleteLink(WorkspaceAccessContext context, String slug, long expectedVersion, String idempotencyKey) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
         String requestHash = fingerprintDelete(linkSlug.value(), expectedVersion);
-        LinkMutationResult replayed = findReplayIfPresent(owner.id(), idempotencyKey, DELETE_OPERATION, requestHash);
+        LinkMutationResult replayed = findReplayIfPresent(context, idempotencyKey, DELETE_OPERATION, requestHash);
         if (replayed != null) {
             return replayed;
         }
 
-        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
+        LinkDetails storedDetails = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
-        LinkLifecycleState currentState = resolveCurrentState(storedDetails, owner.id(), now);
+        LinkLifecycleState currentState = resolveCurrentState(storedDetails, context.workspaceId(), now);
 
-        if (!linkStore.deleteBySlug(linkSlug.value(), expectedVersion, owner.id())) {
+        if (!linkStore.deleteBySlug(linkSlug.value(), expectedVersion, context.workspaceId())) {
             throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
         }
         LinkMutationResult result = new LinkMutationResult(
@@ -205,21 +207,22 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 true);
         LinkLifecycleEvent lifecycleEvent = toLifecycleEvent(
                 LinkLifecycleEventType.DELETED,
-                owner.id(),
+                context.ownerId(),
+                context.workspaceId(),
                 result,
                 persistedStateFor(currentState),
                 now);
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
         applyLifecycleReadModels(lifecycleEvent);
-        saveIdempotentResult(owner.id(), idempotencyKey, DELETE_OPERATION, requestHash, result, now);
-        invalidateWriteCaches(owner.id(), linkSlug.value());
+        saveIdempotentResult(context, idempotencyKey, DELETE_OPERATION, requestHash, result, now);
+        invalidateWriteCaches(context.workspaceId(), linkSlug.value());
         return result;
     }
 
     @Override
     @Transactional
     public LinkMutationResult changeLifecycle(
-            AuthenticatedOwner owner,
+            WorkspaceAccessContext context,
             String slug,
             String action,
             OffsetDateTime expiresAt,
@@ -229,16 +232,16 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         OffsetDateTime now = now();
         LifecycleAction lifecycleAction = parseLifecycleAction(action);
         String requestHash = fingerprintLifecycle(linkSlug.value(), lifecycleAction, expiresAt, expectedVersion);
-        LinkMutationResult replayed = findReplayIfPresent(owner.id(), idempotencyKey, LIFECYCLE_OPERATION, requestHash);
+        LinkMutationResult replayed = findReplayIfPresent(context, idempotencyKey, LIFECYCLE_OPERATION, requestHash);
         if (replayed != null) {
             return replayed;
         }
 
         LinkMutationResult result = null;
         LinkLifecycleEvent lifecycleEvent = null;
-        LinkStore.DeletedLinkSnapshot deletedSnapshot = linkStore.findDeletedSnapshotBySlug(linkSlug.value(), owner.id()).orElse(null);
-        LinkDetails current = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id()).orElse(null);
-        LinkLifecycleState currentState = resolveCurrentState(current, deletedSnapshot, owner.id(), linkSlug.value(), now);
+        LinkStore.DeletedLinkSnapshot deletedSnapshot = linkStore.findDeletedSnapshotBySlug(linkSlug.value(), context.workspaceId()).orElse(null);
+        LinkDetails current = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId()).orElse(null);
+        LinkLifecycleState currentState = resolveCurrentState(current, deletedSnapshot, context.workspaceId(), linkSlug.value(), now);
         validateLifecycleAction(currentState, lifecycleAction);
         switch (lifecycleAction) {
             case RESTORE -> {
@@ -250,13 +253,13 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 }
                 LinkLifecycleState restoredState = restoreTargetState(deletedSnapshot, now);
                 long nextVersion = deletedSnapshot.version() + 1;
-                if (!linkStore.restoreDeleted(deletedSnapshot, persistedStateFor(restoredState), nextVersion, owner.id())) {
+                if (!linkStore.restoreDeleted(deletedSnapshot, persistedStateFor(restoredState), nextVersion, context.workspaceId())) {
                     throw new LinkMutationConflictException("Deleted link cannot be restored for slug: " + linkSlug.value());
                 }
-                LinkDetails restored = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
+                LinkDetails restored = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId())
                         .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
                 result = LinkMutationResult.fromDetails(restored);
-                lifecycleEvent = toLifecycleEvent(LinkLifecycleEventType.RESTORED, owner.id(), restored, persistedStateFor(restoredState), now);
+                lifecycleEvent = toLifecycleEvent(LinkLifecycleEventType.RESTORED, context.ownerId(), context.workspaceId(), restored, persistedStateFor(restoredState), now);
             }
             case EXPIRE_NOW, EXTEND_EXPIRY, SUSPEND, RESUME, ARCHIVE, UNARCHIVE -> {
                 if (current == null) {
@@ -272,13 +275,13 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                         nextExpiresAt,
                         expectedVersion,
                         nextVersion,
-                        owner.id())) {
+                        context.workspaceId())) {
                     throw new LinkMutationConflictException("Link version conflict for slug: " + linkSlug.value());
                 }
-                LinkDetails updated = linkStore.findStoredDetailsBySlug(linkSlug.value(), owner.id())
+                LinkDetails updated = linkStore.findStoredDetailsBySlug(linkSlug.value(), context.workspaceId())
                         .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
                 result = LinkMutationResult.fromDetails(updated);
-                lifecycleEvent = toLifecycleEvent(determineLifecycleEventType(lifecycleAction), owner.id(), updated, persistedStateFor(nextState), now);
+                lifecycleEvent = toLifecycleEvent(determineLifecycleEventType(lifecycleAction), context.ownerId(), context.workspaceId(), updated, persistedStateFor(nextState), now);
             }
         }
         if (result == null || lifecycleEvent == null) {
@@ -286,15 +289,15 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         }
         linkLifecycleOutboxStore.saveLinkLifecycleEvent(lifecycleEvent);
         applyLifecycleReadModels(lifecycleEvent);
-        saveIdempotentResult(owner.id(), idempotencyKey, LIFECYCLE_OPERATION, requestHash, result, now);
-        invalidateWriteCaches(owner.id(), linkSlug.value());
+        saveIdempotentResult(context, idempotencyKey, LIFECYCLE_OPERATION, requestHash, result, now);
+        invalidateWriteCaches(context.workspaceId(), linkSlug.value());
         return result;
     }
 
     @Override
     @Transactional
     public List<BulkLinkActionResult> bulkAction(
-            AuthenticatedOwner owner,
+            WorkspaceAccessContext context,
             String action,
             List<String> slugs,
             List<String> tags,
@@ -309,21 +312,21 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             String itemIdempotencyKey = idempotencyKey + ":" + normalizedAction + ":" + slug;
             String bulkOperation = BULK_OPERATION_PREFIX + normalizedAction.toUpperCase(Locale.ROOT);
             String bulkRequestHash = fingerprintBulk(normalizedAction, slug, normalizedTags, expiresAt);
-            LinkMutationResult replayed = findReplayIfPresent(owner.id(), itemIdempotencyKey, bulkOperation, bulkRequestHash);
+            LinkMutationResult replayed = findReplayIfPresent(context, itemIdempotencyKey, bulkOperation, bulkRequestHash);
             if (replayed != null) {
                 results.add(new BulkLinkActionResult(slug, true, replayed.version(), null, null));
                 continue;
             }
             try {
                 LinkMutationResult result = switch (normalizedAction) {
-                    case "archive" -> changeLifecycle(owner, slug, "archive", null, currentVersion(owner, slug), null);
-                    case "suspend" -> changeLifecycle(owner, slug, "suspend", null, currentVersion(owner, slug), null);
-                    case "delete" -> deleteLink(owner, slug, currentVersion(owner, slug), null);
+                    case "archive" -> changeLifecycle(context, slug, "archive", null, currentVersion(context, slug), null);
+                    case "suspend" -> changeLifecycle(context, slug, "suspend", null, currentVersion(context, slug), null);
+                    case "delete" -> deleteLink(context, slug, currentVersion(context, slug), null);
                     case "update-tags" -> {
-                        LinkDetails current = linkStore.findStoredDetailsBySlug(slug, owner.id())
+                        LinkDetails current = linkStore.findStoredDetailsBySlug(slug, context.workspaceId())
                                 .orElseThrow(() -> new LinkNotFoundException(slug));
                         yield updateLink(
-                                owner,
+                                context,
                                 slug,
                                 current.originalUrl(),
                                 current.expiresAt(),
@@ -336,10 +339,10 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                         if (!expiresAt.isAfter(now)) {
                             throw new IllegalArgumentException("expiresAt must be in the future");
                         }
-                        LinkDetails current = linkStore.findStoredDetailsBySlug(slug, owner.id())
+                        LinkDetails current = linkStore.findStoredDetailsBySlug(slug, context.workspaceId())
                                 .orElseThrow(() -> new LinkNotFoundException(slug));
                         yield updateLink(
-                                owner,
+                                context,
                                 slug,
                                 current.originalUrl(),
                                 expiresAt,
@@ -350,7 +353,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                     }
                     default -> throw new IllegalArgumentException("Unsupported bulk action: " + normalizedAction);
                 };
-                saveIdempotentResult(owner.id(), itemIdempotencyKey, bulkOperation, bulkRequestHash, result, now);
+                saveIdempotentResult(context, itemIdempotencyKey, bulkOperation, bulkRequestHash, result, now);
                 results.add(new BulkLinkActionResult(slug, true, result.version(), null, null));
             } catch (LinkNotFoundException exception) {
                 results.add(new BulkLinkActionResult(slug, false, null, "not-found", exception.getMessage()));
@@ -397,17 +400,17 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     @Override
     @Transactional(readOnly = true)
-    public LinkDetails getLink(AuthenticatedOwner owner, String slug) {
+    public LinkDetails getLink(WorkspaceAccessContext context, String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
-        long generation = linkReadCache.getOwnerControlPlaneGeneration(owner.id());
+        long generation = linkReadCache.getOwnerControlPlaneGeneration(context.workspaceId());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return linkStore.findDetailsBySlug(linkSlug.value(), now(), owner.id())
+            return linkStore.findDetailsBySlug(linkSlug.value(), now(), context.workspaceId())
                     .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
         }
-        return linkReadCache.getOwnerLinkDetails(owner.id(), generation, linkSlug.value())
-                .or(() -> linkStore.findDetailsBySlug(linkSlug.value(), now(), owner.id())
+        return linkReadCache.getOwnerLinkDetails(context.workspaceId(), generation, linkSlug.value())
+                .or(() -> linkStore.findDetailsBySlug(linkSlug.value(), now(), context.workspaceId())
                         .map(linkDetails -> {
-                            linkReadCache.putOwnerLinkDetails(owner.id(), generation, linkSlug.value(), linkDetails);
+                            linkReadCache.putOwnerLinkDetails(context.workspaceId(), generation, linkSlug.value(), linkDetails);
                             return linkDetails;
                         }))
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
@@ -415,97 +418,97 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<LinkDetails> listRecentLinks(AuthenticatedOwner owner, int limit, String query, LinkLifecycleState state) {
-        long generation = linkReadCache.getOwnerControlPlaneGeneration(owner.id());
+    public List<LinkDetails> listRecentLinks(WorkspaceAccessContext context, int limit, String query, LinkLifecycleState state) {
+        long generation = linkReadCache.getOwnerControlPlaneGeneration(context.workspaceId());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return linkStore.findRecent(limit, now(), query, state, owner.id());
+            return linkStore.findRecent(limit, now(), query, state, context.workspaceId());
         }
-        return linkReadCache.getOwnerRecentLinks(owner.id(), generation, limit, query, state)
+        return linkReadCache.getOwnerRecentLinks(context.workspaceId(), generation, limit, query, state)
                 .orElseGet(() -> {
-                    List<LinkDetails> linkDetails = linkStore.findRecent(limit, now(), query, state, owner.id());
-                    linkReadCache.putOwnerRecentLinks(owner.id(), generation, limit, query, state, linkDetails);
+                    List<LinkDetails> linkDetails = linkStore.findRecent(limit, now(), query, state, context.workspaceId());
+                    linkReadCache.putOwnerRecentLinks(context.workspaceId(), generation, limit, query, state, linkDetails);
                     return linkDetails;
                 });
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<LinkSuggestion> suggestLinks(AuthenticatedOwner owner, String query, int limit) {
+    public List<LinkSuggestion> suggestLinks(WorkspaceAccessContext context, String query, int limit) {
         if (query == null || query.isBlank()) {
             return List.of();
         }
-        long generation = linkReadCache.getOwnerControlPlaneGeneration(owner.id());
+        long generation = linkReadCache.getOwnerControlPlaneGeneration(context.workspaceId());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return linkStore.findSuggestions(limit, now(), query, owner.id());
+            return linkStore.findSuggestions(limit, now(), query, context.workspaceId());
         }
-        return linkReadCache.getOwnerSuggestions(owner.id(), generation, query, limit)
+        return linkReadCache.getOwnerSuggestions(context.workspaceId(), generation, query, limit)
                 .orElseGet(() -> {
-                    List<LinkSuggestion> suggestions = linkStore.findSuggestions(limit, now(), query, owner.id());
-                    linkReadCache.putOwnerSuggestions(owner.id(), generation, query, limit, suggestions);
+                    List<LinkSuggestion> suggestions = linkStore.findSuggestions(limit, now(), query, context.workspaceId());
+                    linkReadCache.putOwnerSuggestions(context.workspaceId(), generation, query, limit, suggestions);
                     return suggestions;
                 });
     }
 
     @Override
     @Transactional(readOnly = true)
-    public LinkDiscoveryPage searchLinks(AuthenticatedOwner owner, LinkDiscoveryQuery query) {
-        long generation = linkReadCache.getOwnerControlPlaneGeneration(owner.id());
+    public LinkDiscoveryPage searchLinks(WorkspaceAccessContext context, LinkDiscoveryQuery query) {
+        long generation = linkReadCache.getOwnerControlPlaneGeneration(context.workspaceId());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return linkStore.searchDiscovery(now(), owner.id(), query);
+            return linkStore.searchDiscovery(now(), context.workspaceId(), query);
         }
-        return linkReadCache.getOwnerDiscoveryPage(owner.id(), generation, query)
+        return linkReadCache.getOwnerDiscoveryPage(context.workspaceId(), generation, query)
                 .orElseGet(() -> {
-                    LinkDiscoveryPage discoveryPage = linkStore.searchDiscovery(now(), owner.id(), query);
-                    linkReadCache.putOwnerDiscoveryPage(owner.id(), generation, query, discoveryPage);
+                    LinkDiscoveryPage discoveryPage = linkStore.searchDiscovery(now(), context.workspaceId(), query);
+                    linkReadCache.putOwnerDiscoveryPage(context.workspaceId(), generation, query, discoveryPage);
                     return discoveryPage;
                 });
     }
 
     @Override
     @Transactional(readOnly = true)
-    public long countActiveLinks(AuthenticatedOwner owner) {
-        return linkStore.countActiveLinksByOwner(owner.id());
+    public long countActiveLinks(WorkspaceAccessContext context) {
+        return linkStore.countActiveLinksByOwner(context.workspaceId());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit) {
+    public List<LinkActivityEvent> getRecentActivity(WorkspaceAccessContext context, int limit) {
         validateAnalyticsLimit(limit);
-        long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
+        long generation = linkReadCache.getOwnerAnalyticsGeneration(context.workspaceId());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return linkStore.findRecentActivity(limit, owner.id());
+            return linkStore.findRecentActivity(limit, context.workspaceId());
         }
-        return linkReadCache.getOwnerRecentActivity(owner.id(), generation, limit)
+        return linkReadCache.getOwnerRecentActivity(context.workspaceId(), generation, limit)
                 .orElseGet(() -> {
-                    List<LinkActivityEvent> activityEvents = linkStore.findRecentActivity(limit, owner.id());
-                    linkReadCache.putOwnerRecentActivity(owner.id(), generation, limit, activityEvents);
+                    List<LinkActivityEvent> activityEvents = linkStore.findRecentActivity(limit, context.workspaceId());
+                    linkReadCache.putOwnerRecentActivity(context.workspaceId(), generation, limit, activityEvents);
                     return activityEvents;
                 });
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<LinkActivityEvent> getRecentActivity(AuthenticatedOwner owner, int limit, String tag, String lifecycle) {
+    public List<LinkActivityEvent> getRecentActivity(WorkspaceAccessContext context, int limit, String tag, String lifecycle) {
         validateAnalyticsLimit(limit);
         if (isBlank(tag) && isBlank(lifecycle)) {
-            return getRecentActivity(owner, limit);
+            return getRecentActivity(context, limit);
         }
-        return linkStore.findRecentActivity(limit, normalizeTag(tag), parseLifecycleFilter(lifecycle), now(), owner.id());
+        return linkStore.findRecentActivity(limit, normalizeTag(tag), parseLifecycleFilter(lifecycle), now(), context.workspaceId());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public LinkTrafficSummary getTrafficSummary(AuthenticatedOwner owner, String slug) {
+    public LinkTrafficSummary getTrafficSummary(WorkspaceAccessContext context, String slug) {
         LinkSlug linkSlug = new LinkSlug(slug);
         OffsetDateTime now = now();
         LocalDate startDate = now.toLocalDate().minusDays(6);
-        long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
+        long generation = linkReadCache.getOwnerAnalyticsGeneration(context.workspaceId());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return buildTrafficSummary(owner.id(), generation, linkSlug, now, startDate);
+            return buildTrafficSummary(context.workspaceId(), generation, linkSlug, now, startDate);
         }
 
-        return linkReadCache.getOwnerTrafficSummary(owner.id(), generation, linkSlug.value())
-                .orElseGet(() -> buildTrafficSummary(owner.id(), generation, linkSlug, now, startDate));
+        return linkReadCache.getOwnerTrafficSummary(context.workspaceId(), generation, linkSlug.value())
+                .orElseGet(() -> buildTrafficSummary(context.workspaceId(), generation, linkSlug, now, startDate));
     }
 
     private LinkTrafficSummary buildTrafficSummary(
@@ -536,18 +539,18 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
 
     @Override
     @Transactional(readOnly = true)
-    public AnalyticsSummaryView getTrafficSummary(AuthenticatedOwner owner, String slug, AnalyticsRange range) {
-        LinkTrafficSummary summary = getTrafficSummary(owner, slug);
-        AnalyticsFreshness freshness = getAnalyticsFreshness(owner, slug);
+    public AnalyticsSummaryView getTrafficSummary(WorkspaceAccessContext context, String slug, AnalyticsRange range) {
+        LinkTrafficSummary summary = getTrafficSummary(context, slug);
+        AnalyticsFreshness freshness = getAnalyticsFreshness(context, slug);
         if (range == null) {
             return new AnalyticsSummaryView(summary, null, null, null, freshness, null);
         }
-        long currentWindowClicks = linkStore.countClicksForSlugInRange(slug, range.start(), range.end(), owner.id());
+        long currentWindowClicks = linkStore.countClicksForSlugInRange(slug, range.start(), range.end(), context.workspaceId());
         AnalyticsComparison comparison = range.comparePrevious()
                 ? AnalyticsComparison.of(
                         range,
                         currentWindowClicks,
-                        linkStore.countClicksForSlugInRange(slug, range.previousStart(), range.previousEnd(), owner.id()))
+                        linkStore.countClicksForSlugInRange(slug, range.previousStart(), range.previousEnd(), context.workspaceId()))
                 : null;
         return new AnalyticsSummaryView(
                 summary,
@@ -561,7 +564,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional(readOnly = true)
     public LinkTrafficSeriesView getTrafficSeries(
-            AuthenticatedOwner owner,
+            WorkspaceAccessContext context,
             String slug,
             AnalyticsRange range,
             String granularity) {
@@ -571,19 +574,19 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                         linkSlug.value(),
                         now().minusHours(24),
                         now().toLocalDate().minusDays(6),
-                        owner.id())
+                        context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
 
         List<LinkTrafficSeriesBucket> buckets = zeroFillBuckets(
                 range,
                 normalizedGranularity,
-                linkStore.findTrafficSeries(linkSlug.value(), range.start(), range.end(), normalizedGranularity, owner.id()));
+                linkStore.findTrafficSeries(linkSlug.value(), range.start(), range.end(), normalizedGranularity, context.workspaceId()));
         long currentWindowClicks = buckets.stream().mapToLong(LinkTrafficSeriesBucket::clickTotal).sum();
         AnalyticsComparison comparison = range.comparePrevious()
                 ? AnalyticsComparison.of(
                         range,
                         currentWindowClicks,
-                        linkStore.countClicksForSlugInRange(linkSlug.value(), range.previousStart(), range.previousEnd(), owner.id()))
+                        linkStore.countClicksForSlugInRange(linkSlug.value(), range.previousStart(), range.previousEnd(), context.workspaceId()))
                 : null;
         return new LinkTrafficSeriesView(
                 linkSlug.value(),
@@ -591,21 +594,21 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 range.end(),
                 normalizedGranularity,
                 buckets,
-                getAnalyticsFreshness(owner, linkSlug.value()),
+                getAnalyticsFreshness(context, linkSlug.value()),
                 comparison);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<TopLinkTraffic> getTopLinks(AuthenticatedOwner owner, LinkTrafficWindow window) {
-        long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
+    public List<TopLinkTraffic> getTopLinks(WorkspaceAccessContext context, LinkTrafficWindow window) {
+        long generation = linkReadCache.getOwnerAnalyticsGeneration(context.workspaceId());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return linkStore.findTopLinks(window, now(), owner.id());
+            return linkStore.findTopLinks(window, now(), context.workspaceId());
         }
-        return linkReadCache.getOwnerTopLinks(owner.id(), generation, window)
+        return linkReadCache.getOwnerTopLinks(context.workspaceId(), generation, window)
                 .orElseGet(() -> {
-                    List<TopLinkTraffic> topLinks = linkStore.findTopLinks(window, now(), owner.id());
-                    linkReadCache.putOwnerTopLinks(owner.id(), generation, window, topLinks);
+                    List<TopLinkTraffic> topLinks = linkStore.findTopLinks(window, now(), context.workspaceId());
+                    linkReadCache.putOwnerTopLinks(context.workspaceId(), generation, window, topLinks);
                     return topLinks;
                 });
     }
@@ -613,7 +616,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional(readOnly = true)
     public List<TopLinkTraffic> getTopLinks(
-            AuthenticatedOwner owner,
+            WorkspaceAccessContext context,
             LinkTrafficWindow window,
             AnalyticsRange range,
             String tag,
@@ -621,7 +624,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             int limit) {
         validateAnalyticsLimit(limit);
         if (range == null && isBlank(tag) && isBlank(lifecycle)) {
-            return getTopLinks(owner, window).stream().limit(limit).toList();
+            return getTopLinks(context, window).stream().limit(limit).toList();
         }
         LinkLifecycleState lifecycleFilter = parseLifecycleFilter(lifecycle);
         String normalizedTag = normalizeTag(tag);
@@ -634,23 +637,23 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                     normalizedTag,
                     lifecycleFilter,
                     asOf,
-                    owner.id());
+                    context.workspaceId());
         }
-        return linkStore.findTopLinks(window, asOf, limit, normalizedTag, lifecycleFilter, owner.id());
+        return linkStore.findTopLinks(window, asOf, limit, normalizedTag, lifecycleFilter, context.workspaceId());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<TrendingLink> getTrendingLinks(AuthenticatedOwner owner, LinkTrafficWindow window, int limit) {
+    public List<TrendingLink> getTrendingLinks(WorkspaceAccessContext context, LinkTrafficWindow window, int limit) {
         validateAnalyticsLimit(limit);
-        long generation = linkReadCache.getOwnerAnalyticsGeneration(owner.id());
+        long generation = linkReadCache.getOwnerAnalyticsGeneration(context.workspaceId());
         if (!linkReadCache.isCacheGenerationAvailable(generation)) {
-            return linkStore.findTrendingLinks(window, now(), limit, owner.id());
+            return linkStore.findTrendingLinks(window, now(), limit, context.workspaceId());
         }
-        return linkReadCache.getOwnerTrendingLinks(owner.id(), generation, window, limit)
+        return linkReadCache.getOwnerTrendingLinks(context.workspaceId(), generation, window, limit)
                 .orElseGet(() -> {
-                    List<TrendingLink> trendingLinks = linkStore.findTrendingLinks(window, now(), limit, owner.id());
-                    linkReadCache.putOwnerTrendingLinks(owner.id(), generation, window, limit, trendingLinks);
+                    List<TrendingLink> trendingLinks = linkStore.findTrendingLinks(window, now(), limit, context.workspaceId());
+                    linkReadCache.putOwnerTrendingLinks(context.workspaceId(), generation, window, limit, trendingLinks);
                     return trendingLinks;
                 });
     }
@@ -658,7 +661,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     @Override
     @Transactional(readOnly = true)
     public List<TrendingLink> getTrendingLinks(
-            AuthenticatedOwner owner,
+            WorkspaceAccessContext context,
             LinkTrafficWindow window,
             AnalyticsRange range,
             String tag,
@@ -666,7 +669,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             int limit) {
         validateAnalyticsLimit(limit);
         if (range == null && isBlank(tag) && isBlank(lifecycle)) {
-            return getTrendingLinks(owner, window, limit);
+            return getTrendingLinks(context, window, limit);
         }
         LinkLifecycleState lifecycleFilter = parseLifecycleFilter(lifecycle);
         String normalizedTag = normalizeTag(tag);
@@ -679,29 +682,29 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                     normalizedTag,
                     lifecycleFilter,
                     asOf,
-                    owner.id());
+                    context.workspaceId());
         }
-        return linkStore.findTrendingLinks(window, asOf, limit, normalizedTag, lifecycleFilter, owner.id());
+        return linkStore.findTrendingLinks(window, asOf, limit, normalizedTag, lifecycleFilter, context.workspaceId());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public AnalyticsFreshness getAnalyticsFreshness(AuthenticatedOwner owner) {
+    public AnalyticsFreshness getAnalyticsFreshness(WorkspaceAccessContext context) {
         OffsetDateTime asOf = now();
         return toFreshness(
                 asOf,
-                linkStore.findLatestMaterializedClickAt(owner.id()).orElse(null),
-                linkStore.findLatestMaterializedActivityAt(owner.id()).orElse(null));
+                linkStore.findLatestMaterializedClickAt(context.workspaceId()).orElse(null),
+                linkStore.findLatestMaterializedActivityAt(context.workspaceId()).orElse(null));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public AnalyticsFreshness getAnalyticsFreshness(AuthenticatedOwner owner, String slug) {
+    public AnalyticsFreshness getAnalyticsFreshness(WorkspaceAccessContext context, String slug) {
         OffsetDateTime asOf = now();
         return toFreshness(
                 asOf,
-                linkStore.findLatestMaterializedClickAt(slug, owner.id()).orElse(null),
-                linkStore.findLatestMaterializedActivityAt(slug, owner.id()).orElse(null));
+                linkStore.findLatestMaterializedClickAt(slug, context.workspaceId()).orElse(null),
+                linkStore.findLatestMaterializedActivityAt(slug, context.workspaceId()).orElse(null));
     }
 
     private void rejectReservedSlug(LinkSlug slug) {
@@ -772,12 +775,14 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private LinkLifecycleEvent toLifecycleEvent(
             LinkLifecycleEventType type,
             long ownerId,
+            long workspaceId,
             LinkDetails linkDetails,
             OffsetDateTime occurredAt) {
         return new LinkLifecycleEvent(
                 UUID.randomUUID().toString(),
                 type,
                 ownerId,
+                workspaceId,
                 linkDetails.slug(),
                 linkDetails.originalUrl(),
                 linkDetails.title(),
@@ -792,6 +797,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private LinkLifecycleEvent toLifecycleEvent(
             LinkLifecycleEventType type,
             long ownerId,
+            long workspaceId,
             LinkDetails linkDetails,
             LinkLifecycleState lifecycleState,
             OffsetDateTime occurredAt) {
@@ -799,6 +805,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 UUID.randomUUID().toString(),
                 type,
                 ownerId,
+                workspaceId,
                 linkDetails.slug(),
                 linkDetails.originalUrl(),
                 linkDetails.title(),
@@ -813,6 +820,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     private LinkLifecycleEvent toLifecycleEvent(
             LinkLifecycleEventType type,
             long ownerId,
+            long workspaceId,
             LinkMutationResult result,
             LinkLifecycleState lifecycleState,
             OffsetDateTime occurredAt) {
@@ -820,6 +828,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 UUID.randomUUID().toString(),
                 type,
                 ownerId,
+                workspaceId,
                 result.slug(),
                 result.originalUrl(),
                 result.title(),
@@ -992,8 +1001,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 : LinkLifecycleState.ACTIVE;
     }
 
-    private long currentVersion(AuthenticatedOwner owner, String slug) {
-        return linkStore.findStoredDetailsBySlug(slug, owner.id())
+    private long currentVersion(WorkspaceAccessContext context, String slug) {
+        return linkStore.findStoredDetailsBySlug(slug, context.workspaceId())
                 .map(LinkDetails::version)
                 .orElseThrow(() -> new LinkNotFoundException(slug));
     }
@@ -1089,11 +1098,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         return value == null || value.isBlank();
     }
 
-    private LinkMutationResult findReplayIfPresent(long ownerId, String idempotencyKey, String operation, String requestHash) {
+    private LinkMutationResult findReplayIfPresent(WorkspaceAccessContext context, String idempotencyKey, String operation, String requestHash) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return null;
         }
-        return linkMutationIdempotencyStore.findByKey(ownerId, idempotencyKey)
+        return linkMutationIdempotencyStore.findByKey(context.ownerId(), workspaceScopedIdempotencyKey(context, idempotencyKey))
                 .map(record -> {
                     if (!record.operation().equals(operation) || !record.requestHash().equals(requestHash)) {
                         throw new LinkMutationConflictException("Idempotency key cannot be reused for a different link mutation request");
@@ -1104,7 +1113,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     private void saveIdempotentResult(
-            long ownerId,
+            WorkspaceAccessContext context,
             String idempotencyKey,
             String operation,
             String requestHash,
@@ -1113,14 +1122,21 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return;
         }
-        linkMutationIdempotencyStore.saveResult(ownerId, idempotencyKey, operation, requestHash, result, createdAt);
+        linkMutationIdempotencyStore.saveResult(
+                context.ownerId(),
+                workspaceScopedIdempotencyKey(context, idempotencyKey),
+                operation,
+                requestHash,
+                result,
+                createdAt);
     }
 
-    private void enforceCreateQuota(AuthenticatedOwner owner, OffsetDateTime occurredAt) {
-        if (linkStore.countActiveLinksByOwner(owner.id()) >= owner.plan().activeLinkLimit()) {
+    private void enforceCreateQuota(WorkspaceAccessContext context, OffsetDateTime occurredAt) {
+        if (linkStore.countActiveLinksByOwner(context.workspaceId()) >= context.plan().activeLinkLimit()) {
             securityEventStore.record(
                     SecurityEventType.QUOTA_REJECTED,
-                    owner.id(),
+                    context.ownerId(),
+                    context.workspaceId(),
                     null,
                     "POST",
                     "/api/v1/links",
@@ -1128,8 +1144,12 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                     "Active link quota exceeded",
                     occurredAt);
             throw new OwnerQuotaExceededException(
-                    "Active link quota exceeded for owner " + owner.ownerKey() + " on plan " + owner.plan().name());
+                    "Active link quota exceeded for owner " + context.ownerKey() + " on plan " + context.plan().name());
         }
+    }
+
+    private String workspaceScopedIdempotencyKey(WorkspaceAccessContext context, String idempotencyKey) {
+        return context.workspaceId() + ":" + idempotencyKey;
     }
 
     private String fingerprintCreate(
@@ -1199,6 +1219,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         };
         return new LinkActivityEvent(
                 lifecycleEvent.ownerId(),
+                lifecycleEvent.workspaceId(),
                 activityType,
                 lifecycleEvent.slug(),
                 lifecycleEvent.originalUrl(),

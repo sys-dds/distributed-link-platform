@@ -6,6 +6,7 @@ import com.linkplatform.api.link.application.LinkTrafficWindow;
 import com.linkplatform.api.link.application.LinkStore;
 import com.linkplatform.api.link.application.OwnerTrafficTotals;
 import com.linkplatform.api.link.application.TopReferrer;
+import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
@@ -48,17 +49,20 @@ public class LinkAnalyticsController {
             @RequestParam(defaultValue = "false") boolean comparePrevious,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         var owner = ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.ANALYTICS_READ);
         return toResponse(
                 linkApplicationService.getTrafficSummary(owner, slug, AnalyticsRange.optional(from, to, comparePrevious)),
                 slug,
-                owner.id());
+                owner.workspaceId());
     }
 
     @GetMapping("/{slug}/traffic-series")
@@ -70,13 +74,16 @@ public class LinkAnalyticsController {
             @RequestParam(defaultValue = "false") boolean comparePrevious,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         var owner = ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.ANALYTICS_READ);
         return LinkTrafficSeriesResponse.from(linkApplicationService.getTrafficSeries(
                 owner,
                 slug,
@@ -94,15 +101,18 @@ public class LinkAnalyticsController {
             @RequestParam(defaultValue = "" + DEFAULT_TOP_LIMIT) int limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         AnalyticsRange range = AnalyticsRange.optional(from, to, false);
         return linkApplicationService.getTopLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
                                 authorizationHeader,
+                                workspaceSlug,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
-                                httpServletRequest.getRemoteAddr()),
+                                httpServletRequest.getRemoteAddr(),
+                                ApiKeyScope.ANALYTICS_READ),
                         range == null ? parseWindow(window) : LinkTrafficWindow.LAST_7_DAYS,
                         range,
                         tag,
@@ -119,14 +129,17 @@ public class LinkAnalyticsController {
             @RequestParam(required = false) String lifecycle,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         return linkApplicationService.getRecentActivity(
                         ownerAccessService.authorizeRead(
                                 apiKey,
                                 authorizationHeader,
+                                workspaceSlug,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
-                                httpServletRequest.getRemoteAddr()),
+                                httpServletRequest.getRemoteAddr(),
+                                ApiKeyScope.ANALYTICS_READ),
                         limit,
                         tag,
                         lifecycle).stream()
@@ -145,15 +158,18 @@ public class LinkAnalyticsController {
             @RequestParam(required = false) String lifecycle,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         AnalyticsRange range = AnalyticsRange.optional(from, to, comparePrevious);
         return linkApplicationService.getTrendingLinks(
                         ownerAccessService.authorizeRead(
                                 apiKey,
                                 authorizationHeader,
+                                workspaceSlug,
                                 httpServletRequest.getMethod(),
                                 httpServletRequest.getRequestURI(),
-                                httpServletRequest.getRemoteAddr()),
+                                httpServletRequest.getRemoteAddr(),
+                                ApiKeyScope.ANALYTICS_READ),
                         range == null ? parseWindow(window) : LinkTrafficWindow.LAST_7_DAYS,
                         range,
                         tag,

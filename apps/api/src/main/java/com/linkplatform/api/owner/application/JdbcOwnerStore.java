@@ -35,6 +35,24 @@ public class JdbcOwnerStore implements OwnerStore {
     }
 
     @Override
+    public Optional<AuthenticatedOwner> findById(long ownerId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT id, owner_key, display_name, plan
+                        FROM owners
+                        WHERE id = ?
+                        """,
+                        (resultSet, rowNum) -> new AuthenticatedOwner(
+                                resultSet.getLong("id"),
+                                resultSet.getString("owner_key"),
+                                resultSet.getString("display_name"),
+                                OwnerPlan.valueOf(resultSet.getString("plan"))),
+                        ownerId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public void lockById(long ownerId) {
         jdbcTemplate.queryForObject(
                 "SELECT id FROM owners WHERE id = ? FOR UPDATE",

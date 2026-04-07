@@ -5,6 +5,7 @@ import com.linkplatform.api.link.application.LinkLifecycleOutboxRelay;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxStore;
 import com.linkplatform.api.link.application.PipelineControl;
 import com.linkplatform.api.link.application.PipelineControlStore;
+import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
@@ -63,13 +64,16 @@ public class LifecyclePipelineController {
     public LifecyclePipelineStatusResponse getStatus(
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_READ);
         return buildStatusResponse();
     }
 
@@ -78,13 +82,16 @@ public class LifecyclePipelineController {
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_READ);
         validateLimit(limit);
         return linkLifecycleOutboxStore.findParked(limit).stream()
                 .map(this::toResponse)
@@ -96,13 +103,16 @@ public class LifecyclePipelineController {
             @PathVariable long id,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
         if (!linkLifecycleOutboxStore.requeueParked(id, OffsetDateTime.now(clock))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Parked lifecycle outbox row not found: " + id);
         }
@@ -115,13 +125,16 @@ public class LifecyclePipelineController {
             @org.springframework.web.bind.annotation.RequestBody RequeueParkedBatchRequest request,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
         List<Long> ids = validateBatchRequest(request);
         linkLifecycleOutboxStore.requeueParkedBatch(ids, OffsetDateTime.now(clock));
         pipelineControlStore.recordRequeue(PIPELINE_NAME, OffsetDateTime.now(clock));
@@ -133,13 +146,16 @@ public class LifecyclePipelineController {
             @org.springframework.web.bind.annotation.RequestBody(required = false) UpdatePipelineControlRequest request,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         var owner = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
         OffsetDateTime now = OffsetDateTime.now(clock);
         String reason = request == null ? null : request.reason();
         httpServletRequest.setAttribute("operatorOperation", "lifecycle_pipeline_pause");
@@ -147,7 +163,7 @@ public class LifecyclePipelineController {
         pipelineControlStore.pause(PIPELINE_NAME, reason, now);
         securityEventStore.record(
                 SecurityEventType.LIFECYCLE_PIPELINE_PAUSED,
-                owner.id(),
+                owner.ownerId(),
                 null,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
@@ -161,19 +177,22 @@ public class LifecyclePipelineController {
     public LifecyclePipelineStatusResponse resume(
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         var owner = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
         OffsetDateTime now = OffsetDateTime.now(clock);
         httpServletRequest.setAttribute("operatorOperation", "lifecycle_pipeline_resume");
         pipelineControlStore.resume(PIPELINE_NAME, now);
         securityEventStore.record(
                 SecurityEventType.LIFECYCLE_PIPELINE_RESUMED,
-                owner.id(),
+                owner.ownerId(),
                 null,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
@@ -187,19 +206,22 @@ public class LifecyclePipelineController {
     public PipelineTickResponse forceTick(
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         var owner = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
         OffsetDateTime now = OffsetDateTime.now(clock);
         httpServletRequest.setAttribute("operatorOperation", "lifecycle_pipeline_force_tick");
         pipelineControlStore.recordForceTick(PIPELINE_NAME, now);
         securityEventStore.record(
                 SecurityEventType.LIFECYCLE_PIPELINE_FORCE_TICKED,
-                owner.id(),
+                owner.ownerId(),
                 null,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
@@ -221,13 +243,16 @@ public class LifecyclePipelineController {
             @RequestParam(required = false) Integer limit,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
         var owner = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
+                workspaceSlug,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr());
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
         OffsetDateTime now = OffsetDateTime.now(clock);
         int requestedLimit = limit == null ? DEFAULT_REQUEUE_LIMIT : limit;
         int appliedLimit = resolveRequeueLimit(limit);
@@ -239,7 +264,7 @@ public class LifecyclePipelineController {
                 : pipelineControlStore.get(PIPELINE_NAME);
         securityEventStore.record(
                 SecurityEventType.LIFECYCLE_PIPELINE_DRAINED,
-                owner.id(),
+                owner.ownerId(),
                 null,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
