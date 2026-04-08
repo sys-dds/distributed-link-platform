@@ -62,6 +62,14 @@ public class WorkspacePermissionService {
         requireScope(context, ApiKeyScope.EXPORTS_WRITE);
     }
 
+    public void requireImportsRead(WorkspaceAccessContext context) {
+        requireExportsRead(context);
+    }
+
+    public void requireImportsWrite(WorkspaceAccessContext context) {
+        requireExportsWrite(context);
+    }
+
     public void requireRetentionRead(WorkspaceAccessContext context) {
         requireScope(context, ApiKeyScope.RETENTION_READ);
     }

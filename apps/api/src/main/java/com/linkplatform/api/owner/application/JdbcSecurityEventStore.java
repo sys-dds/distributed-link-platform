@@ -184,6 +184,9 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case WORKSPACE_EXPORT_REQUESTED -> "Workspace export requested";
             case WORKSPACE_EXPORT_COMPLETED -> "Workspace export completed";
             case WORKSPACE_EXPORT_FAILED -> "Workspace export failed";
+            case WORKSPACE_IMPORT_REQUESTED -> "Workspace import requested";
+            case WORKSPACE_IMPORT_COMPLETED -> "Workspace import completed";
+            case WORKSPACE_IMPORT_FAILED -> "Workspace import failed";
             case WORKSPACE_RETENTION_PURGE_RUN -> "Workspace retention purge run";
             case ANALYTICS_PIPELINE_PAUSED -> "Analytics pipeline paused";
             case ANALYTICS_PIPELINE_RESUMED -> "Analytics pipeline resumed";

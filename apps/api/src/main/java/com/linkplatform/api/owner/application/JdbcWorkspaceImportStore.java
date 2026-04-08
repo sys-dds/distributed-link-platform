@@ -14,34 +14,45 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Component;
 
 @Component
-public class JdbcWorkspaceExportStore implements WorkspaceExportStore {
+public class JdbcWorkspaceImportStore implements WorkspaceImportStore {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
-    public JdbcWorkspaceExportStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public JdbcWorkspaceImportStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
     }
 
     @Override
-    public WorkspaceExportRecord create(long workspaceId, long requestedByOwnerId, boolean includeClicks, boolean includeSecurityEvents, boolean includeAbuseCases, boolean includeWebhooks, OffsetDateTime createdAt) {
+    public WorkspaceImportRecord create(
+            long workspaceId,
+            long requestedByOwnerId,
+            Long sourceExportId,
+            boolean dryRun,
+            boolean overwriteConflicts,
+            JsonNode payloadJson,
+            OffsetDateTime createdAt) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             var statement = connection.prepareStatement(
                     """
-                    INSERT INTO workspace_exports (
-                        workspace_id, requested_by_owner_id, status, include_clicks, include_security_events,
-                        include_abuse_cases, include_webhooks, created_at
-                    ) VALUES (?, ?, 'QUEUED', ?, ?, ?, ?, ?)
+                    INSERT INTO workspace_import_jobs (
+                        workspace_id, requested_by_owner_id, source_export_id, status, dry_run,
+                        overwrite_conflicts, payload_json, created_at
+                    ) VALUES (?, ?, ?, 'QUEUED', ?, ?, CAST(? AS JSONB), ?)
                     """,
                     new String[] {"id"});
             statement.setLong(1, workspaceId);
             statement.setLong(2, requestedByOwnerId);
-            statement.setBoolean(3, includeClicks);
-            statement.setBoolean(4, includeSecurityEvents);
-            statement.setBoolean(5, includeAbuseCases);
-            statement.setBoolean(6, includeWebhooks);
+            if (sourceExportId == null) {
+                statement.setNull(3, java.sql.Types.BIGINT);
+            } else {
+                statement.setLong(3, sourceExportId);
+            }
+            statement.setBoolean(4, dryRun);
+            statement.setBoolean(5, overwriteConflicts);
+            statement.setString(6, serialize(payloadJson));
             statement.setObject(7, createdAt);
             return statement;
         }, keyHolder);
@@ -49,34 +60,23 @@ public class JdbcWorkspaceExportStore implements WorkspaceExportStore {
     }
 
     @Override
-    public List<WorkspaceExportRecord> findByWorkspaceId(long workspaceId, int limit) {
+    public List<WorkspaceImportRecord> findByWorkspaceId(long workspaceId, int limit) {
         return jdbcTemplate.query(selectSql() + " WHERE workspace_id = ? ORDER BY created_at DESC, id DESC LIMIT ?", this::mapRecord, workspaceId, limit);
     }
 
     @Override
-    public Optional<WorkspaceExportRecord> findById(long workspaceId, long exportId) {
-        return jdbcTemplate.query(selectSql() + " WHERE workspace_id = ? AND id = ?", this::mapRecord, workspaceId, exportId)
+    public Optional<WorkspaceImportRecord> findById(long workspaceId, long importId) {
+        return jdbcTemplate.query(selectSql() + " WHERE workspace_id = ? AND id = ?", this::mapRecord, workspaceId, importId)
                 .stream()
                 .findFirst();
     }
 
     @Override
-    public Optional<WorkspaceExportRecord> findCompletedById(long workspaceId, long exportId) {
-        return jdbcTemplate.query(
-                        selectSql() + " WHERE workspace_id = ? AND id = ? AND status IN ('READY', 'COMPLETED')",
-                        this::mapRecord,
-                        workspaceId,
-                        exportId)
-                .stream()
-                .findFirst();
-    }
-
-    @Override
-    public Optional<WorkspaceExportRecord> claimNextQueued(OffsetDateTime now) {
+    public Optional<WorkspaceImportRecord> claimNextQueued(OffsetDateTime now) {
         List<Long> ids = jdbcTemplate.query(
                 """
                 SELECT id
-                FROM workspace_exports
+                FROM workspace_import_jobs
                 WHERE status = 'QUEUED'
                 ORDER BY created_at ASC, id ASC
                 LIMIT 1
@@ -87,36 +87,51 @@ public class JdbcWorkspaceExportStore implements WorkspaceExportStore {
         }
         long id = ids.getFirst();
         jdbcTemplate.update(
-                "UPDATE workspace_exports SET status = 'RUNNING', started_at = ? WHERE id = ? AND status = 'QUEUED'",
+                "UPDATE workspace_import_jobs SET status = 'RUNNING', started_at = ? WHERE id = ? AND status = 'QUEUED'",
                 now,
                 id);
         return jdbcTemplate.query(selectSql() + " WHERE id = ?", this::mapRecord, id).stream().findFirst();
     }
 
     @Override
-    public void markReady(long exportId, JsonNode payload, long payloadSizeBytes, OffsetDateTime completedAt) {
+    public void markReadyToApply(long importId, JsonNode summaryJson, OffsetDateTime completedAt) {
         jdbcTemplate.update(
                 """
-                UPDATE workspace_exports
-                SET status = 'READY',
-                    payload_json = CAST(? AS JSONB),
-                    payload_size_bytes = ?,
+                UPDATE workspace_import_jobs
+                SET status = 'READY_TO_APPLY',
+                    summary_json = CAST(? AS JSONB),
                     completed_at = ?,
                     failed_at = NULL,
                     last_error = NULL
                 WHERE id = ?
                 """,
-                serialize(payload),
-                payloadSizeBytes,
+                serialize(summaryJson),
                 completedAt,
-                exportId);
+                importId);
     }
 
     @Override
-    public void markFailed(long exportId, String lastError, OffsetDateTime failedAt) {
+    public void markCompleted(long importId, JsonNode summaryJson, OffsetDateTime completedAt) {
         jdbcTemplate.update(
                 """
-                UPDATE workspace_exports
+                UPDATE workspace_import_jobs
+                SET status = 'COMPLETED',
+                    summary_json = CAST(? AS JSONB),
+                    completed_at = ?,
+                    failed_at = NULL,
+                    last_error = NULL
+                WHERE id = ?
+                """,
+                serialize(summaryJson),
+                completedAt,
+                importId);
+    }
+
+    @Override
+    public void markFailed(long importId, String lastError, OffsetDateTime failedAt) {
+        jdbcTemplate.update(
+                """
+                UPDATE workspace_import_jobs
                 SET status = 'FAILED',
                     failed_at = ?,
                     last_error = ?
@@ -124,30 +139,29 @@ public class JdbcWorkspaceExportStore implements WorkspaceExportStore {
                 """,
                 failedAt,
                 shorten(lastError, 1024),
-                exportId);
+                importId);
     }
 
     private String selectSql() {
         return """
-                SELECT id, workspace_id, requested_by_owner_id, status, include_clicks, include_security_events,
-                       include_abuse_cases, include_webhooks, payload_json, payload_size_bytes, created_at,
-                       started_at, completed_at, failed_at, last_error
-                FROM workspace_exports
+                SELECT id, workspace_id, requested_by_owner_id, source_export_id, status, dry_run,
+                       overwrite_conflicts, payload_json, summary_json, created_at, started_at,
+                       completed_at, failed_at, last_error
+                FROM workspace_import_jobs
                 """;
     }
 
-    private WorkspaceExportRecord mapRecord(ResultSet resultSet, int rowNum) throws SQLException {
-        return new WorkspaceExportRecord(
+    private WorkspaceImportRecord mapRecord(ResultSet resultSet, int rowNum) throws SQLException {
+        return new WorkspaceImportRecord(
                 resultSet.getLong("id"),
                 resultSet.getLong("workspace_id"),
                 resultSet.getLong("requested_by_owner_id"),
+                resultSet.getObject("source_export_id", Long.class),
                 resultSet.getString("status"),
-                resultSet.getBoolean("include_clicks"),
-                resultSet.getBoolean("include_security_events"),
-                resultSet.getBoolean("include_abuse_cases"),
-                resultSet.getBoolean("include_webhooks"),
+                resultSet.getBoolean("dry_run"),
+                resultSet.getBoolean("overwrite_conflicts"),
                 deserialize(resultSet.getString("payload_json")),
-                resultSet.getObject("payload_size_bytes", Long.class),
+                deserialize(resultSet.getString("summary_json")),
                 resultSet.getObject("created_at", OffsetDateTime.class),
                 resultSet.getObject("started_at", OffsetDateTime.class),
                 resultSet.getObject("completed_at", OffsetDateTime.class),
@@ -155,11 +169,11 @@ public class JdbcWorkspaceExportStore implements WorkspaceExportStore {
                 resultSet.getString("last_error"));
     }
 
-    private String serialize(JsonNode payload) {
+    private String serialize(JsonNode jsonNode) {
         try {
-            return objectMapper.writeValueAsString(payload);
+            return objectMapper.writeValueAsString(jsonNode);
         } catch (JsonProcessingException exception) {
-            throw new IllegalArgumentException("Workspace export payload could not be serialized", exception);
+            throw new IllegalArgumentException("Workspace import JSON could not be serialized", exception);
         }
     }
 
@@ -170,7 +184,7 @@ public class JdbcWorkspaceExportStore implements WorkspaceExportStore {
         try {
             return objectMapper.readTree(payloadJson);
         } catch (JsonProcessingException exception) {
-            throw new IllegalArgumentException("Workspace export payload could not be deserialized", exception);
+            throw new IllegalArgumentException("Workspace import JSON could not be deserialized", exception);
         }
     }
 

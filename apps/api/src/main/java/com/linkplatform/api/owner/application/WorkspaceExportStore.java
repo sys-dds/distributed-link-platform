@@ -13,6 +13,8 @@ public interface WorkspaceExportStore {
 
     Optional<WorkspaceExportRecord> findById(long workspaceId, long exportId);
 
+    Optional<WorkspaceExportRecord> findCompletedById(long workspaceId, long exportId);
+
     Optional<WorkspaceExportRecord> claimNextQueued(OffsetDateTime now);
 
     void markReady(long exportId, JsonNode payload, long payloadSizeBytes, OffsetDateTime completedAt);
