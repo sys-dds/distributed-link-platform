@@ -5,6 +5,7 @@ spring:
 
 link-platform:
   webhooks:
+    # The local docker platform stack uses an in-cluster HTTP webhook sink on a private host.
     allow-private-callback-hosts: true
     allow-http-callbacks: true
 

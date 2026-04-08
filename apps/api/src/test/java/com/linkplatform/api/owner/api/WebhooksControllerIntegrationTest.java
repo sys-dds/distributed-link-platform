@@ -52,6 +52,19 @@ class WebhooksControllerIntegrationTest {
     }
 
     @Test
+    void privateHttpsCallbacksAreAlsoRejectedWhenHostAllowanceIsDisabled() throws Exception {
+        String apiKey = bootstrapPersonalWorkspaceApiKey("strict-webhooks-private-key", "[\"webhooks:write\"]");
+        mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
+                        .header("X-API-Key", apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"strict-private","callbackUrl":"https://127.0.0.1:8080/hook","eventTypes":["link.created"],"enabled":true}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Webhook callbackUrl must not target localhost or private addresses"));
+    }
+
+    @Test
     void allowFlagsStayExplicitInTestAndDockerConfigs() {
         var testFactory = new YamlPropertiesFactoryBean();
         testFactory.setResources(new ClassPathResource("application-test.yml"));
@@ -59,9 +72,9 @@ class WebhooksControllerIntegrationTest {
 
         org.assertj.core.api.Assertions.assertThat(test).isNotNull();
         org.assertj.core.api.Assertions.assertThat(test.getProperty("link-platform.webhooks.allow-private-callback-hosts"))
-                .isEqualTo("true");
+                .isEqualTo("false");
         org.assertj.core.api.Assertions.assertThat(test.getProperty("link-platform.webhooks.allow-http-callbacks"))
-                .isEqualTo("true");
+                .isEqualTo("false");
     }
 
     @Test

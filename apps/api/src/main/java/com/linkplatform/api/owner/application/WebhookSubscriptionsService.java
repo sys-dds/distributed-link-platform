@@ -66,7 +66,7 @@ public class WebhookSubscriptionsService {
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (enabled) {
-            workspaceEntitlementService.enforceWebhooksQuota(context.workspaceId(), enabledWebhookCount(context.workspaceId()));
+            enforceEnabledWebhookQuota(context.workspaceId());
         }
         WebhookSigningService.GeneratedSecret secret = webhookSigningService.generateSecret();
         WebhookSubscriptionRecord record = webhookSubscriptionsStore.create(
@@ -118,7 +118,7 @@ public class WebhookSubscriptionsService {
         WebhookSubscriptionRecord existing = requireSubscription(context.workspaceId(), subscriptionId);
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (Boolean.TRUE.equals(enabled) && (!existing.enabled() || existing.disabledAt() != null)) {
-            workspaceEntitlementService.enforceWebhooksQuota(context.workspaceId(), enabledWebhookCount(context.workspaceId()));
+            enforceEnabledWebhookQuota(context.workspaceId());
         }
         WebhookSubscriptionRecord updated = webhookSubscriptionsStore.update(
                 context.workspaceId(),
@@ -246,6 +246,10 @@ public class WebhookSubscriptionsService {
         return webhookSubscriptionsStore.countEnabledByWorkspaceId(workspaceId);
     }
 
+    private void enforceEnabledWebhookQuota(long workspaceId) {
+        workspaceEntitlementService.enforceWebhooksQuota(workspaceId, enabledWebhookCount(workspaceId));
+    }
+
     private void validateCallbackUrl(String callbackUrl) {
         try {
             URI uri = URI.create(callbackUrl);
@@ -253,27 +257,35 @@ public class WebhookSubscriptionsService {
             if (scheme == null || scheme.isBlank()) {
                 throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must be a valid absolute https URL");
             }
-            boolean allowHttpCallbacks = runtimeProperties.getWebhooks().isAllowHttpCallbacks();
-            boolean allowPrivateCallbackHosts = runtimeProperties.getWebhooks().isAllowPrivateCallbackHosts();
-            boolean https = "https".equalsIgnoreCase(scheme);
-            boolean http = "http".equalsIgnoreCase(scheme);
-            if (!https && !(http && allowHttpCallbacks)) {
-                throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must use https");
-            }
             if (uri.getHost() == null || uri.getHost().isBlank()) {
                 throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl host is required");
             }
+            validateCallbackScheme(scheme);
             String host = uri.getHost().trim().toLowerCase(java.util.Locale.ROOT);
-            boolean localhost = "localhost".equals(host);
-            boolean privateOrLocalHost = localhost || isPrivateOrLocalAddress(host);
-            if (privateOrLocalHost && !allowPrivateCallbackHosts) {
-                throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must not target localhost or private addresses");
-            }
+            validateCallbackHost(host);
         } catch (RuntimeException exception) {
             if (exception instanceof InvalidWebhookCallbackUrlException) {
                 throw exception;
             }
             throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must be a valid absolute https URL");
+        }
+    }
+
+    private void validateCallbackScheme(String scheme) {
+        boolean https = "https".equalsIgnoreCase(scheme);
+        boolean http = "http".equalsIgnoreCase(scheme);
+        // allow-http-callbacks only relaxes the scheme requirement. Host safety remains unchanged here.
+        if (!https && !(http && !runtimeProperties.getWebhooks().requireHttpsCallbacks())) {
+            throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must use https");
+        }
+    }
+
+    private void validateCallbackHost(String host) {
+        boolean localhost = "localhost".equals(host);
+        boolean privateOrLocalHost = localhost || isPrivateOrLocalAddress(host);
+        // allow-private-callback-hosts only relaxes host safety. Scheme validation has already happened above.
+        if (privateOrLocalHost && runtimeProperties.getWebhooks().requirePublicCallbackHosts()) {
+            throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must not target localhost or private addresses");
         }
     }
 

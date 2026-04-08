@@ -15,6 +15,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(properties = {
         "spring.task.scheduling.enabled=false",
+        "link-platform.webhooks.allow-private-callback-hosts=true",
+        "link-platform.webhooks.allow-http-callbacks=true",
         "link-platform.webhooks.parked-threshold=2",
         "link-platform.webhooks.disable-threshold=3",
         "link-platform.webhooks.connect-timeout-seconds=1",

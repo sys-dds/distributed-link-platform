@@ -51,15 +51,15 @@ public interface ProjectionJobStore {
 
     long countActive();
 
-    long countQueued(Long workspaceId);
+    long countQueued(long workspaceId);
 
-    long countActive(Long workspaceId);
+    long countActive(long workspaceId);
 
-    long countFailed(Long workspaceId);
+    long countFailed(long workspaceId);
 
-    long countCompleted(Long workspaceId);
+    long countCompleted(long workspaceId);
 
-    Optional<OffsetDateTime> findLatestStartedAt(Long workspaceId);
+    Optional<OffsetDateTime> findLatestStartedAt(long workspaceId);
 
-    Optional<OffsetDateTime> findLatestFailedAt(Long workspaceId);
+    Optional<OffsetDateTime> findLatestFailedAt(long workspaceId);
 }

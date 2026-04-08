@@ -102,15 +102,64 @@ class WorkspacePlanControllerIntegrationTest {
                 .andExpect(jsonPath("$.planCode").value("PRO"));
     }
 
+    @Test
+    void ownerAndAdminCanReadManagementStateButEditorAndViewerCannot() throws Exception {
+        Long workspaceId = createWorkspace("team-plan");
+        ensureOwner(3L, "plan-admin");
+        ensureOwner(4L, "plan-editor");
+        ensureOwner(5L, "plan-viewer");
+        addMember(workspaceId, 1L, "OWNER");
+        addMember(workspaceId, 3L, "ADMIN");
+        addMember(workspaceId, 4L, "EDITOR");
+        addMember(workspaceId, 5L, "VIEWER");
+
+        String ownerKey = bootstrapWorkspaceApiKey(workspaceId, 1L, "team-plan-owner", "[\"members:read\",\"retention:read\"]");
+        String adminKey = bootstrapWorkspaceApiKey(workspaceId, 3L, "team-plan-admin", "[\"members:read\",\"retention:read\"]");
+        String editorKey = bootstrapWorkspaceApiKey(workspaceId, 4L, "team-plan-editor", "[\"members:read\",\"retention:read\"]");
+        String viewerKey = bootstrapWorkspaceApiKey(workspaceId, 5L, "team-plan-viewer", "[\"members:read\",\"retention:read\"]");
+
+        mockMvc.perform(get("/api/v1/workspaces/current/plan")
+                        .header("X-API-Key", ownerKey)
+                        .header("X-Workspace-Slug", "team-plan"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/workspaces/current/usage")
+                        .header("X-API-Key", adminKey)
+                        .header("X-Workspace-Slug", "team-plan"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/workspaces/current/retention")
+                        .header("X-API-Key", adminKey)
+                        .header("X-Workspace-Slug", "team-plan"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/workspaces/current/plan")
+                        .header("X-API-Key", editorKey)
+                        .header("X-Workspace-Slug", "team-plan"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/workspaces/current/usage")
+                        .header("X-API-Key", editorKey)
+                        .header("X-Workspace-Slug", "team-plan"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/workspaces/current/retention")
+                        .header("X-API-Key", viewerKey)
+                        .header("X-Workspace-Slug", "team-plan"))
+                .andExpect(status().isForbidden());
+    }
+
     private String bootstrapPersonalWorkspaceApiKey(String plaintextKey, String scopesJson) {
         Long workspaceId = jdbcTemplate.queryForObject(
                 "SELECT id FROM workspaces WHERE slug = 'free-owner'",
                 Long.class);
+        bootstrapWorkspaceApiKey(workspaceId, 1L, plaintextKey, scopesJson);
+        return plaintextKey;
+    }
+
+    private String bootstrapWorkspaceApiKey(Long workspaceId, long ownerId, String plaintextKey, String scopesJson) {
         jdbcTemplate.update(
                 """
                 INSERT INTO owner_api_keys (owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by)
-                VALUES (1, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, 'test-bootstrap')
+                VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, 'test-bootstrap')
                 """,
+                ownerId,
                 workspaceId,
                 plaintextKey,
                 sha256(plaintextKey),
@@ -119,6 +168,37 @@ class WorkspacePlanControllerIntegrationTest {
                 scopesJson,
                 OffsetDateTime.now());
         return plaintextKey;
+    }
+
+    private Long createWorkspace(String slug) {
+        jdbcTemplate.update(
+                "INSERT INTO workspaces (slug, display_name, personal_workspace, created_at, created_by_owner_id) VALUES (?, ?, FALSE, ?, 1)",
+                slug,
+                slug,
+                OffsetDateTime.now());
+        return jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, slug);
+    }
+
+    private void addMember(Long workspaceId, long ownerId, String role) {
+        jdbcTemplate.update(
+                "INSERT INTO workspace_members (workspace_id, owner_id, role, joined_at, added_by_owner_id, removed_at) VALUES (?, ?, ?, ?, 1, NULL)",
+                workspaceId,
+                ownerId,
+                role,
+                OffsetDateTime.now());
+    }
+
+    private void ensureOwner(long ownerId, String ownerKey) {
+        Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM owners WHERE id = ?", Integer.class, ownerId);
+        if (count != null && count > 0) {
+            return;
+        }
+        jdbcTemplate.update(
+                "INSERT INTO owners (id, owner_key, display_name, plan, created_at) VALUES (?, ?, ?, 'FREE', ?)",
+                ownerId,
+                ownerKey,
+                ownerKey,
+                OffsetDateTime.now());
     }
 
     private String sha256(String value) {

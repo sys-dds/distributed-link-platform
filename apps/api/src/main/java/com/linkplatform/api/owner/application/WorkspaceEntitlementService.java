@@ -186,11 +186,7 @@ public class WorkspaceEntitlementService {
     }
 
     private WorkspaceQuotaExceededException exceeded(WorkspaceUsageMetric metric, long currentUsage, long limit, String detail) {
-        return new WorkspaceQuotaExceededException(
-                metric,
-                currentUsage,
-                limit,
-                detail);
+        return new WorkspaceQuotaExceededException(metric, currentUsage, limit, detail);
     }
 
     public record UsageSummary(

@@ -120,12 +120,12 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
 
     @Override
     public Optional<ProjectionJob> findById(long id) {
-        return jdbcTemplate.query(selectJobsSql() + " WHERE id = ?", this::mapJob, id).stream().findFirst();
+        throw new UnsupportedOperationException("Legacy unscoped projection job lookup is not supported");
     }
 
     @Override
     public List<ProjectionJob> findRecent(int limit) {
-        return jdbcTemplate.query(selectJobsSql() + " ORDER BY requested_at DESC, id DESC LIMIT ?", this::mapJob, limit);
+        throw new UnsupportedOperationException("Legacy unscoped projection job listing is not supported");
     }
 
     @Override
@@ -183,7 +183,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
 
     @Override
     public Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
-        return claimNext(workerId, now, claimedUntil);
+        throw new UnsupportedOperationException("Legacy queued-only projection job claiming is not supported");
     }
 
     @Override
@@ -276,41 +276,41 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
 
     @Override
     public long countQueued() {
-        return countByStatuses(null, "('QUEUED', 'FAILED')");
+        return countByStatuses("('QUEUED', 'FAILED')");
     }
 
     @Override
     public long countActive() {
-        return countActive(null);
+        return countByStatuses("('RUNNING')");
     }
 
     @Override
-    public long countQueued(Long workspaceId) {
-        return countByStatuses(workspaceId, "('QUEUED')");
+    public long countQueued(long workspaceId) {
+        return countByStatusesForWorkspace(workspaceId, "('QUEUED')");
     }
 
     @Override
-    public long countActive(Long workspaceId) {
-        return countByStatuses(workspaceId, "('RUNNING')");
+    public long countActive(long workspaceId) {
+        return countByStatusesForWorkspace(workspaceId, "('RUNNING')");
     }
 
     @Override
-    public long countFailed(Long workspaceId) {
-        return countByStatuses(workspaceId, "('FAILED')");
+    public long countFailed(long workspaceId) {
+        return countByStatusesForWorkspace(workspaceId, "('FAILED')");
     }
 
     @Override
-    public long countCompleted(Long workspaceId) {
-        return countByStatuses(workspaceId, "('COMPLETED')");
+    public long countCompleted(long workspaceId) {
+        return countByStatusesForWorkspace(workspaceId, "('COMPLETED')");
     }
 
     @Override
-    public Optional<OffsetDateTime> findLatestStartedAt(Long workspaceId) {
-        return findLatestTimestamp(workspaceId, "started_at");
+    public Optional<OffsetDateTime> findLatestStartedAt(long workspaceId) {
+        return findLatestTimestampForWorkspace(workspaceId, "started_at");
     }
 
     @Override
-    public Optional<OffsetDateTime> findLatestFailedAt(Long workspaceId) {
+    public Optional<OffsetDateTime> findLatestFailedAt(long workspaceId) {
         return jdbcTemplate.query(
                         """
                         SELECT completed_at
@@ -358,6 +358,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     private String visibilityClause(boolean personalWorkspace) {
         if (personalWorkspace) {
             return """
+                    -- Legacy jobs without workspace_id remain visible only inside the matching personal workspace.
                      WHERE (
                          workspace_id = ?
                          OR (
@@ -396,35 +397,22 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 resultSet.getString("operator_note"));
     }
 
-    private long countByStatuses(Long workspaceId, String statusesSql) {
-        Long count;
-        if (workspaceId == null) {
-            count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM projection_jobs WHERE status IN " + statusesSql,
-                    Long.class);
-        } else {
-            count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM projection_jobs WHERE status IN " + statusesSql + " AND workspace_id = ?",
-                    Long.class,
-                    workspaceId);
-        }
+    private long countByStatuses(String statusesSql) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM projection_jobs WHERE status IN " + statusesSql,
+                Long.class);
         return count == null ? 0L : count;
     }
 
-    private Optional<OffsetDateTime> findLatestTimestamp(Long workspaceId, String column) {
-        if (workspaceId == null) {
-            return jdbcTemplate.query(
-                            """
-                            SELECT %s
-                            FROM projection_jobs
-                            WHERE %s IS NOT NULL
-                            ORDER BY %s DESC, id DESC
-                            LIMIT 1
-                            """.formatted(column, column, column),
-                            (resultSet, rowNum) -> resultSet.getObject(column, OffsetDateTime.class))
-                    .stream()
-                    .findFirst();
-        }
+    private long countByStatusesForWorkspace(long workspaceId, String statusesSql) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM projection_jobs WHERE status IN " + statusesSql + " AND workspace_id = ?",
+                Long.class,
+                workspaceId);
+        return count == null ? 0L : count;
+    }
+
+    private Optional<OffsetDateTime> findLatestTimestampForWorkspace(long workspaceId, String column) {
         return jdbcTemplate.query(
                         """
                         SELECT %s

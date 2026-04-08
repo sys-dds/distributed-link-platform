@@ -1,3 +1,5 @@
+name: link-platform-platform
+
 services:
   postgres:
     image: postgres:16.8
@@ -54,6 +56,7 @@ services:
       LINK_PLATFORM_PUBLIC_BASE_URL: http://localhost:8080
       LINK_PLATFORM_RUNTIME_MODE: all
       LINK_PLATFORM_WEBHOOKS_ENABLED: "true"
+      # Local webhook smoke targets the in-cluster sink, so the docker profile must relax both dimensions explicitly.
       LINK_PLATFORM_WEBHOOKS_ALLOW_PRIVATE_CALLBACK_HOSTS: "true"
       LINK_PLATFORM_WEBHOOKS_ALLOW_HTTP_CALLBACKS: "true"
       LINK_PLATFORM_EXPORTS_ENABLED: "true"

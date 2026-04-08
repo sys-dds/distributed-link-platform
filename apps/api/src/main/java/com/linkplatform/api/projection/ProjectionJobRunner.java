@@ -105,10 +105,7 @@ public class ProjectionJobRunner {
                 }
             }
         } catch (RuntimeException exception) {
-            projectionJobStore.markFailed(
-                    job.id(),
-                    OffsetDateTime.now(clock),
-                    compactErrorSummary(exception));
+            markJobFailed(job, exception);
             failedCounter.increment();
             log.warn("projection_job_failed id={} type={} reason={}", job.id(), job.jobType(), compactErrorSummary(exception));
             throw exception;
@@ -125,5 +122,12 @@ public class ProjectionJobRunner {
         String message = root.getMessage();
         String summary = root.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
         return summary.length() <= 1024 ? summary : summary.substring(0, 1024);
+    }
+
+    private void markJobFailed(ProjectionJob job, RuntimeException exception) {
+        projectionJobStore.markFailed(
+                job.id(),
+                OffsetDateTime.now(clock),
+                compactErrorSummary(exception));
     }
 }

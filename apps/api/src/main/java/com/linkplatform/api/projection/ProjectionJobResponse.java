@@ -1,5 +1,6 @@
 package com.linkplatform.api.projection;
 
+import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import java.time.OffsetDateTime;
 
 public record ProjectionJobResponse(
@@ -56,7 +57,11 @@ public record ProjectionJobResponse(
                 job.operatorNote());
     }
 
+    public static ProjectionJobResponse from(ProjectionJob job, WorkspaceAccessContext context) {
+        return from(job, context.workspaceSlug());
+    }
+
     public static ProjectionJobResponse from(ProjectionJob job) {
-        return from(job, null);
+        return from(job, (String) null);
     }
 }

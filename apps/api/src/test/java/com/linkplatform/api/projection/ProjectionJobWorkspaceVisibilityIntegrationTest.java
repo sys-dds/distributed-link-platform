@@ -35,16 +35,28 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
     @Qualifier("dataSource")
     private DataSource dataSource;
 
+    @Autowired
+    private ProjectionJobStore projectionJobStore;
+
     @Test
     void projectionStoreOperatorCriticalMethodsDoNotUseInterfaceDefaultFallbacks() throws Exception {
         assertNotDefault("countQueued");
         assertNotDefault("countActive");
-        assertNotDefault("countQueued", Long.class);
-        assertNotDefault("countActive", Long.class);
-        assertNotDefault("countFailed", Long.class);
-        assertNotDefault("countCompleted", Long.class);
-        assertNotDefault("findLatestStartedAt", Long.class);
-        assertNotDefault("findLatestFailedAt", Long.class);
+        assertNotDefault("countQueued", Long.TYPE);
+        assertNotDefault("countActive", Long.TYPE);
+        assertNotDefault("countFailed", Long.TYPE);
+        assertNotDefault("countCompleted", Long.TYPE);
+        assertNotDefault("findLatestStartedAt", Long.TYPE);
+        assertNotDefault("findLatestFailedAt", Long.TYPE);
+    }
+
+    @Test
+    void legacyUnscopedProjectionStoreMethodsFailLoudly() {
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findRecent(5));
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findById(1L));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                UnsupportedOperationException.class,
+                () -> projectionJobStore.claimNextQueued("worker", OffsetDateTime.now(), OffsetDateTime.now().plusMinutes(1)));
     }
 
     @Test

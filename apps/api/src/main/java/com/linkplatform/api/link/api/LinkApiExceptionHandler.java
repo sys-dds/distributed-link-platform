@@ -74,11 +74,7 @@ public class LinkApiExceptionHandler {
 
     @ExceptionHandler(WorkspaceQuotaExceededException.class)
     public ProblemDetail handleWorkspaceQuotaExceeded(WorkspaceQuotaExceededException exception) {
-        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.detail());
-        problemDetail.setProperty("quotaMetric", exception.quotaMetric().name());
-        problemDetail.setProperty("currentUsage", exception.currentUsage());
-        problemDetail.setProperty("limit", exception.limit());
-        return problemDetail;
+        return quotaProblemDetail(exception);
     }
 
     @ExceptionHandler(InvalidWebhookCallbackUrlException.class)
@@ -204,6 +200,15 @@ public class LinkApiExceptionHandler {
         problemDetail.setType(URI.create("about:blank"));
         problemDetail.setTitle(status.getReasonPhrase());
         problemDetail.setProperty("code", status.name().toLowerCase(Locale.ROOT).replace('_', '-'));
+        return problemDetail;
+    }
+
+    private ProblemDetail quotaProblemDetail(WorkspaceQuotaExceededException exception) {
+        ProblemDetail problemDetail = problemDetail(HttpStatus.CONFLICT, exception.detail());
+        problemDetail.setProperty("category", "quota-exceeded");
+        problemDetail.setProperty("quotaMetric", exception.quotaMetric().name());
+        problemDetail.setProperty("currentUsage", exception.currentUsage());
+        problemDetail.setProperty("limit", exception.limit());
         return problemDetail;
     }
 }

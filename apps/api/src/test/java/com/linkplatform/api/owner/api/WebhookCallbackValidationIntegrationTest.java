@@ -37,35 +37,45 @@ class WebhookCallbackValidationIntegrationTest {
     private DataSource dataSource;
 
     @Test
-    void strictConfigRejectsHttpCallbackUrls() throws Exception {
-        String apiKey = bootstrapPersonalWorkspaceApiKey("strict-http-key", "[\"webhooks:write\"]");
+    void strictDefaultApiPathRejectsHttpCallbacks() throws Exception {
         mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
-                        .header("X-API-Key", apiKey)
+                        .header("X-API-Key", bootstrapPersonalWorkspaceApiKey("strict-http-key", "[\"webhooks:write\"]"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"strict-http","callbackUrl":"http://example.com/hook","eventTypes":["link.created"],"enabled":true}
+                                {"name":"strict-http","callbackUrl":"http://hooks.example.com/callback","eventTypes":["link.created"],"enabled":true}
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.title").value("Bad Request"));
+                .andExpect(jsonPath("$.detail").value("Webhook callbackUrl must use https"))
+                .andExpect(jsonPath("$.category").value("bad-request"));
     }
 
     @Test
-    void strictConfigRejectsLocalhostAndPrivateCallbackUrls() throws Exception {
+    void strictDefaultApiPathRejectsLocalhostAndPrivateHosts() throws Exception {
         String apiKey = bootstrapPersonalWorkspaceApiKey("strict-private-key", "[\"webhooks:write\"]");
+
         mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
                         .header("X-API-Key", apiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"strict-private","callbackUrl":"https://127.0.0.1/hook","eventTypes":["link.created"],"enabled":true}
+                                {"name":"strict-localhost","callbackUrl":"https://localhost:8443/callback","eventTypes":["link.created"],"enabled":true}
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.title").value("Bad Request"));
+                .andExpect(jsonPath("$.detail").value("Webhook callbackUrl must not target localhost or private addresses"));
+
+        mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
+                        .header("X-API-Key", apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"strict-private","callbackUrl":"https://127.0.0.1:8443/callback","eventTypes":["link.created"],"enabled":true}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Webhook callbackUrl must not target localhost or private addresses"));
     }
 
     private String bootstrapPersonalWorkspaceApiKey(String plaintextKey, String scopesJson) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         Long workspaceId = jdbcTemplate.queryForObject(
-                "SELECT id FROM workspaces WHERE slug = 'free-owner'",
+                "SELECT id FROM workspaces WHERE personal_workspace = TRUE AND created_by_owner_id = 1",
                 Long.class);
         jdbcTemplate.update(
                 """
