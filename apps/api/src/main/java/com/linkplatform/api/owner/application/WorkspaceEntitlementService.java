@@ -58,8 +58,7 @@ public class WorkspaceEntitlementService {
         WorkspacePlanRecord plan = currentPlan(workspaceId);
         long current = currentMembersCount(workspaceId);
         if (current >= plan.membersLimit()) {
-            throw exceeded(WorkspaceUsageMetric.MEMBERS, current, plan.membersLimit(),
-                    "Workspace member quota exceeded");
+            throw WorkspaceQuotaExceededException.members(current, plan.membersLimit());
         }
     }
 
@@ -68,8 +67,7 @@ public class WorkspaceEntitlementService {
         WorkspacePlanRecord plan = currentPlan(workspaceId);
         long current = currentActiveApiKeysCount(workspaceId, now);
         if (current >= plan.apiKeysLimit()) {
-            throw exceeded(WorkspaceUsageMetric.API_KEYS, current, plan.apiKeysLimit(),
-                    "Workspace API key quota exceeded");
+            throw WorkspaceQuotaExceededException.apiKeys(current, plan.apiKeysLimit());
         }
     }
 
@@ -77,8 +75,7 @@ public class WorkspaceEntitlementService {
     public void enforceActiveLinksQuota(long workspaceId, long currentActiveLinks) {
         WorkspacePlanRecord plan = currentPlan(workspaceId);
         if (currentActiveLinks >= plan.activeLinksLimit()) {
-            throw exceeded(WorkspaceUsageMetric.ACTIVE_LINKS, currentActiveLinks, plan.activeLinksLimit(),
-                    "Workspace active link quota exceeded");
+            throw WorkspaceQuotaExceededException.activeLinks(currentActiveLinks, plan.activeLinksLimit());
         }
     }
 
@@ -86,8 +83,7 @@ public class WorkspaceEntitlementService {
     public void enforceWebhooksQuota(long workspaceId, long currentWebhooks) {
         WorkspacePlanRecord plan = currentPlan(workspaceId);
         if (currentWebhooks >= plan.webhooksLimit()) {
-            throw exceeded(WorkspaceUsageMetric.WEBHOOKS, currentWebhooks, plan.webhooksLimit(),
-                    "Workspace webhook quota exceeded");
+            throw WorkspaceQuotaExceededException.webhooks(currentWebhooks, plan.webhooksLimit());
         }
     }
 
@@ -103,11 +99,7 @@ public class WorkspaceEntitlementService {
         OffsetDateTime windowEnd = nextMonthWindowStart(windowStart);
         long used = workspaceUsageStore.sumInWindow(workspaceId, WorkspaceUsageMetric.WEBHOOK_DELIVERIES, windowStart, windowEnd);
         if (used + additionalAttempts > plan.monthlyWebhookDeliveriesLimit()) {
-            throw exceeded(
-                    WorkspaceUsageMetric.WEBHOOK_DELIVERIES,
-                    used,
-                    plan.monthlyWebhookDeliveriesLimit(),
-                    "Workspace monthly webhook delivery quota exceeded");
+            throw WorkspaceQuotaExceededException.monthlyWebhookDeliveries(used, plan.monthlyWebhookDeliveriesLimit());
         }
     }
 
@@ -183,10 +175,6 @@ public class WorkspaceEntitlementService {
 
     private OffsetDateTime nextMonthWindowStart(OffsetDateTime windowStart) {
         return windowStart.plusMonths(1);
-    }
-
-    private WorkspaceQuotaExceededException exceeded(WorkspaceUsageMetric metric, long currentUsage, long limit, String detail) {
-        return new WorkspaceQuotaExceededException(metric, currentUsage, limit, detail);
     }
 
     public record UsageSummary(

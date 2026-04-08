@@ -85,7 +85,7 @@ public class ProjectionJobsController {
                 job.id(),
                 safeNote,
                 job.requestedAt());
-        return ProjectionJobResponse.from(job, context);
+        return toResponse(job, context);
     }
 
     @GetMapping("/{id}")
@@ -103,8 +103,8 @@ public class ProjectionJobsController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_READ);
-        return projectionJobStore.findByIdVisibleToWorkspace(id, context.workspaceId(), context.ownerId(), context.personalWorkspace())
-                .map(job -> ProjectionJobResponse.from(job, context))
+        return findVisibleJob(id, context)
+                .map(job -> toResponse(job, context))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Projection job not found: " + id));
     }
 
@@ -125,8 +125,16 @@ public class ProjectionJobsController {
                 ApiKeyScope.OPS_READ);
         validateLimit(limit);
         return projectionJobStore.findRecentVisibleToWorkspace(limit, context.workspaceId(), context.ownerId(), context.personalWorkspace()).stream()
-                .map(job -> ProjectionJobResponse.from(job, context))
+                .map(job -> toResponse(job, context))
                 .toList();
+    }
+
+    private java.util.Optional<ProjectionJob> findVisibleJob(long id, WorkspaceAccessContext context) {
+        return projectionJobStore.findByIdVisibleToWorkspace(id, context.workspaceId(), context.ownerId(), context.personalWorkspace());
+    }
+
+    private ProjectionJobResponse toResponse(ProjectionJob job, WorkspaceAccessContext context) {
+        return ProjectionJobResponse.from(job, context);
     }
 
     private void validateLimit(int limit) {

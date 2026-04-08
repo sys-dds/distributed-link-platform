@@ -1233,11 +1233,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             if (workspaceEntitlementService != null) {
                 workspaceEntitlementService.enforceActiveLinksQuota(context.workspaceId(), currentUsage);
             } else if (currentUsage >= context.plan().activeLinkLimit()) {
-                throw new WorkspaceQuotaExceededException(
-                        com.linkplatform.api.owner.application.WorkspaceUsageMetric.ACTIVE_LINKS,
-                        currentUsage,
-                        context.plan().activeLinkLimit(),
-                        "Active link quota exceeded for owner " + context.ownerKey() + " on plan " + context.plan().name());
+                throw WorkspaceQuotaExceededException.activeLinks(currentUsage, context.plan().activeLinkLimit());
             }
         } catch (WorkspaceQuotaExceededException exception) {
             securityEventStore.record(

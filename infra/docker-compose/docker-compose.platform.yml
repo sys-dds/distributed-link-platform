@@ -1,5 +1,8 @@
 name: link-platform-platform
 
+# Standalone platform smoke stack.
+# This file is self-contained, must be run on its own, and is the compose file validated by CI.
+
 services:
   postgres:
     image: postgres:16.8
@@ -48,6 +51,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      # Standalone platform mode only references services defined in this file.
       DB_URL: jdbc:postgresql://postgres:5432/link_platform
       DB_USERNAME: link_platform
       DB_PASSWORD: link_platform

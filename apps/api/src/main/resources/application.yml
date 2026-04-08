@@ -71,7 +71,8 @@ link-platform:
     analytics-ttl: ${LINK_PLATFORM_CACHE_ANALYTICS_TTL:PT15S}
   webhooks:
     enabled: ${LINK_PLATFORM_WEBHOOKS_ENABLED:true}
-    # Strict by default: production-style callbacks require both HTTPS and a public host unless a narrower override is set.
+    # Strict by default: production-style callbacks require HTTPS and a public host.
+    # allow-http-callbacks only relaxes scheme; allow-private-callback-hosts only relaxes host safety.
     allow-private-callback-hosts: ${LINK_PLATFORM_WEBHOOKS_ALLOW_PRIVATE_CALLBACK_HOSTS:false}
     allow-http-callbacks: ${LINK_PLATFORM_WEBHOOKS_ALLOW_HTTP_CALLBACKS:false}
     runner-delay-ms: ${LINK_PLATFORM_WEBHOOKS_RUNNER_DELAY_MS:5000}

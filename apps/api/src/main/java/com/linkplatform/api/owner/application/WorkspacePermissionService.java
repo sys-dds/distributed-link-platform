@@ -74,14 +74,6 @@ public class WorkspacePermissionService {
         requireScope(context, ApiKeyScope.MEMBERS_READ);
     }
 
-    public void requirePlanRead(WorkspaceAccessContext context) {
-        requireMembersRead(context);
-    }
-
-    public void requireUsageRead(WorkspaceAccessContext context) {
-        requireMembersRead(context);
-    }
-
     public Set<ApiKeyScope> validateRequestedScopes(WorkspaceRole role, List<String> requestedScopes) {
         Set<ApiKeyScope> parsed = EnumSet.noneOf(ApiKeyScope.class);
         if (requestedScopes != null) {

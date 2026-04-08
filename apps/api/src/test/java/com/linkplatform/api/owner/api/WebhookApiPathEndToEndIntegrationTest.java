@@ -86,6 +86,17 @@ class WebhookApiPathEndToEndIntegrationTest {
                 "webhook-api-path-key",
                 "[\"links:write\",\"webhooks:read\",\"webhooks:write\"]");
         String callbackUrl = sinkUrl();
+        assertThat(callbackUrl).startsWith("http://");
+        assertThat(callbackUrl).contains(WEBHOOK_SINK.getHost());
+
+        mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
+                        .header("X-API-Key", scopedApiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"api-path-strict-check","callbackUrl":"https://127.0.0.1:8443/blocked","eventTypes":["link.created"],"enabled":true}
+                                """))
+                .andExpect(status().isBadRequest());
+
         String createResponse = mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
                         .header("X-API-Key", scopedApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -98,7 +109,6 @@ class WebhookApiPathEndToEndIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        assertThat(callbackUrl).startsWith("http://");
         long subscriptionId = objectMapper.readTree(createResponse).path("subscription").path("id").asLong();
         Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = 'free-owner'", Long.class);
         Long storedWorkspaceId = jdbcTemplate.queryForObject(

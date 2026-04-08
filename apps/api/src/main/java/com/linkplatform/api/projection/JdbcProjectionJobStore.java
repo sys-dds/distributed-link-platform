@@ -31,10 +31,10 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
         this.clock = Clock.systemUTC();
-        Gauge.builder("link.projection.jobs.queued", this, JdbcProjectionJobStore::countQueued)
+        Gauge.builder("link.projection.jobs.queued", this, JdbcProjectionJobStore::countQueuedForMetrics)
                 .description("Number of queued projection jobs")
                 .register(meterRegistry);
-        Gauge.builder("link.projection.jobs.active", this, JdbcProjectionJobStore::countActive)
+        Gauge.builder("link.projection.jobs.active", this, JdbcProjectionJobStore::countActiveForMetrics)
                 .description("Number of active projection jobs")
                 .register(meterRegistry);
         Gauge.builder("link.projection.jobs.oldest.queued.age.seconds", this,
@@ -276,12 +276,12 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
 
     @Override
     public long countQueued() {
-        return countByStatuses("('QUEUED', 'FAILED')");
+        throw new UnsupportedOperationException("Legacy unscoped queued projection job count is not supported");
     }
 
     @Override
     public long countActive() {
-        return countByStatuses("('RUNNING')");
+        throw new UnsupportedOperationException("Legacy unscoped active projection job count is not supported");
     }
 
     @Override
@@ -343,6 +343,14 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
             return null;
         }
         return (double) java.time.Duration.between(oldestRequestedAt.toInstant(), now.toInstant()).getSeconds();
+    }
+
+    private double countQueuedForMetrics() {
+        return countByStatuses("('QUEUED', 'FAILED')");
+    }
+
+    private double countActiveForMetrics() {
+        return countByStatuses("('RUNNING')");
     }
 
     private String selectJobsSql() {

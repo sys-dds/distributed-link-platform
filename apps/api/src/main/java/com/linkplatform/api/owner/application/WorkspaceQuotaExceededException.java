@@ -36,4 +36,44 @@ public class WorkspaceQuotaExceededException extends RuntimeException {
     public String detail() {
         return detail;
     }
+
+    public static WorkspaceQuotaExceededException members(long currentUsage, long limit) {
+        return new WorkspaceQuotaExceededException(
+                WorkspaceUsageMetric.MEMBERS,
+                currentUsage,
+                limit,
+                "Workspace member quota exceeded");
+    }
+
+    public static WorkspaceQuotaExceededException apiKeys(long currentUsage, long limit) {
+        return new WorkspaceQuotaExceededException(
+                WorkspaceUsageMetric.API_KEYS,
+                currentUsage,
+                limit,
+                "Workspace API key quota exceeded");
+    }
+
+    public static WorkspaceQuotaExceededException activeLinks(long currentUsage, long limit) {
+        return new WorkspaceQuotaExceededException(
+                WorkspaceUsageMetric.ACTIVE_LINKS,
+                currentUsage,
+                limit,
+                "Workspace active link quota exceeded");
+    }
+
+    public static WorkspaceQuotaExceededException webhooks(long currentUsage, long limit) {
+        return new WorkspaceQuotaExceededException(
+                WorkspaceUsageMetric.WEBHOOKS,
+                currentUsage,
+                limit,
+                "Workspace webhook quota exceeded");
+    }
+
+    public static WorkspaceQuotaExceededException monthlyWebhookDeliveries(long currentUsage, long limit) {
+        return new WorkspaceQuotaExceededException(
+                WorkspaceUsageMetric.WEBHOOK_DELIVERIES,
+                currentUsage,
+                limit,
+                "Workspace monthly webhook delivery quota exceeded");
+    }
 }

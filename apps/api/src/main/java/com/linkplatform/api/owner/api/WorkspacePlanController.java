@@ -221,6 +221,7 @@ public class WorkspacePlanController {
             String authorizationHeader,
             String workspaceSlug,
             HttpServletRequest request) {
+        // Plan and usage are intentionally tied to membership visibility rather than a broader read-any shortcut.
         return ownerAccessService.authorizeRead(
                 apiKey,
                 authorizationHeader,
