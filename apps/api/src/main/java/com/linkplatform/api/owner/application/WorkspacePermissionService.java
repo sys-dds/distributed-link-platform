@@ -74,6 +74,12 @@ public class WorkspacePermissionService {
         requireScope(context, ApiKeyScope.MEMBERS_READ);
     }
 
+    public void requireHumanMember(WorkspaceMemberRecord member) {
+        if (member == null || member.serviceAccount()) {
+            throw new WorkspaceAccessDeniedException("Workspace action requires a HUMAN member");
+        }
+    }
+
     public Set<ApiKeyScope> validateRequestedScopes(WorkspaceRole role, List<String> requestedScopes) {
         Set<ApiKeyScope> parsed = EnumSet.noneOf(ApiKeyScope.class);
         if (requestedScopes != null) {

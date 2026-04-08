@@ -20,13 +20,29 @@ public interface WorkspaceStore {
 
     Optional<WorkspaceMemberRecord> findActiveMembership(String workspaceSlug, long ownerId);
 
+    Optional<WorkspaceMemberRecord> findMembership(long workspaceId, long ownerId);
+
     List<WorkspaceMemberRecord> findActiveMembers(long workspaceId);
 
     boolean addMember(long workspaceId, long ownerId, WorkspaceRole role, OffsetDateTime joinedAt, Long addedByOwnerId);
+
+    boolean addServiceAccountMember(long workspaceId, long ownerId, WorkspaceRole role, OffsetDateTime joinedAt, Long addedByOwnerId);
 
     boolean updateMemberRole(long workspaceId, long ownerId, WorkspaceRole role);
 
     boolean removeMember(long workspaceId, long ownerId, OffsetDateTime removedAt);
 
     long countActiveOwners(long workspaceId);
+
+    long countActiveHumanOwners(long workspaceId);
+
+    boolean suspendMember(long workspaceId, long ownerId, OffsetDateTime suspendedAt, Long suspendedByOwnerId, String suspendReason);
+
+    boolean resumeMember(long workspaceId, long ownerId);
+
+    boolean suspendWorkspace(long workspaceId, OffsetDateTime suspendedAt, Long suspendedByOwnerId, String suspendReason);
+
+    boolean resumeWorkspace(long workspaceId);
+
+    boolean isWorkspaceSuspended(long workspaceId);
 }

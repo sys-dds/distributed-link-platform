@@ -141,9 +141,16 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case API_KEY_ROTATED -> "API key rotated";
             case API_KEY_EXPIRED -> "API key expired";
             case WORKSPACE_CREATED -> "Workspace created";
+            case WORKSPACE_INVITATION_CREATED -> "Workspace invitation created";
+            case WORKSPACE_INVITATION_ACCEPTED -> "Workspace invitation accepted";
+            case WORKSPACE_INVITATION_REVOKED -> "Workspace invitation revoked";
+            case SERVICE_ACCOUNT_CREATED -> "Service account created";
+            case SERVICE_ACCOUNT_DISABLED -> "Service account disabled";
             case WORKSPACE_MEMBER_ADDED -> "Workspace member added";
             case WORKSPACE_MEMBER_REMOVED -> "Workspace member removed";
             case WORKSPACE_MEMBER_ROLE_CHANGED -> "Workspace member role changed";
+            case WORKSPACE_MEMBER_SUSPENDED -> "Workspace member suspended";
+            case WORKSPACE_MEMBER_RESUMED -> "Workspace member resumed";
             case WORKSPACE_ACCESS_DENIED -> "Workspace access denied";
             case WORKSPACE_SCOPE_DENIED -> "Workspace scope denied";
             case API_KEY_SCOPE_DENIED -> "API key scope denied";
@@ -162,6 +169,9 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case ABUSE_CASE_SIGNAL_INCREMENTED -> "Abuse case signal incremented";
             case QUOTA_REJECTED -> "Quota limit rejected";
             case WORKSPACE_PLAN_UPDATED -> "Workspace plan updated";
+            case WORKSPACE_SUSPENDED -> "Workspace suspended";
+            case WORKSPACE_RESUMED -> "Workspace resumed";
+            case WORKSPACE_OWNERSHIP_TRANSFERRED -> "Workspace ownership transferred";
             case WORKSPACE_QUOTA_EXCEEDED -> "Workspace quota exceeded";
             case WEBHOOK_DELIVERY_QUOTA_EXCEEDED -> "Webhook delivery quota exceeded";
             case WEBHOOK_SUBSCRIPTION_CREATED -> "Webhook subscription created";

@@ -9,6 +9,10 @@ public enum WorkspaceRole {
     EDITOR,
     VIEWER;
 
+    public boolean ownerLike() {
+        return this == OWNER;
+    }
+
     public Set<ApiKeyScope> impliedScopes() {
         return switch (this) {
             case OWNER, ADMIN -> EnumSet.allOf(ApiKeyScope.class);
