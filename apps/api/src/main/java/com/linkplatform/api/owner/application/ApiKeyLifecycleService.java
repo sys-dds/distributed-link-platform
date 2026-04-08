@@ -128,6 +128,7 @@ public class ApiKeyLifecycleService {
             List<String> requestedScopes,
             String rotatedBy) {
         OffsetDateTime now = OffsetDateTime.now(clock);
+        ownerApiKeyStore.lockWorkspace(context.workspaceId());
         OwnerApiKeyRecord existing = ownerApiKeyStore.findById(context.workspaceId(), keyId)
                 .orElseThrow(() -> new ApiKeyAuthenticationException("Owner API key not found"));
         GeneratedApiKey generatedApiKey = generateApiKey();

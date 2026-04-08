@@ -1,5 +1,7 @@
 package com.linkplatform.api.owner.application;
 
+import java.util.Objects;
+
 public class WorkspaceQuotaExceededException extends RuntimeException {
 
     private final WorkspaceUsageMetric quotaMetric;
@@ -12,8 +14,8 @@ public class WorkspaceQuotaExceededException extends RuntimeException {
             long currentUsage,
             long limit,
             String detail) {
-        super(detail);
-        this.quotaMetric = quotaMetric;
+        super(Objects.requireNonNull(detail, "detail must not be null"));
+        this.quotaMetric = Objects.requireNonNull(quotaMetric, "quotaMetric must not be null");
         this.currentUsage = currentUsage;
         this.limit = limit;
         this.detail = detail;

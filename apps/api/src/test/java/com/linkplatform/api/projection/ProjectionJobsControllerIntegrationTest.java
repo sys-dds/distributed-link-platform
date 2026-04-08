@@ -43,6 +43,9 @@ class ProjectionJobsControllerIntegrationTest {
     @Autowired
     private ProjectionJobRunner projectionJobRunner;
 
+    @Autowired
+    private ProjectionJobStore projectionJobStore;
+
     @Test
     void projectionJobsPersistScopeAndScopedAndUnscopedRunsWork() throws Exception {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
@@ -231,6 +234,11 @@ class ProjectionJobsControllerIntegrationTest {
         assertFalse(ProjectionJobStore.class.getMethod("findRecent", int.class).isDefault());
         assertFalse(ProjectionJobStore.class.getMethod("findById", long.class).isDefault());
         assertFalse(ProjectionJobStore.class.getMethod("claimNextQueued", String.class, OffsetDateTime.class, OffsetDateTime.class).isDefault());
+        assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findRecent(10));
+        assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findById(99L));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> projectionJobStore.claimNextQueued("worker", OffsetDateTime.now(), OffsetDateTime.now().plusSeconds(30)));
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {

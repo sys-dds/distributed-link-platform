@@ -65,14 +65,7 @@ public class WorkspacePlanController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
-                apiKey,
-                authorizationHeader,
-                workspaceSlug,
-                request.getMethod(),
-                request.getRequestURI(),
-                request.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_READ);
+        WorkspaceAccessContext context = authorizeMembersRead(apiKey, authorizationHeader, workspaceSlug, request);
         var plan = workspaceEntitlementService.currentPlan(context.workspaceId());
         return new WorkspacePlanResponse(
                 context.workspaceSlug(),
@@ -91,14 +84,7 @@ public class WorkspacePlanController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
-                apiKey,
-                authorizationHeader,
-                workspaceSlug,
-                request.getMethod(),
-                request.getRequestURI(),
-                request.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_READ);
+        WorkspaceAccessContext context = authorizeMembersRead(apiKey, authorizationHeader, workspaceSlug, request);
         var usage = workspaceEntitlementService.currentUsage(context.workspaceId());
         return new WorkspaceUsageSummaryResponse(
                 context.workspaceSlug(),
@@ -117,8 +103,7 @@ public class WorkspacePlanController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
-                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.RETENTION_READ);
+        WorkspaceAccessContext context = authorizeRetentionRead(apiKey, authorizationHeader, workspaceSlug, request);
         return toRetentionResponse(workspaceRetentionService.currentPolicy(context.workspaceId()));
     }
 
@@ -129,8 +114,7 @@ public class WorkspacePlanController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
-                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.RETENTION_WRITE);
+        WorkspaceAccessContext context = authorizeRetentionWrite(apiKey, authorizationHeader, workspaceSlug, request);
         WorkspaceRetentionPolicyRecord updated = workspaceRetentionService.updatePolicy(
                 context.workspaceId(),
                 requestBody.clickHistoryDays(),
@@ -159,8 +143,7 @@ public class WorkspacePlanController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest request) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
-                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.OPS_WRITE);
+        WorkspaceAccessContext context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, request);
         var workspace = workspaceStore.findBySlug(workspaceSlug).orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceSlug));
         var plan = workspaceEntitlementService.updatePlan(workspace.id(), WorkspacePlanCode.valueOf(requestBody.planCode()), OffsetDateTime.now(clock));
         securityEventStore.record(
@@ -231,5 +214,65 @@ public class WorkspacePlanController {
                 record.operatorActionLogDays(),
                 record.updatedAt(),
                 record.updatedByOwnerId());
+    }
+
+    private WorkspaceAccessContext authorizeMembersRead(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            HttpServletRequest request) {
+        return ownerAccessService.authorizeRead(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_READ);
+    }
+
+    private WorkspaceAccessContext authorizeRetentionRead(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            HttpServletRequest request) {
+        return ownerAccessService.authorizeRead(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr(),
+                ApiKeyScope.RETENTION_READ);
+    }
+
+    private WorkspaceAccessContext authorizeRetentionWrite(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            HttpServletRequest request) {
+        return ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr(),
+                ApiKeyScope.RETENTION_WRITE);
+    }
+
+    private WorkspaceAccessContext authorizeOpsWrite(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            HttpServletRequest request) {
+        return ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
     }
 }

@@ -73,14 +73,11 @@ public class ProjectionJobService {
             Long requestedByOwnerId,
             String operatorNote) {
         validateScope(jobType, from, to);
-        if (workspaceId == null) {
-            throw new IllegalArgumentException("workspace scope is required");
-        }
         return projectionJobStore.createJob(
                 jobType,
                 OffsetDateTime.now(clock),
                 ownerId,
-                workspaceId,
+                requireWorkspaceScope(workspaceId),
                 blankToNull(slug),
                 from,
                 to,
@@ -361,5 +358,12 @@ public class ProjectionJobService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private long requireWorkspaceScope(Long workspaceId) {
+        if (workspaceId == null) {
+            throw new IllegalArgumentException("workspace scope is required");
+        }
+        return workspaceId;
     }
 }

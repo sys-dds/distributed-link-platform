@@ -222,6 +222,14 @@ public class LinkPlatformRuntimeProperties {
             this.allowHttpCallbacks = allowHttpCallbacks;
         }
 
+        public boolean requireHttpsCallbacks() {
+            return !allowHttpCallbacks;
+        }
+
+        public boolean requirePublicCallbackHosts() {
+            return !allowPrivateCallbackHosts;
+        }
+
         public int getDeliveryBatchSize() {
             return deliveryBatchSize;
         }

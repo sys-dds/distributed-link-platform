@@ -116,9 +116,10 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
                 || runtimeProperties.getWebhooks().getRequestTimeoutSeconds() <= 0) {
             throw new IllegalStateException("Webhook timeouts must be greater than 0");
         }
-        // Private or non-HTTPS callbacks are only allowed in explicit test/docker-style runtimes.
-        if ((runtimeProperties.getWebhooks().isAllowPrivateCallbackHosts()
-                || runtimeProperties.getWebhooks().isAllowHttpCallbacks())
+        // Callback allowances are independent toggles: HTTP only relaxes the scheme check, while private hosts only
+        // relax host safety. The only invalid configuration is enabling either allowance while webhooks are disabled.
+        if ((!runtimeProperties.getWebhooks().requirePublicCallbackHosts()
+                || !runtimeProperties.getWebhooks().requireHttpsCallbacks())
                 && !runtimeProperties.getWebhooks().isEnabled()) {
             throw new IllegalStateException(
                     "link-platform.webhooks.enabled must be true when private or http callback allowances are enabled");

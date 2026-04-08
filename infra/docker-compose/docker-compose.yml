@@ -1,3 +1,6 @@
+name: link-platform-local
+
+# Full local multi-runtime stack. The platform smoke path uses docker-compose.platform.yml on its own.
 services:
   postgres:
     image: postgres:16.8
