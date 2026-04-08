@@ -253,17 +253,20 @@ public class WebhookSubscriptionsService {
             if (scheme == null || scheme.isBlank()) {
                 throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must be a valid absolute https URL");
             }
+            boolean allowHttpCallbacks = runtimeProperties.getWebhooks().isAllowHttpCallbacks();
+            boolean allowPrivateCallbackHosts = runtimeProperties.getWebhooks().isAllowPrivateCallbackHosts();
             boolean https = "https".equalsIgnoreCase(scheme);
             boolean http = "http".equalsIgnoreCase(scheme);
-            if (!https && !(http && runtimeProperties.getWebhooks().isAllowHttpCallbacks())) {
+            if (!https && !(http && allowHttpCallbacks)) {
                 throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must use https");
             }
             if (uri.getHost() == null || uri.getHost().isBlank()) {
                 throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl host is required");
             }
             String host = uri.getHost().trim().toLowerCase(java.util.Locale.ROOT);
-            boolean privateHost = "localhost".equals(host) || isPrivateLiteral(host);
-            if (privateHost && !runtimeProperties.getWebhooks().isAllowPrivateCallbackHosts()) {
+            boolean localhost = "localhost".equals(host);
+            boolean privateOrLocalHost = localhost || isPrivateOrLocalAddress(host);
+            if (privateOrLocalHost && !allowPrivateCallbackHosts) {
                 throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must not target localhost or private addresses");
             }
         } catch (RuntimeException exception) {
@@ -274,7 +277,7 @@ public class WebhookSubscriptionsService {
         }
     }
 
-    private boolean isPrivateLiteral(String host) {
+    private boolean isPrivateOrLocalAddress(String host) {
         try {
             InetAddress address = InetAddress.getByName(host);
             return address.isAnyLocalAddress()

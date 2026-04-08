@@ -2,6 +2,9 @@ package com.linkplatform.api.owner.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.linkplatform.api.link.application.LinkStore;
 import java.nio.charset.StandardCharsets;
@@ -12,11 +15,15 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(properties = "spring.task.scheduling.enabled=false")
+@AutoConfigureMockMvc
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class WorkspaceQuotaEndToEndIntegrationTest {
@@ -50,6 +57,9 @@ class WorkspaceQuotaEndToEndIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private MockMvc mockMvc;
 
     @Test
     void quotasBlockGrowthAfterDowngradeWithoutDeletingExistingState() {
@@ -125,6 +135,92 @@ class WorkspaceQuotaEndToEndIntegrationTest {
         assertEquals(1L, workspaceEntitlementService.currentUsage(workspace.id()).currentMonthWebhookDeliveries());
     }
 
+    @Test
+    void quotaExceededProblemDetailsStayStructurallyConsistentAcrossHttpFlows() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now();
+        WorkspaceRecord workspace = workspaceStore.createWorkspace("quota-http", "quota-http", false, now, 1L);
+        workspaceStore.addMember(workspace.id(), 1L, WorkspaceRole.OWNER, now, 1L);
+        workspacePlanStore.upsertPlan(workspace.id(), WorkspacePlanCode.FREE, now);
+        workspaceRetentionPolicyStore.upsert(workspace.id(), 365, 365, 90, 365, 365, now, 1L);
+        jdbcTemplate.update(
+                """
+                UPDATE workspace_plans
+                SET active_links_limit = 0,
+                    members_limit = 1,
+                    api_keys_limit = 0,
+                    webhooks_limit = 0
+                WHERE workspace_id = ?
+                """,
+                workspace.id());
+        String quotaKey = bootstrapWorkspaceApiKey(workspace.id(), "quota-http-key",
+                "[\"members:write\",\"api_keys:write\",\"links:write\",\"webhooks:write\"]");
+        ensureOwner(4L, "quota-member-http");
+
+        mockMvc.perform(post("/api/v1/workspaces/{workspaceSlug}/members", workspace.slug())
+                        .header("X-API-Key", quotaKey)
+                        .header("X-Workspace-Slug", workspace.slug())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ownerId":4,"role":"ADMIN"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("about:blank"))
+                .andExpect(jsonPath("$.title").value("Conflict"))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.detail").isNotEmpty())
+                .andExpect(jsonPath("$.quotaMetric").value("MEMBERS"))
+                .andExpect(jsonPath("$.currentUsage").isNumber())
+                .andExpect(jsonPath("$.limit").isNumber());
+
+        mockMvc.perform(post("/api/v1/owner/api-keys")
+                        .header("X-API-Key", quotaKey)
+                        .header("X-Workspace-Slug", workspace.slug())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"label":"over-quota","scopes":["api_keys:read"]}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("about:blank"))
+                .andExpect(jsonPath("$.title").value("Conflict"))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.detail").isNotEmpty())
+                .andExpect(jsonPath("$.quotaMetric").value("API_KEYS"))
+                .andExpect(jsonPath("$.currentUsage").isNumber())
+                .andExpect(jsonPath("$.limit").isNumber());
+
+        mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", quotaKey)
+                        .header("X-Workspace-Slug", workspace.slug())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"slug":"quota-http-link","originalUrl":"https://example.com/quota-http-link"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("about:blank"))
+                .andExpect(jsonPath("$.title").value("Conflict"))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.detail").isNotEmpty())
+                .andExpect(jsonPath("$.quotaMetric").value("ACTIVE_LINKS"))
+                .andExpect(jsonPath("$.currentUsage").isNumber())
+                .andExpect(jsonPath("$.limit").isNumber());
+
+        mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
+                        .header("X-API-Key", quotaKey)
+                        .header("X-Workspace-Slug", workspace.slug())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"quota-http-webhook","callbackUrl":"http://127.0.0.1:9999/hook","eventTypes":["link.created"],"enabled":true}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("about:blank"))
+                .andExpect(jsonPath("$.title").value("Conflict"))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.detail").isNotEmpty())
+                .andExpect(jsonPath("$.quotaMetric").value("WEBHOOKS"))
+                .andExpect(jsonPath("$.currentUsage").isNumber())
+                .andExpect(jsonPath("$.limit").isNumber());
+    }
+
     private void insertActiveLink(long workspaceId, String slug) {
         jdbcTemplate.update(
                 """
@@ -163,5 +259,21 @@ class WorkspaceQuotaEndToEndIntegrationTest {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(exception);
         }
+    }
+
+    private String bootstrapWorkspaceApiKey(long workspaceId, String plaintextKey, String scopesJson) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO owner_api_keys (owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by)
+                VALUES (1, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, 'test-bootstrap')
+                """,
+                workspaceId,
+                plaintextKey,
+                sha256(plaintextKey),
+                plaintextKey,
+                plaintextKey,
+                scopesJson,
+                OffsetDateTime.now());
+        return plaintextKey;
     }
 }
