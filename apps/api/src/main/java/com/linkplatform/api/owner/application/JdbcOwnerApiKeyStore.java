@@ -49,7 +49,7 @@ public class JdbcOwnerApiKeyStore implements OwnerApiKeyStore {
                     """
                     INSERT INTO owner_api_keys (
                         owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, expires_at, created_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?)
                     """,
                     new String[] {"id"});
             statement.setLong(1, ownerId);

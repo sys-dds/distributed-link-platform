@@ -35,6 +35,7 @@ class WorkspacePlanControllerIntegrationTest {
     void planAndUsageReadsRequireMembersRead() throws Exception {
         String membersReadKey = bootstrapPersonalWorkspaceApiKey("members-read-key", "[\"members:read\"]");
         String retentionReadKey = bootstrapPersonalWorkspaceApiKey("retention-read-key", "[\"retention:read\"]");
+        String linksReadKey = bootstrapPersonalWorkspaceApiKey("links-read-key", "[\"links:read\"]");
 
         mockMvc.perform(get("/api/v1/workspaces/current/plan").header("X-API-Key", membersReadKey))
                 .andExpect(status().isOk())
@@ -46,6 +47,8 @@ class WorkspacePlanControllerIntegrationTest {
         mockMvc.perform(get("/api/v1/workspaces/current/plan").header("X-API-Key", retentionReadKey))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/v1/workspaces/current/usage").header("X-API-Key", retentionReadKey))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/workspaces/current/plan").header("X-API-Key", linksReadKey))
                 .andExpect(status().isForbidden());
     }
 

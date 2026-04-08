@@ -12,6 +12,7 @@ if ([string]::IsNullOrWhiteSpace($WebhookSinkUrl)) {
     $WebhookSinkUrl = "http://localhost:8090"
 }
 
+# Standalone platform stack defaults: docker compose -f infra/docker-compose/docker-compose.platform.yml
 & "$PSScriptRoot\\wait-for-http.ps1" -Url "$ApiBaseUrl/actuator/health/readiness"
 Invoke-RestMethod -Uri "$ApiBaseUrl/actuator/health" | Out-Null
 & "$PSScriptRoot\\wait-for-http.ps1" -Url $WebhookSinkUrl

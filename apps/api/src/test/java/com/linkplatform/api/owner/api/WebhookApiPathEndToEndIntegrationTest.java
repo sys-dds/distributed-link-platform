@@ -96,6 +96,7 @@ class WebhookApiPathEndToEndIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
+        assertThat(callbackUrl).startsWith("http://");
         long subscriptionId = objectMapper.readTree(createResponse).path("subscription").path("id").asLong();
         Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = 'free-owner'", Long.class);
         Long storedWorkspaceId = jdbcTemplate.queryForObject(
@@ -103,6 +104,10 @@ class WebhookApiPathEndToEndIntegrationTest {
                 Long.class,
                 subscriptionId);
         assertEquals(workspaceId, storedWorkspaceId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT callback_url FROM webhook_subscriptions WHERE id = ?",
+                String.class,
+                subscriptionId)).isEqualTo(callbackUrl);
 
         String slug = "api-path-" + System.nanoTime();
         createLink(slug);

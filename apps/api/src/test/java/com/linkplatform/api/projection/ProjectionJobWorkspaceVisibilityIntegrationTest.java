@@ -11,6 +11,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
+import java.lang.reflect.Method;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -33,6 +34,18 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
     @Autowired
     @Qualifier("dataSource")
     private DataSource dataSource;
+
+    @Test
+    void projectionStoreOperatorCriticalMethodsDoNotUseInterfaceDefaultFallbacks() throws Exception {
+        assertNotDefault("countQueued");
+        assertNotDefault("countActive");
+        assertNotDefault("countQueued", Long.class);
+        assertNotDefault("countActive", Long.class);
+        assertNotDefault("countFailed", Long.class);
+        assertNotDefault("countCompleted", Long.class);
+        assertNotDefault("findLatestStartedAt", Long.class);
+        assertNotDefault("findLatestFailedAt", Long.class);
+    }
 
     @Test
     void projectionJobsDefaultToActiveWorkspaceAndAreIsolatedAcrossWorkspaces() throws Exception {
@@ -170,5 +183,10 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(exception);
         }
+    }
+
+    private void assertNotDefault(String methodName, Class<?>... parameterTypes) throws Exception {
+        Method method = ProjectionJobStore.class.getMethod(methodName, parameterTypes);
+        org.junit.jupiter.api.Assertions.assertFalse(method.isDefault(), methodName + " must not be a default interface method");
     }
 }

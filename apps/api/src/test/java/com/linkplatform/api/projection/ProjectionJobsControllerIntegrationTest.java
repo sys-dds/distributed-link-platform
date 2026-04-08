@@ -1,6 +1,7 @@
 package com.linkplatform.api.projection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -223,6 +224,13 @@ class ProjectionJobsControllerIntegrationTest {
         assertThat(controllerJob.path("failedItems").asLong()).isEqualTo(persisted.failedItems());
         assertThat(controllerJob.path("lastError").isMissingNode() || controllerJob.path("lastError").isNull()).isTrue();
         assertThat(controllerJob.path("errorSummary").isMissingNode() || controllerJob.path("errorSummary").isNull()).isTrue();
+    }
+
+    @Test
+    void legacyGlobalProjectionStoreMethodsStayExplicitAndNonDefault() throws Exception {
+        assertFalse(ProjectionJobStore.class.getMethod("findRecent", int.class).isDefault());
+        assertFalse(ProjectionJobStore.class.getMethod("findById", long.class).isDefault());
+        assertFalse(ProjectionJobStore.class.getMethod("claimNextQueued", String.class, OffsetDateTime.class, OffsetDateTime.class).isDefault());
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {
