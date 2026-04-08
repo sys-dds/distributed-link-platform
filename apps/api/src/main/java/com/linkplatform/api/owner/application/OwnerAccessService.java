@@ -18,6 +18,7 @@ public class OwnerAccessService {
     private final ApiKeyLifecycleService apiKeyLifecycleService;
     private final ControlPlaneRateLimitStore controlPlaneRateLimitStore;
     private final SecurityEventStore securityEventStore;
+    private final WorkspaceEntitlementService workspaceEntitlementService;
     private final Clock clock;
 
     public OwnerAccessService(
@@ -26,13 +27,15 @@ public class OwnerAccessService {
             WorkspacePermissionService workspacePermissionService,
             ApiKeyLifecycleService apiKeyLifecycleService,
             ControlPlaneRateLimitStore controlPlaneRateLimitStore,
-            SecurityEventStore securityEventStore) {
+            SecurityEventStore securityEventStore,
+            WorkspaceEntitlementService workspaceEntitlementService) {
         this.ownerStore = ownerStore;
         this.workspaceStore = workspaceStore;
         this.workspacePermissionService = workspacePermissionService;
         this.apiKeyLifecycleService = apiKeyLifecycleService;
         this.controlPlaneRateLimitStore = controlPlaneRateLimitStore;
         this.securityEventStore = securityEventStore;
+        this.workspaceEntitlementService = workspaceEntitlementService;
         this.clock = Clock.systemUTC();
     }
 
@@ -167,6 +170,21 @@ public class OwnerAccessService {
                     "Workspace suspended",
                     OffsetDateTime.now(clock));
             throw new WorkspaceAccessDeniedException("Workspace is suspended");
+        }
+        if (bucket == ControlPlaneRateLimitBucket.MUTATION
+                && workspaceEntitlementService.controlPlaneMutationsBlocked(workspace.id())
+                && !requestPath.endsWith("/subscription")) {
+            securityEventStore.record(
+                    SecurityEventType.WORKSPACE_ACCESS_DENIED,
+                    owner.id(),
+                    workspace.id(),
+                    apiKeyHash,
+                    requestMethod,
+                    requestPath,
+                    remoteAddress,
+                    "Workspace subscription suspended",
+                    OffsetDateTime.now(clock));
+            throw new WorkspaceAccessDeniedException("Workspace subscription is suspended");
         }
         WorkspaceMemberRecord membership = workspaceStore.findActiveMembership(workspace.id(), owner.id())
                 .orElseThrow(() -> {

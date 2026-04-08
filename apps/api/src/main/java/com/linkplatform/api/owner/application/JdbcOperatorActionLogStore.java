@@ -45,7 +45,7 @@ public class JdbcOperatorActionLogStore implements OperatorActionLogStore {
                 shorten(targetSlug, 255),
                 targetCaseId,
                 targetProjectionJobId,
-                shorten(note, NOTE_MAX_LENGTH),
+                sanitizeNote(note),
                 createdAt);
     }
 

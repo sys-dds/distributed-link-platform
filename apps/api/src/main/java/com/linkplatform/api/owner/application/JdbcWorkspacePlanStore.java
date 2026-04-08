@@ -20,8 +20,9 @@ public class JdbcWorkspacePlanStore implements WorkspacePlanStore {
     public Optional<WorkspacePlanRecord> findByWorkspaceId(long workspaceId) {
         return jdbcTemplate.query(
                         """
-                        SELECT workspace_id, plan_code, active_links_limit, members_limit, api_keys_limit,
-                               webhooks_limit, monthly_webhook_deliveries_limit, exports_enabled,
+                        SELECT workspace_id, plan_code, subscription_status, active_links_limit, members_limit, api_keys_limit,
+                               webhooks_limit, monthly_webhook_deliveries_limit, exports_enabled, current_period_start, current_period_end,
+                               grace_until, scheduled_plan_code, scheduled_plan_effective_at,
                                created_at, updated_at
                         FROM workspace_plans
                         WHERE workspace_id = ?
@@ -65,18 +66,55 @@ public class JdbcWorkspacePlanStore implements WorkspacePlanStore {
         return findByWorkspaceId(workspaceId).orElseThrow();
     }
 
+    @Override
+    public WorkspacePlanRecord updateSubscriptionLifecycle(
+            long workspaceId,
+            WorkspaceSubscriptionStatus subscriptionStatus,
+            OffsetDateTime graceUntil,
+            WorkspacePlanCode scheduledPlanCode,
+            OffsetDateTime scheduledPlanEffectiveAt,
+            OffsetDateTime updatedAt) {
+        jdbcTemplate.update(
+                """
+                UPDATE workspace_plans
+                SET subscription_status = ?,
+                    grace_until = ?,
+                    scheduled_plan_code = ?,
+                    scheduled_plan_effective_at = ?,
+                    updated_at = ?
+                WHERE workspace_id = ?
+                """,
+                subscriptionStatus.name(),
+                graceUntil,
+                scheduledPlanCode == null ? null : scheduledPlanCode.name(),
+                scheduledPlanEffectiveAt,
+                updatedAt,
+                workspaceId);
+        return findByWorkspaceId(workspaceId).orElseThrow();
+    }
+
     private WorkspacePlanRecord mapRecord(ResultSet resultSet, int rowNum) throws SQLException {
         return new WorkspacePlanRecord(
                 resultSet.getLong("workspace_id"),
                 WorkspacePlanCode.valueOf(resultSet.getString("plan_code")),
+                WorkspaceSubscriptionStatus.valueOf(resultSet.getString("subscription_status")),
                 resultSet.getInt("active_links_limit"),
                 resultSet.getInt("members_limit"),
                 resultSet.getInt("api_keys_limit"),
                 resultSet.getInt("webhooks_limit"),
                 resultSet.getLong("monthly_webhook_deliveries_limit"),
                 resultSet.getBoolean("exports_enabled"),
+                resultSet.getObject("current_period_start", OffsetDateTime.class),
+                resultSet.getObject("current_period_end", OffsetDateTime.class),
+                resultSet.getObject("grace_until", OffsetDateTime.class),
+                mapNullablePlanCode(resultSet.getString("scheduled_plan_code")),
+                resultSet.getObject("scheduled_plan_effective_at", OffsetDateTime.class),
                 resultSet.getObject("created_at", OffsetDateTime.class),
                 resultSet.getObject("updated_at", OffsetDateTime.class));
+    }
+
+    private WorkspacePlanCode mapNullablePlanCode(String value) {
+        return value == null ? null : WorkspacePlanCode.valueOf(value);
     }
 
     public record PlanDefaults(

@@ -169,6 +169,8 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case ABUSE_CASE_SIGNAL_INCREMENTED -> "Abuse case signal incremented";
             case QUOTA_REJECTED -> "Quota limit rejected";
             case WORKSPACE_PLAN_UPDATED -> "Workspace plan updated";
+            case WORKSPACE_SUBSCRIPTION_STATE_CHANGED -> "Workspace subscription changed";
+            case WORKSPACE_PLAN_CHANGE_SCHEDULED -> "Workspace plan scheduled";
             case WORKSPACE_SUSPENDED -> "Workspace suspended";
             case WORKSPACE_RESUMED -> "Workspace resumed";
             case WORKSPACE_OWNERSHIP_TRANSFERRED -> "Workspace ownership transferred";
