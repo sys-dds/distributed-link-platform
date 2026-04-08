@@ -153,8 +153,27 @@ public class OwnerAccessService {
                     OffsetDateTime.now(clock));
             throw new WorkspaceAccessDeniedException("Selected workspace is not available to this API key");
         }
+        if (bucket == ControlPlaneRateLimitBucket.MUTATION
+                && workspaceStore.isWorkspaceSuspended(workspace.id())
+                && !requestPath.endsWith("/status")) {
+            securityEventStore.record(
+                    SecurityEventType.WORKSPACE_ACCESS_DENIED,
+                    owner.id(),
+                    workspace.id(),
+                    apiKeyHash,
+                    requestMethod,
+                    requestPath,
+                    remoteAddress,
+                    "Workspace suspended",
+                    OffsetDateTime.now(clock));
+            throw new WorkspaceAccessDeniedException("Workspace is suspended");
+        }
         WorkspaceMemberRecord membership = workspaceStore.findActiveMembership(workspace.id(), owner.id())
                 .orElseThrow(() -> {
+                    WorkspaceMemberRecord inactiveMembership = workspaceStore.findMembership(workspace.id(), owner.id()).orElse(null);
+                    String detail = inactiveMembership != null && inactiveMembership.suspendedAt() != null
+                            ? "Workspace member suspended"
+                            : "Workspace membership denied";
                     securityEventStore.record(
                             SecurityEventType.WORKSPACE_ACCESS_DENIED,
                             owner.id(),
@@ -163,8 +182,11 @@ public class OwnerAccessService {
                             requestMethod,
                             requestPath,
                             remoteAddress,
-                            "Workspace membership denied",
+                            detail,
                             OffsetDateTime.now(clock));
+                    if (inactiveMembership != null && inactiveMembership.suspendedAt() != null) {
+                        return new WorkspaceAccessDeniedException("Workspace member is suspended");
+                    }
                     return new WorkspaceAccessDeniedException("Caller is not an active member of workspace " + workspace.slug());
                 });
         WorkspaceAccessContext context = new WorkspaceAccessContext(

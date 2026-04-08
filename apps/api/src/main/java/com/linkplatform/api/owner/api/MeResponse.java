@@ -11,6 +11,8 @@ public record MeResponse(
         String activeWorkspaceSlug,
         String activeWorkspaceRole,
         List<String> activeWorkspaceScopes,
+        String activeWorkspaceStatus,
+        boolean activeWorkspaceSuspended,
         String personalWorkspaceSlug) {
 
     public MeResponse(
@@ -19,6 +21,6 @@ public record MeResponse(
             String plan,
             long activeLinkCount,
             long activeLinkLimit) {
-        this(ownerKey, displayName, plan, activeLinkCount, activeLinkLimit, null, null, List.of(), null);
+        this(ownerKey, displayName, plan, activeLinkCount, activeLinkLimit, null, null, List.of(), null, false, null);
     }
 }

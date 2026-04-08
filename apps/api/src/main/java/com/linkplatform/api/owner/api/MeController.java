@@ -9,6 +9,7 @@ import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Comparator;
 import java.util.Locale;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,10 +22,15 @@ public class MeController {
 
     private final OwnerAccessService ownerAccessService;
     private final LinkApplicationService linkApplicationService;
+    private final JdbcTemplate jdbcTemplate;
 
-    public MeController(OwnerAccessService ownerAccessService, LinkApplicationService linkApplicationService) {
+    public MeController(
+            OwnerAccessService ownerAccessService,
+            LinkApplicationService linkApplicationService,
+            JdbcTemplate jdbcTemplate) {
         this.ownerAccessService = ownerAccessService;
         this.linkApplicationService = linkApplicationService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @GetMapping
@@ -41,6 +47,10 @@ public class MeController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.LINKS_READ);
+        String activeWorkspaceStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM workspaces WHERE id = ?",
+                String.class,
+                context.workspaceId());
         return new MeResponse(
                 context.ownerKey(),
                 context.displayName(),
@@ -50,6 +60,8 @@ public class MeController {
                 context.workspaceSlug(),
                 context.role().name().toLowerCase(Locale.ROOT),
                 context.grantedScopes().stream().map(ApiKeyScope::value).sorted(Comparator.naturalOrder()).toList(),
+                activeWorkspaceStatus == null ? "active" : activeWorkspaceStatus.toLowerCase(Locale.ROOT),
+                "SUSPENDED".equalsIgnoreCase(activeWorkspaceStatus),
                 ownerAccessService.authorizeAuthenticated(
                                 apiKey,
                                 authorizationHeader,

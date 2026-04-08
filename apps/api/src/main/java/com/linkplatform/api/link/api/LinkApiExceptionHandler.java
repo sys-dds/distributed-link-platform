@@ -94,7 +94,8 @@ public class LinkApiExceptionHandler {
     @ExceptionHandler(WorkspaceAccessDeniedException.class)
     public ProblemDetail handleWorkspaceAccessDenied(WorkspaceAccessDeniedException exception) {
         ProblemDetail problemDetail = problemDetail(HttpStatus.FORBIDDEN, exception.getMessage());
-        problemDetail.setProperty("category", "membership-denied");
+        String detail = exception.getMessage() == null ? "" : exception.getMessage().toLowerCase(Locale.ROOT);
+        problemDetail.setProperty("category", detail.contains("suspended") ? "workspace-suspended" : "workspace-access-denied");
         return problemDetail;
     }
 
