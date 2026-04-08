@@ -11,7 +11,21 @@ import org.springframework.stereotype.Service;
 @Service
 public class LinkTargetPolicyService {
 
+    private final WorkspaceAbuseIntelligenceService workspaceAbuseIntelligenceService;
+
+    public LinkTargetPolicyService() {
+        this.workspaceAbuseIntelligenceService = null;
+    }
+
+    public LinkTargetPolicyService(WorkspaceAbuseIntelligenceService workspaceAbuseIntelligenceService) {
+        this.workspaceAbuseIntelligenceService = workspaceAbuseIntelligenceService;
+    }
+
     public TargetRiskAssessment assess(String targetUrl) {
+        return assess(null, targetUrl);
+    }
+
+    public TargetRiskAssessment assess(Long workspaceId, String targetUrl) {
         URI uri;
         try {
             uri = URI.create(targetUrl);
@@ -28,6 +42,12 @@ public class LinkTargetPolicyService {
             if (host == null) {
                 return reject("HTTP target host is required", null);
             }
+            WorkspaceAbuseIntelligenceService.HostRuleEffect hostRuleEffect =
+                    workspaceId == null || workspaceAbuseIntelligenceService == null ? WorkspaceAbuseIntelligenceService.HostRuleEffect.NONE
+                            : workspaceAbuseIntelligenceService.hostRuleEffect(workspaceId, host);
+            if (hostRuleEffect == WorkspaceAbuseIntelligenceService.HostRuleEffect.DENY) {
+                return reject("Blocked target host", host);
+            }
             if ("localhost".equals(host)) {
                 return reject("Blocked local target host", host);
             }
@@ -39,17 +59,42 @@ public class LinkTargetPolicyService {
                 if (isRejectedPrivateAddress(address)) {
                     return reject("Blocked private target host", host);
                 }
-                return review("Public IP target requires operator review", host, 60);
+                if (hostRuleEffect == WorkspaceAbuseIntelligenceService.HostRuleEffect.ALLOW) {
+                    return safe(host);
+                }
+                if (workspaceId == null
+                        || workspaceAbuseIntelligenceService == null
+                        || workspaceAbuseIntelligenceService.policyForWorkspace(workspaceId).rawIpReviewEnabled()) {
+                    return review("Public IP target requires operator review", host, 60);
+                }
+                return safe(host);
             }
             if (host.contains("xn--")) {
+                if (hostRuleEffect == WorkspaceAbuseIntelligenceService.HostRuleEffect.ALLOW) {
+                    return safe(host);
+                }
+                if (workspaceId != null
+                        && workspaceAbuseIntelligenceService != null
+                        && !workspaceAbuseIntelligenceService.policyForWorkspace(workspaceId).punycodeReviewEnabled()) {
+                    return safe(host);
+                }
                 return review("Punycode target requires operator review", host, 50);
             }
             if (host.length() > 200) {
+                if (hostRuleEffect == WorkspaceAbuseIntelligenceService.HostRuleEffect.ALLOW) {
+                    return safe(host);
+                }
                 return review("Long hostname requires operator review", host, 40);
+            }
+            if (workspaceId != null
+                    && workspaceAbuseIntelligenceService != null
+                    && workspaceAbuseIntelligenceService.repeatedHostThresholdReached(workspaceId, host)
+                    && hostRuleEffect != WorkspaceAbuseIntelligenceService.HostRuleEffect.ALLOW) {
+                return review("Repeated target host requires operator review", host, 75);
             }
         }
 
-        return new TargetRiskAssessment(TargetRiskAssessment.Decision.SAFE, "Target accepted", 0, host);
+        return safe(host);
     }
 
     private TargetRiskAssessment reject(String summary, String host) {
@@ -58,6 +103,10 @@ public class LinkTargetPolicyService {
 
     private TargetRiskAssessment review(String summary, String host, int riskScore) {
         return new TargetRiskAssessment(TargetRiskAssessment.Decision.REVIEW, summary, riskScore, host);
+    }
+
+    private TargetRiskAssessment safe(String host) {
+        return new TargetRiskAssessment(TargetRiskAssessment.Decision.SAFE, "Target accepted", 0, host);
     }
 
     private String normalize(String value) {

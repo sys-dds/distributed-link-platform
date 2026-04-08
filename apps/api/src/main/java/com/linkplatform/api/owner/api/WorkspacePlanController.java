@@ -9,6 +9,8 @@ import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.owner.application.WorkspaceEntitlementService;
 import com.linkplatform.api.owner.application.WorkspacePlanCode;
 import com.linkplatform.api.owner.application.WorkspacePlanStore;
+import com.linkplatform.api.owner.application.WorkspaceSubscriptionService;
+import com.linkplatform.api.owner.application.WorkspaceSubscriptionStatus;
 import com.linkplatform.api.owner.application.WorkspaceRetentionPurgeRunner;
 import com.linkplatform.api.owner.application.WorkspaceRetentionPolicyRecord;
 import com.linkplatform.api.owner.application.WorkspaceRetentionService;
@@ -32,6 +34,7 @@ public class WorkspacePlanController {
     private final OwnerAccessService ownerAccessService;
     private final WorkspacePlanStore workspacePlanStore;
     private final WorkspaceEntitlementService workspaceEntitlementService;
+    private final WorkspaceSubscriptionService workspaceSubscriptionService;
     private final WorkspaceRetentionService workspaceRetentionService;
     private final WorkspaceRetentionPurgeRunner workspaceRetentionPurgeRunner;
     private final WorkspaceStore workspaceStore;
@@ -43,6 +46,7 @@ public class WorkspacePlanController {
             OwnerAccessService ownerAccessService,
             WorkspacePlanStore workspacePlanStore,
             WorkspaceEntitlementService workspaceEntitlementService,
+            WorkspaceSubscriptionService workspaceSubscriptionService,
             WorkspaceRetentionService workspaceRetentionService,
             WorkspaceRetentionPurgeRunner workspaceRetentionPurgeRunner,
             WorkspaceStore workspaceStore,
@@ -51,6 +55,7 @@ public class WorkspacePlanController {
         this.ownerAccessService = ownerAccessService;
         this.workspacePlanStore = workspacePlanStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
+        this.workspaceSubscriptionService = workspaceSubscriptionService;
         this.workspaceRetentionService = workspaceRetentionService;
         this.workspaceRetentionPurgeRunner = workspaceRetentionPurgeRunner;
         this.workspaceStore = workspaceStore;
@@ -76,6 +81,31 @@ public class WorkspacePlanController {
                 plan.webhooksLimit(),
                 plan.monthlyWebhookDeliveriesLimit(),
                 plan.exportsEnabled());
+    }
+
+    @PatchMapping("/api/v1/ops/workspaces/{workspaceSlug}/subscription")
+    public WorkspaceSubscriptionResponse updateSubscription(
+            @PathVariable String workspaceSlug,
+            @RequestBody UpdateWorkspaceSubscriptionRequest requestBody,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, request);
+        var workspace = workspaceStore.findBySlug(workspaceSlug)
+                .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceSlug));
+        var plan = workspaceSubscriptionService.updateSubscription(
+                workspace.id(),
+                workspace.slug(),
+                parseSubscriptionStatus(requestBody == null ? null : requestBody.subscriptionStatus()),
+                requestBody == null ? null : requestBody.graceUntil(),
+                requestBody == null || requestBody.scheduledPlanCode() == null ? null : WorkspacePlanCode.fromValue(requestBody.scheduledPlanCode()),
+                requestBody == null ? null : requestBody.scheduledPlanEffectiveAt(),
+                context.ownerId(),
+                context.apiKeyHash(),
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr());
+        return toSubscriptionResponse(workspace.slug(), plan);
     }
 
     @GetMapping("/api/v1/workspaces/current/usage")
@@ -145,7 +175,7 @@ public class WorkspacePlanController {
             HttpServletRequest request) {
         WorkspaceAccessContext context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, request);
         var workspace = workspaceStore.findBySlug(workspaceSlug).orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceSlug));
-        var plan = workspaceEntitlementService.updatePlan(workspace.id(), WorkspacePlanCode.valueOf(requestBody.planCode()), OffsetDateTime.now(clock));
+        var plan = workspaceEntitlementService.updatePlan(workspace.id(), WorkspacePlanCode.fromValue(requestBody.planCode()), OffsetDateTime.now(clock));
         securityEventStore.record(
                 SecurityEventType.WORKSPACE_PLAN_UPDATED,
                 context.ownerId(),
@@ -275,5 +305,24 @@ public class WorkspacePlanController {
                 request.getRequestURI(),
                 request.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
+    }
+
+    private WorkspaceSubscriptionStatus parseSubscriptionStatus(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("subscriptionStatus is required");
+        }
+        return WorkspaceSubscriptionStatus.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+    }
+
+    private WorkspaceSubscriptionResponse toSubscriptionResponse(String workspaceSlug, com.linkplatform.api.owner.application.WorkspacePlanRecord plan) {
+        return new WorkspaceSubscriptionResponse(
+                workspaceSlug,
+                plan.planCode().name(),
+                plan.subscriptionStatus().name(),
+                plan.currentPeriodStart(),
+                plan.currentPeriodEnd(),
+                plan.graceUntil(),
+                plan.scheduledPlanCode() == null ? null : plan.scheduledPlanCode().name(),
+                plan.scheduledPlanEffectiveAt());
     }
 }

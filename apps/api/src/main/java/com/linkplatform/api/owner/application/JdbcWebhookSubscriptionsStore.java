@@ -127,6 +127,43 @@ public class JdbcWebhookSubscriptionsStore implements WebhookSubscriptionsStore 
     }
 
     @Override
+    public WebhookSubscriptionRecord markVerified(long workspaceId, long subscriptionId, OffsetDateTime verifiedAt) {
+        jdbcTemplate.update(
+                """
+                UPDATE webhook_subscriptions
+                SET verification_status = 'VERIFIED',
+                    verified_at = ?,
+                    updated_at = ?
+                WHERE workspace_id = ?
+                  AND id = ?
+                """,
+                verifiedAt,
+                verifiedAt,
+                workspaceId,
+                subscriptionId);
+        return findById(workspaceId, subscriptionId).orElseThrow();
+    }
+
+    @Override
+    public WebhookSubscriptionRecord recordTestFired(long workspaceId, long subscriptionId, long deliveryId, OffsetDateTime firedAt) {
+        jdbcTemplate.update(
+                """
+                UPDATE webhook_subscriptions
+                SET last_test_fired_at = ?,
+                    last_test_delivery_id = ?,
+                    updated_at = ?
+                WHERE workspace_id = ?
+                  AND id = ?
+                """,
+                firedAt,
+                deliveryId,
+                firedAt,
+                workspaceId,
+                subscriptionId);
+        return findById(workspaceId, subscriptionId).orElseThrow();
+    }
+
+    @Override
     public long countEnabledByWorkspaceId(long workspaceId) {
         Long count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM webhook_subscriptions WHERE workspace_id = ? AND enabled = TRUE AND disabled_at IS NULL",
@@ -202,9 +239,11 @@ public class JdbcWebhookSubscriptionsStore implements WebhookSubscriptionsStore 
     private String selectSql() {
         return """
                 SELECT s.id, s.workspace_id, w.slug AS workspace_slug, s.name, s.callback_url,
-                       s.signing_secret_hash, s.signing_secret_prefix, s.enabled, s.event_types_json,
+                       s.signing_secret_hash, s.signing_secret_prefix, s.event_version,
+                       s.verification_status, s.verified_at, s.enabled, s.event_types_json,
                        s.created_at, s.updated_at, s.last_delivery_at, s.last_failure_at,
-                       s.consecutive_failures, s.disabled_at, s.disabled_reason
+                       s.consecutive_failures, s.disabled_at, s.disabled_reason,
+                       s.last_test_fired_at, s.last_test_delivery_id
                 FROM webhook_subscriptions s
                 JOIN workspaces w ON w.id = s.workspace_id
                 """;
@@ -219,6 +258,9 @@ public class JdbcWebhookSubscriptionsStore implements WebhookSubscriptionsStore 
                 resultSet.getString("callback_url"),
                 resultSet.getString("signing_secret_hash"),
                 resultSet.getString("signing_secret_prefix"),
+                resultSet.getInt("event_version"),
+                resultSet.getString("verification_status"),
+                resultSet.getObject("verified_at", OffsetDateTime.class),
                 resultSet.getBoolean("enabled"),
                 deserializeEvents(resultSet.getString("event_types_json")),
                 resultSet.getObject("created_at", OffsetDateTime.class),
@@ -227,7 +269,9 @@ public class JdbcWebhookSubscriptionsStore implements WebhookSubscriptionsStore 
                 resultSet.getObject("last_failure_at", OffsetDateTime.class),
                 resultSet.getInt("consecutive_failures"),
                 resultSet.getObject("disabled_at", OffsetDateTime.class),
-                resultSet.getString("disabled_reason"));
+                resultSet.getString("disabled_reason"),
+                resultSet.getObject("last_test_fired_at", OffsetDateTime.class),
+                resultSet.getObject("last_test_delivery_id", Long.class));
     }
 
     private String serializeEvents(Set<WebhookEventType> eventTypes) {

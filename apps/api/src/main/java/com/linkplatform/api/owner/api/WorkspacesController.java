@@ -5,11 +5,19 @@ import com.linkplatform.api.owner.application.DuplicateWorkspaceMemberException;
 import com.linkplatform.api.owner.application.InvalidWorkspaceRoleChangeException;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.OwnerStore;
+import com.linkplatform.api.owner.application.ServiceAccountRecord;
+import com.linkplatform.api.owner.application.ServiceAccountStore;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.owner.application.WorkspaceEntitlementService;
+import com.linkplatform.api.owner.application.WorkspaceInvitationRecord;
+import com.linkplatform.api.owner.application.WorkspaceInvitationService;
+import com.linkplatform.api.owner.application.WorkspaceInvitationStore;
 import com.linkplatform.api.owner.application.WorkspaceMemberRecord;
+import com.linkplatform.api.owner.application.WorkspaceLifecycleService;
+import com.linkplatform.api.owner.application.WorkspacePlanCode;
+import com.linkplatform.api.owner.application.WorkspacePermissionService;
 import com.linkplatform.api.owner.application.WorkspaceRecord;
 import com.linkplatform.api.owner.application.WorkspaceRole;
 import com.linkplatform.api.owner.application.WorkspaceStore;
@@ -43,21 +51,36 @@ public class WorkspacesController {
     private final OwnerAccessService ownerAccessService;
     private final OwnerStore ownerStore;
     private final WorkspaceStore workspaceStore;
+    private final WorkspacePermissionService workspacePermissionService;
     private final SecurityEventStore securityEventStore;
     private final WorkspaceEntitlementService workspaceEntitlementService;
+    private final WorkspaceInvitationStore workspaceInvitationStore;
+    private final WorkspaceInvitationService workspaceInvitationService;
+    private final ServiceAccountStore serviceAccountStore;
+    private final WorkspaceLifecycleService workspaceLifecycleService;
     private final Clock clock;
 
     public WorkspacesController(
             OwnerAccessService ownerAccessService,
             OwnerStore ownerStore,
             WorkspaceStore workspaceStore,
+            WorkspacePermissionService workspacePermissionService,
             SecurityEventStore securityEventStore,
-            WorkspaceEntitlementService workspaceEntitlementService) {
+            WorkspaceEntitlementService workspaceEntitlementService,
+            WorkspaceInvitationStore workspaceInvitationStore,
+            WorkspaceInvitationService workspaceInvitationService,
+            ServiceAccountStore serviceAccountStore,
+            WorkspaceLifecycleService workspaceLifecycleService) {
         this.ownerAccessService = ownerAccessService;
         this.ownerStore = ownerStore;
         this.workspaceStore = workspaceStore;
+        this.workspacePermissionService = workspacePermissionService;
         this.securityEventStore = securityEventStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
+        this.workspaceInvitationStore = workspaceInvitationStore;
+        this.workspaceInvitationService = workspaceInvitationService;
+        this.serviceAccountStore = serviceAccountStore;
+        this.workspaceLifecycleService = workspaceLifecycleService;
         this.clock = Clock.systemUTC();
     }
 
@@ -107,6 +130,7 @@ public class WorkspacesController {
                 now,
                 context.ownerId());
         workspaceStore.addMember(workspace.id(), context.ownerId(), WorkspaceRole.OWNER, now, null);
+        workspaceEntitlementService.updatePlan(workspace.id(), WorkspacePlanCode.FREE, now);
         securityEventStore.record(
                 SecurityEventType.WORKSPACE_CREATED,
                 context.ownerId(),
@@ -159,6 +183,161 @@ public class WorkspacesController {
         return workspaceStore.findActiveMembers(context.workspaceId()).stream()
                 .map(this::toMemberResponse)
                 .toList();
+    }
+
+    @GetMapping("/{workspaceSlug}/invitations")
+    public List<WorkspaceInvitationResponse> listInvitations(
+            @PathVariable String workspaceSlug,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_READ);
+        ensureSharedWorkspace(context, "Workspace invitations are not available for personal workspaces");
+        return workspaceInvitationStore.findByWorkspaceId(context.workspaceId()).stream()
+                .map(this::toWorkspaceInvitationResponse)
+                .toList();
+    }
+
+    @PostMapping("/{workspaceSlug}/invitations")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CreatedWorkspaceInvitationResponse createInvitation(
+            @PathVariable String workspaceSlug,
+            @RequestBody CreateWorkspaceInvitationRequest request,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        ensureSharedWorkspace(context, "Workspace invitations are not available for personal workspaces");
+        WorkspaceInvitationService.CreatedInvitation invitation = workspaceInvitationService.createInvitation(
+                context,
+                request == null ? null : request.email(),
+                parseRole(request == null ? null : request.role()));
+        return new CreatedWorkspaceInvitationResponse(
+                toWorkspaceInvitationResponse(invitation.record()),
+                invitation.plaintextToken());
+    }
+
+    @PostMapping("/{workspaceSlug}/invitations/accept")
+    public WorkspaceInvitationResponse acceptInvitation(
+            @PathVariable String workspaceSlug,
+            @RequestBody AcceptWorkspaceInvitationRequest request,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext caller = ownerAccessService.authorizeAuthenticated(
+                apiKey,
+                authorizationHeader,
+                null,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        WorkspaceInvitationRecord invitation = workspaceInvitationService.acceptInvitation(
+                request == null ? null : request.token(),
+                caller.ownerId());
+        WorkspaceRecord workspace = workspaceStore.findById(invitation.workspaceId())
+                .orElseThrow(() -> new IllegalArgumentException("Workspace not found for invitation"));
+        if (!workspace.slug().equals(workspaceSlug)) {
+            throw new IllegalArgumentException("Workspace invitation does not belong to requested workspace");
+        }
+        return toWorkspaceInvitationResponse(invitation);
+    }
+
+    @DeleteMapping("/{workspaceSlug}/invitations/{invitationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revokeInvitation(
+            @PathVariable String workspaceSlug,
+            @PathVariable long invitationId,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        ensureSharedWorkspace(context, "Workspace invitations are not available for personal workspaces");
+        workspaceInvitationService.revokeInvitation(context, invitationId);
+    }
+
+    @GetMapping("/{workspaceSlug}/service-accounts")
+    public List<ServiceAccountResponse> listServiceAccounts(
+            @PathVariable String workspaceSlug,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_READ);
+        ensureSharedWorkspace(context, "Service accounts are not available for personal workspaces");
+        return serviceAccountStore.findByWorkspaceId(context.workspaceId()).stream()
+                .map(this::toServiceAccountResponse)
+                .toList();
+    }
+
+    @PostMapping("/{workspaceSlug}/service-accounts")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ServiceAccountResponse createServiceAccount(
+            @PathVariable String workspaceSlug,
+            @RequestBody CreateServiceAccountRequest request,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        ensureSharedWorkspace(context, "Service accounts are not available for personal workspaces");
+        ServiceAccountRecord serviceAccount = workspaceLifecycleService.createServiceAccount(
+                context,
+                request == null ? null : request.name(),
+                request == null ? null : request.slug(),
+                parseRole(request == null ? null : request.role()));
+        return toServiceAccountResponse(serviceAccount);
+    }
+
+    @PostMapping("/{workspaceSlug}/service-accounts/{serviceAccountId}/disable")
+    public ServiceAccountResponse disableServiceAccount(
+            @PathVariable String workspaceSlug,
+            @PathVariable long serviceAccountId,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        ensureSharedWorkspace(context, "Service accounts are not available for personal workspaces");
+        return toServiceAccountResponse(workspaceLifecycleService.disableServiceAccount(context, serviceAccountId));
     }
 
     @PostMapping("/{workspaceSlug}/members")
@@ -278,9 +457,103 @@ public class WorkspacesController {
                 OffsetDateTime.now(clock));
     }
 
+    @PostMapping("/{workspaceSlug}/members/{ownerId}/suspend")
+    public WorkspaceMemberResponse suspendMember(
+            @PathVariable String workspaceSlug,
+            @PathVariable long ownerId,
+            @RequestBody(required = false) SuspendWorkspaceMemberRequest request,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        return toMemberResponse(workspaceLifecycleService.suspendMember(
+                context,
+                ownerId,
+                request == null ? null : request.reason()));
+    }
+
+    @PostMapping("/{workspaceSlug}/members/{ownerId}/resume")
+    public WorkspaceMemberResponse resumeMember(
+            @PathVariable String workspaceSlug,
+            @PathVariable long ownerId,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        return toMemberResponse(workspaceLifecycleService.resumeMember(context, ownerId));
+    }
+
+    @PostMapping("/{workspaceSlug}/ownership/transfer")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void transferOwnership(
+            @PathVariable String workspaceSlug,
+            @RequestBody TransferWorkspaceOwnershipRequest request,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        workspaceLifecycleService.transferOwnership(
+                context,
+                request == null ? 0L : request.fromOwnerId(),
+                request == null ? 0L : request.toOwnerId());
+    }
+
+    @PostMapping("/{workspaceSlug}/status")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void updateWorkspaceStatus(
+            @PathVariable String workspaceSlug,
+            @RequestBody UpdateWorkspaceStatusRequest request,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            HttpServletRequest httpServletRequest) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeAuthenticated(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
+        workspacePermissionService.requireScope(context, ApiKeyScope.MEMBERS_WRITE);
+        String status = request == null || request.status() == null ? null : request.status().trim().toUpperCase(Locale.ROOT);
+        if ("SUSPENDED".equals(status)) {
+            workspaceLifecycleService.suspendWorkspace(context, request.reason());
+            return;
+        }
+        if ("ACTIVE".equals(status)) {
+            workspaceLifecycleService.resumeWorkspace(context);
+            return;
+        }
+        throw new IllegalArgumentException("status must be ACTIVE or SUSPENDED");
+    }
+
     private void ensureSharedWorkspace(WorkspaceAccessContext context) {
+        ensureSharedWorkspace(context, "Personal workspaces cannot add members");
+    }
+
+    private void ensureSharedWorkspace(WorkspaceAccessContext context, String message) {
         if (context.personalWorkspace()) {
-            throw new InvalidWorkspaceRoleChangeException("Personal workspaces cannot add members");
+            throw new InvalidWorkspaceRoleChangeException(message);
         }
     }
 
@@ -313,5 +586,28 @@ public class WorkspacesController {
                 record.displayName(),
                 record.role().name().toLowerCase(Locale.ROOT),
                 record.joinedAt());
+    }
+
+    private WorkspaceInvitationResponse toWorkspaceInvitationResponse(WorkspaceInvitationRecord record) {
+        return new WorkspaceInvitationResponse(
+                record.id(),
+                record.email(),
+                record.role().name().toLowerCase(Locale.ROOT),
+                record.status().name().toLowerCase(Locale.ROOT),
+                record.tokenPrefix(),
+                record.expiresAt(),
+                record.createdAt(),
+                record.acceptedAt(),
+                record.revokedAt());
+    }
+
+    private ServiceAccountResponse toServiceAccountResponse(ServiceAccountRecord record) {
+        return new ServiceAccountResponse(
+                record.id(),
+                record.name(),
+                record.slug(),
+                record.status().name().toLowerCase(Locale.ROOT),
+                record.createdAt(),
+                record.disabledAt());
     }
 }

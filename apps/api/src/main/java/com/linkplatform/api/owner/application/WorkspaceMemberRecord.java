@@ -10,7 +10,11 @@ public record WorkspaceMemberRecord(
         WorkspaceRole role,
         OffsetDateTime joinedAt,
         Long addedByOwnerId,
-        OffsetDateTime removedAt) {
+        OffsetDateTime removedAt,
+        String memberType,
+        OffsetDateTime suspendedAt,
+        Long suspendedByOwnerId,
+        String suspendReason) {
 
     public WorkspaceMemberRecord(
             long workspaceId,
@@ -19,6 +23,10 @@ public record WorkspaceMemberRecord(
             OffsetDateTime joinedAt,
             Long addedByOwnerId,
             OffsetDateTime removedAt) {
-        this(workspaceId, ownerId, null, null, role, joinedAt, addedByOwnerId, removedAt);
+        this(workspaceId, ownerId, null, null, role, joinedAt, addedByOwnerId, removedAt, "HUMAN", null, null, null);
+    }
+
+    public boolean serviceAccount() {
+        return "SERVICE_ACCOUNT".equals(memberType);
     }
 }

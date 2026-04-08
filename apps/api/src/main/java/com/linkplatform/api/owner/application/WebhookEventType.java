@@ -11,7 +11,9 @@ public enum WebhookEventType {
     ABUSE_CASE_OPENED("abuse.case.opened"),
     LINK_QUARANTINED("link.quarantined"),
     LINK_RELEASED("link.released"),
-    PROJECTION_JOB_COMPLETED("projection.job.completed");
+    PROJECTION_JOB_COMPLETED("projection.job.completed"),
+    WEBHOOK_VERIFICATION("webhook.verification"),
+    WEBHOOK_TEST_FIRED("webhook.test-fired");
 
     private final String value;
 

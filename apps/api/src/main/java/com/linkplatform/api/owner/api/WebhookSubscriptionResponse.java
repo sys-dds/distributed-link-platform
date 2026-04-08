@@ -9,6 +9,9 @@ public record WebhookSubscriptionResponse(
         String name,
         String callbackUrl,
         String secretPrefix,
+        int eventVersion,
+        String verificationStatus,
+        OffsetDateTime verifiedAt,
         boolean enabled,
         List<String> eventTypes,
         OffsetDateTime createdAt,
@@ -17,7 +20,9 @@ public record WebhookSubscriptionResponse(
         OffsetDateTime lastFailureAt,
         int consecutiveFailures,
         OffsetDateTime disabledAt,
-        String disabledReason) {
+        String disabledReason,
+        OffsetDateTime lastTestFiredAt,
+        Long lastTestDeliveryId) {
 
     static WebhookSubscriptionResponse from(WebhookSubscriptionRecord record) {
         return new WebhookSubscriptionResponse(
@@ -25,6 +30,9 @@ public record WebhookSubscriptionResponse(
                 record.name(),
                 record.callbackUrl(),
                 record.signingSecretPrefix(),
+                record.eventVersion(),
+                record.verificationStatus(),
+                record.verifiedAt(),
                 record.enabled(),
                 record.eventTypes().stream().map(type -> type.value()).sorted().toList(),
                 record.createdAt(),
@@ -33,6 +41,8 @@ public record WebhookSubscriptionResponse(
                 record.lastFailureAt(),
                 record.consecutiveFailures(),
                 record.disabledAt(),
-                record.disabledReason());
+                record.disabledReason(),
+                record.lastTestFiredAt(),
+                record.lastTestDeliveryId());
     }
 }

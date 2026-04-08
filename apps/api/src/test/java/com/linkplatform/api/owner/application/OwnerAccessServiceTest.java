@@ -22,6 +22,13 @@ class OwnerAccessServiceTest {
             OWNER.id(),
             null);
 
+    private static final WorkspaceEntitlementService ALLOWING_ENTITLEMENTS = new WorkspaceEntitlementService(null, null, null, null) {
+        @Override
+        public boolean controlPlaneMutationsBlocked(long workspaceId) {
+            return false;
+        }
+    };
+
     @Test
     void createdRevokedRotatedAndExpiredKeysBehavePredictably() {
         InMemoryOwnerApiKeyStore keyStore = new InMemoryOwnerApiKeyStore();
@@ -33,7 +40,8 @@ class OwnerAccessServiceTest {
                 new WorkspacePermissionService(),
                 lifecycleService,
                 new AllowAllRateLimitStore(),
-                securityEventStore);
+                securityEventStore,
+                ALLOWING_ENTITLEMENTS);
 
         WorkspaceAccessContext ownerContext = ownerContext();
         ApiKeyLifecycleService.CreatedApiKey created = lifecycleService.createKey(
@@ -124,7 +132,8 @@ class OwnerAccessServiceTest {
                 new WorkspacePermissionService(),
                 lifecycleService,
                 new AllowAllRateLimitStore(),
-                securityEventStore);
+                securityEventStore,
+                ALLOWING_ENTITLEMENTS);
 
         ApiKeyLifecycleService.CreatedApiKey created = lifecycleService.createKey(
                 ownerContext(),
@@ -254,7 +263,17 @@ class OwnerAccessServiceTest {
         }
 
         @Override
+        public Optional<WorkspaceMemberRecord> findMembership(long workspaceId, long ownerId) {
+            return findActiveMembership(workspaceId, ownerId);
+        }
+
+        @Override
         public boolean addMember(long workspaceId, long ownerId, WorkspaceRole role, OffsetDateTime joinedAt, Long addedByOwnerId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean addServiceAccountMember(long workspaceId, long ownerId, WorkspaceRole role, OffsetDateTime joinedAt, Long addedByOwnerId) {
             throw new UnsupportedOperationException();
         }
 
@@ -271,6 +290,36 @@ class OwnerAccessServiceTest {
         @Override
         public long countActiveOwners(long workspaceId) {
             return 1L;
+        }
+
+        @Override
+        public long countActiveHumanOwners(long workspaceId) {
+            return 1L;
+        }
+
+        @Override
+        public boolean suspendMember(long workspaceId, long ownerId, OffsetDateTime suspendedAt, Long suspendedByOwnerId, String suspendReason) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean resumeMember(long workspaceId, long ownerId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean suspendWorkspace(long workspaceId, OffsetDateTime suspendedAt, Long suspendedByOwnerId, String suspendReason) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean resumeWorkspace(long workspaceId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean isWorkspaceSuspended(long workspaceId) {
+            return false;
         }
     }
 

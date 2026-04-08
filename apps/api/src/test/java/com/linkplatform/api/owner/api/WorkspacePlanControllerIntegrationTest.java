@@ -2,6 +2,7 @@ package com.linkplatform.api.owner.api;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -146,6 +147,33 @@ class WorkspacePlanControllerIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void suspendedSubscriptionStillAllowsReadsButBlocksMutations() throws Exception {
+        String opsWriteKey = bootstrapPersonalWorkspaceApiKey("ops-write-subscription", "[\"ops:write\"]");
+        String membersReadKey = bootstrapPersonalWorkspaceApiKey("members-read-subscription", "[\"members:read\"]");
+        String membersWriteKey = bootstrapPersonalWorkspaceApiKey("members-write-subscription", "[\"members:write\"]");
+
+        mockMvc.perform(patch("/api/v1/ops/workspaces/{workspaceSlug}/subscription", "free-owner")
+                        .header("X-API-Key", opsWriteKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"subscriptionStatus":"SUSPENDED"}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/workspaces/current/plan").header("X-API-Key", membersReadKey))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/workspaces")
+                        .header("X-API-Key", membersWriteKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"slug":"blocked-subscription","displayName":"blocked-subscription"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.category").value("workspace-suspended"));
+    }
+
     private String bootstrapPersonalWorkspaceApiKey(String plaintextKey, String scopesJson) {
         Long workspaceId = jdbcTemplate.queryForObject(
                 "SELECT id FROM workspaces WHERE slug = 'free-owner'",
@@ -172,12 +200,36 @@ class WorkspacePlanControllerIntegrationTest {
     }
 
     private Long createWorkspace(String slug) {
+        OffsetDateTime now = OffsetDateTime.now();
         jdbcTemplate.update(
                 "INSERT INTO workspaces (slug, display_name, personal_workspace, created_at, created_by_owner_id) VALUES (?, ?, FALSE, ?, 1)",
                 slug,
                 slug,
-                OffsetDateTime.now());
-        return jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, slug);
+                now);
+        Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, slug);
+        jdbcTemplate.update(
+                """
+                INSERT INTO workspace_plans (
+                    workspace_id, plan_code, subscription_status, active_links_limit, members_limit, api_keys_limit,
+                    webhooks_limit, monthly_webhook_deliveries_limit, exports_enabled, current_period_start, current_period_end,
+                    created_at, updated_at
+                ) VALUES (?, 'FREE', 'ACTIVE', 100, 5, 10, 5, 10000, TRUE, ?, ?, ?, ?)
+                """,
+                workspaceId,
+                now,
+                now.plusDays(30),
+                now,
+                now);
+        jdbcTemplate.update(
+                """
+                INSERT INTO workspace_retention_policies (
+                    workspace_id, click_history_days, security_events_days, webhook_deliveries_days,
+                    abuse_cases_days, operator_action_log_days, updated_at, updated_by_owner_id
+                ) VALUES (?, 90, 90, 90, 90, 90, ?, 1)
+                """,
+                workspaceId,
+                now);
+        return workspaceId;
     }
 
     private void addMember(Long workspaceId, long ownerId, String role) {

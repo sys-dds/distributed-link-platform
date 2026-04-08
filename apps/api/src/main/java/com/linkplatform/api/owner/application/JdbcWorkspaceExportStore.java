@@ -61,6 +61,17 @@ public class JdbcWorkspaceExportStore implements WorkspaceExportStore {
     }
 
     @Override
+    public Optional<WorkspaceExportRecord> findCompletedById(long workspaceId, long exportId) {
+        return jdbcTemplate.query(
+                        selectSql() + " WHERE workspace_id = ? AND id = ? AND status IN ('READY', 'COMPLETED')",
+                        this::mapRecord,
+                        workspaceId,
+                        exportId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public Optional<WorkspaceExportRecord> claimNextQueued(OffsetDateTime now) {
         List<Long> ids = jdbcTemplate.query(
                 """

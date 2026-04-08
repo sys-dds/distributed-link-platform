@@ -31,6 +31,7 @@ public class WebhookDispatcher {
         try {
             WebhookSigningService.DeliverySignature signature = webhookSigningService.sign(
                     item.subscription().signingSecretHash(),
+                    item.subscription().eventVersion(),
                     item.delivery().eventType(),
                     Long.toString(item.delivery().id()),
                     item.delivery().workspaceSlug(),

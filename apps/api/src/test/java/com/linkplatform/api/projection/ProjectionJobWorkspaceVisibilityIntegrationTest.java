@@ -159,16 +159,30 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
 
     private void createWorkspace(String slug) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        OffsetDateTime now = OffsetDateTime.now();
         jdbcTemplate.update(
                 "INSERT INTO workspaces (slug, display_name, personal_workspace, created_at, created_by_owner_id) VALUES (?, ?, FALSE, ?, 1)",
                 slug,
                 slug,
-                OffsetDateTime.now());
+                now);
         Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, slug);
         jdbcTemplate.update(
                 "INSERT INTO workspace_members (workspace_id, owner_id, role, joined_at, added_by_owner_id, removed_at) VALUES (?, 1, 'OWNER', ?, 1, NULL)",
                 workspaceId,
-                OffsetDateTime.now());
+                now);
+        jdbcTemplate.update(
+                """
+                INSERT INTO workspace_plans (
+                    workspace_id, plan_code, subscription_status, active_links_limit, members_limit, api_keys_limit,
+                    webhooks_limit, monthly_webhook_deliveries_limit, exports_enabled, current_period_start, current_period_end,
+                    created_at, updated_at
+                ) VALUES (?, 'FREE', 'ACTIVE', 100, 5, 10, 5, 10000, TRUE, ?, ?, ?, ?)
+                """,
+                workspaceId,
+                now,
+                now.plusDays(30),
+                now,
+                now);
     }
 
     private String bootstrapWorkspaceApiKey(String workspaceSlug, String plaintextKey, String scopesJson) {

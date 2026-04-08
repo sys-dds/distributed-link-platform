@@ -53,9 +53,15 @@ public class WorkspaceEntitlementService {
         return workspacePlanStore.upsertPlan(workspaceId, planCode, updatedAt);
     }
 
+    @Transactional(readOnly = true)
+    public boolean controlPlaneMutationsBlocked(long workspaceId) {
+        WorkspacePlanRecord plan = currentPlan(workspaceId);
+        return plan.subscriptionStatus() == WorkspaceSubscriptionStatus.SUSPENDED;
+    }
+
     @Transactional
     public void enforceMembersQuota(long workspaceId) {
-        WorkspacePlanRecord plan = currentPlan(workspaceId);
+        WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         long current = currentMembersCount(workspaceId);
         if (current >= plan.membersLimit()) {
             throw WorkspaceQuotaExceededException.members(current, plan.membersLimit());
@@ -64,7 +70,7 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void enforceApiKeysQuota(long workspaceId, OffsetDateTime now) {
-        WorkspacePlanRecord plan = currentPlan(workspaceId);
+        WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         long current = currentActiveApiKeysCount(workspaceId, now);
         if (current >= plan.apiKeysLimit()) {
             throw WorkspaceQuotaExceededException.apiKeys(current, plan.apiKeysLimit());
@@ -73,7 +79,7 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void enforceActiveLinksQuota(long workspaceId, long currentActiveLinks) {
-        WorkspacePlanRecord plan = currentPlan(workspaceId);
+        WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         if (currentActiveLinks >= plan.activeLinksLimit()) {
             throw WorkspaceQuotaExceededException.activeLinks(currentActiveLinks, plan.activeLinksLimit());
         }
@@ -81,7 +87,7 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void enforceWebhooksQuota(long workspaceId, long currentWebhooks) {
-        WorkspacePlanRecord plan = currentPlan(workspaceId);
+        WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         if (currentWebhooks >= plan.webhooksLimit()) {
             throw WorkspaceQuotaExceededException.webhooks(currentWebhooks, plan.webhooksLimit());
         }
@@ -94,7 +100,7 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void enforceMonthlyWebhookDeliveryQuota(long workspaceId, long additionalAttempts) {
-        WorkspacePlanRecord plan = currentPlan(workspaceId);
+        WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         OffsetDateTime windowStart = currentMonthWindowStart();
         OffsetDateTime windowEnd = nextMonthWindowStart(windowStart);
         long used = workspaceUsageStore.sumInWindow(workspaceId, WorkspaceUsageMetric.WEBHOOK_DELIVERIES, windowStart, windowEnd);
@@ -175,6 +181,40 @@ public class WorkspaceEntitlementService {
 
     private OffsetDateTime nextMonthWindowStart(OffsetDateTime windowStart) {
         return windowStart.plusMonths(1);
+    }
+
+    private WorkspacePlanRecord effectiveGrowthPlan(long workspaceId) {
+        WorkspacePlanRecord current = currentPlan(workspaceId);
+        if (current.scheduledPlanCode() == null || current.scheduledPlanCode() == current.planCode()) {
+            return current;
+        }
+        JdbcWorkspacePlanStore.PlanDefaults scheduledDefaults = JdbcWorkspacePlanStore.PlanDefaults.forCode(current.scheduledPlanCode());
+        JdbcWorkspacePlanStore.PlanDefaults currentDefaults = JdbcWorkspacePlanStore.PlanDefaults.forCode(current.planCode());
+        boolean tighter = scheduledDefaults.activeLinksLimit() < currentDefaults.activeLinksLimit()
+                || scheduledDefaults.membersLimit() < currentDefaults.membersLimit()
+                || scheduledDefaults.apiKeysLimit() < currentDefaults.apiKeysLimit()
+                || scheduledDefaults.webhooksLimit() < currentDefaults.webhooksLimit()
+                || scheduledDefaults.monthlyWebhookDeliveriesLimit() < currentDefaults.monthlyWebhookDeliveriesLimit();
+        if (!tighter) {
+            return current;
+        }
+        return new WorkspacePlanRecord(
+                current.workspaceId(),
+                current.planCode(),
+                current.subscriptionStatus(),
+                Math.min(current.activeLinksLimit(), scheduledDefaults.activeLinksLimit()),
+                Math.min(current.membersLimit(), scheduledDefaults.membersLimit()),
+                Math.min(current.apiKeysLimit(), scheduledDefaults.apiKeysLimit()),
+                Math.min(current.webhooksLimit(), scheduledDefaults.webhooksLimit()),
+                Math.min(current.monthlyWebhookDeliveriesLimit(), scheduledDefaults.monthlyWebhookDeliveriesLimit()),
+                current.exportsEnabled() && scheduledDefaults.exportsEnabled(),
+                current.currentPeriodStart(),
+                current.currentPeriodEnd(),
+                current.graceUntil(),
+                current.scheduledPlanCode(),
+                current.scheduledPlanEffectiveAt(),
+                current.createdAt(),
+                current.updatedAt());
     }
 
     public record UsageSummary(

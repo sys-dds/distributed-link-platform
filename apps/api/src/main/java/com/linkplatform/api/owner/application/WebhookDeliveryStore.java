@@ -23,6 +23,8 @@ public interface WebhookDeliveryStore {
 
     Optional<WebhookDeliveryRecord> findById(long workspaceId, long subscriptionId, long deliveryId);
 
+    Optional<WebhookDeliveryRecord> findLatestBySubscription(long workspaceId, long subscriptionId);
+
     List<DispatchItem> claimDueDeliveries(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit);
 
     void markDelivered(long deliveryId, OffsetDateTime deliveredAt, Integer httpStatus, String responseExcerpt);

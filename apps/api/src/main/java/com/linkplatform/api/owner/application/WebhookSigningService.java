@@ -38,6 +38,7 @@ public class WebhookSigningService {
 
     public DeliverySignature sign(
             String secretHash,
+            int eventVersion,
             WebhookEventType eventType,
             String deliveryId,
             String workspaceSlug,
@@ -54,6 +55,7 @@ public class WebhookSigningService {
             headers.put("X-LinkPlatform-Signature", signature);
             headers.put("X-LinkPlatform-Timestamp", timestamp);
             headers.put("X-LinkPlatform-Event", eventType.value());
+            headers.put("X-LinkPlatform-Event-Version", Integer.toString(eventVersion));
             headers.put("X-LinkPlatform-Delivery-Id", deliveryId);
             headers.put("X-LinkPlatform-Workspace-Slug", workspaceSlug);
             return new DeliverySignature(signature, timestamp, canonicalJson, headers);
