@@ -217,6 +217,21 @@ public class JdbcLinkAbuseStore implements LinkAbuseStore {
     }
 
     @Override
+    public long countQuarantinedLinks(long workspaceId) {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM links
+                WHERE workspace_id = ?
+                  AND abuse_status = 'QUARANTINED'
+                  AND deleted_at IS NULL
+                """,
+                Long.class,
+                workspaceId);
+        return count == null ? 0L : count;
+    }
+
+    @Override
     public long countCasesResolvedOnDay(long workspaceId, LinkAbuseCaseStatus status, java.time.LocalDate day) {
         Long count = jdbcTemplate.queryForObject(
                 """

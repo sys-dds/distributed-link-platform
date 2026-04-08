@@ -139,7 +139,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         Link link = new Link(new LinkSlug(command.slug()), new OriginalUrl(command.originalUrl()));
         rejectReservedSlug(link.slug());
         rejectSelfTargetUrl(link.originalUrl());
-        TargetRiskAssessment targetRiskAssessment = linkTargetPolicyService.assess(link.originalUrl().value());
+        TargetRiskAssessment targetRiskAssessment = linkTargetPolicyService.assess(context.workspaceId(), link.originalUrl().value());
         if (targetRiskAssessment.reject()) {
             rejectUnsafeTarget(context, link.slug().value(), targetRiskAssessment);
         }
@@ -202,7 +202,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         LinkSlug linkSlug = new LinkSlug(slug);
         OriginalUrl validatedOriginalUrl = new OriginalUrl(originalUrl);
         rejectSelfTargetUrl(validatedOriginalUrl);
-        TargetRiskAssessment targetRiskAssessment = linkTargetPolicyService.assess(validatedOriginalUrl.value());
+        TargetRiskAssessment targetRiskAssessment = linkTargetPolicyService.assess(context.workspaceId(), validatedOriginalUrl.value());
         if (targetRiskAssessment.reject()) {
             rejectUnsafeTarget(context, linkSlug.value(), targetRiskAssessment);
         }

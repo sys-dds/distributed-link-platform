@@ -29,6 +29,8 @@ public interface LinkAbuseStore {
 
     long countCasesByStatus(long workspaceId, LinkAbuseCaseStatus status);
 
+    long countQuarantinedLinks(long workspaceId);
+
     long countCasesResolvedOnDay(long workspaceId, LinkAbuseCaseStatus status, java.time.LocalDate day);
 
     Optional<OffsetDateTime> findLatestUpdatedAt(long workspaceId);

@@ -167,6 +167,9 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case LINK_QUARANTINED_REDIRECT_ATTEMPT -> "Quarantined redirect blocked";
             case ABUSE_CASE_OPENED -> "Abuse case opened";
             case ABUSE_CASE_SIGNAL_INCREMENTED -> "Abuse case signal incremented";
+            case WORKSPACE_ABUSE_POLICY_UPDATED -> "Workspace abuse policy updated";
+            case WORKSPACE_HOST_RULE_CREATED -> "Workspace host rule created";
+            case WORKSPACE_HOST_RULE_DELETED -> "Workspace host rule deleted";
             case QUOTA_REJECTED -> "Quota limit rejected";
             case WORKSPACE_PLAN_UPDATED -> "Workspace plan updated";
             case WORKSPACE_SUBSCRIPTION_STATE_CHANGED -> "Workspace subscription changed";

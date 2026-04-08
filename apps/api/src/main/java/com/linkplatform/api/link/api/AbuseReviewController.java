@@ -53,14 +53,7 @@ public class AbuseReviewController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
-        var context = ownerAccessService.authorizeRead(
-                apiKey,
-                authorizationHeader,
-                workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.OPS_READ);
+        var context = authorizeOpsRead(apiKey, authorizationHeader, workspaceSlug, httpServletRequest);
         int effectiveLimit = limit == null ? runtimeProperties.getAbuse().getReviewPageSizeDefault() : limit;
         if (effectiveLimit < 1 || effectiveLimit > runtimeProperties.getAbuse().getReviewPageSizeMax()) {
             throw new IllegalArgumentException(
@@ -91,14 +84,7 @@ public class AbuseReviewController {
         if (request == null || request.slug() == null || request.slug().isBlank() || request.summary() == null || request.summary().isBlank()) {
             throw new IllegalArgumentException("slug and summary are required");
         }
-        var context = ownerAccessService.authorizeMutation(
-                apiKey,
-                authorizationHeader,
-                workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.OPS_WRITE);
+        var context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, httpServletRequest);
         var record = linkAbuseReviewService.createManualCase(
                 context,
                 request.slug().trim(),
@@ -160,14 +146,7 @@ public class AbuseReviewController {
             long caseId,
             ResolveAbuseReviewRequest request,
             ResolutionAction action) {
-        var context = ownerAccessService.authorizeMutation(
-                apiKey,
-                authorizationHeader,
-                workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.OPS_WRITE);
+        var context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, httpServletRequest);
         String note = request == null ? null : request.resolutionNote();
         var record = switch (action) {
             case QUARANTINE -> linkAbuseReviewService.quarantineCase(context, caseId, note);
@@ -195,5 +174,35 @@ public class AbuseReviewController {
         QUARANTINE,
         RELEASE,
         DISMISS
+    }
+
+    private com.linkplatform.api.owner.application.WorkspaceAccessContext authorizeOpsRead(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            HttpServletRequest httpServletRequest) {
+        return ownerAccessService.authorizeRead(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_READ);
+    }
+
+    private com.linkplatform.api.owner.application.WorkspaceAccessContext authorizeOpsWrite(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            HttpServletRequest httpServletRequest) {
+        return ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.OPS_WRITE);
     }
 }

@@ -18,6 +18,7 @@ public class LinkAbuseReviewService {
 
     private final LinkAbuseStore linkAbuseStore;
     private final LinkStore linkStore;
+    private final WorkspaceAbuseIntelligenceService workspaceAbuseIntelligenceService;
     private final SecurityEventStore securityEventStore;
     private final LinkPlatformRuntimeProperties runtimeProperties;
     private final Clock clock;
@@ -26,11 +27,13 @@ public class LinkAbuseReviewService {
     public LinkAbuseReviewService(
             LinkAbuseStore linkAbuseStore,
             LinkStore linkStore,
+            WorkspaceAbuseIntelligenceService workspaceAbuseIntelligenceService,
             SecurityEventStore securityEventStore,
             LinkPlatformRuntimeProperties runtimeProperties,
             WebhookEventPublisher webhookEventPublisher) {
         this.linkAbuseStore = linkAbuseStore;
         this.linkStore = linkStore;
+        this.workspaceAbuseIntelligenceService = workspaceAbuseIntelligenceService;
         this.securityEventStore = securityEventStore;
         this.runtimeProperties = runtimeProperties;
         this.webhookEventPublisher = webhookEventPublisher;
@@ -56,7 +59,9 @@ public class LinkAbuseReviewService {
                 assessment.normalizedTargetHost(),
                 context.ownerId(),
                 now);
+        workspaceAbuseIntelligenceService.recordHostSignal(context.workspaceId(), assessment.normalizedTargetHost());
         linkStore.flagLinkForAbuse(context.workspaceId(), slug, assessment.summary(), now, context.ownerId(), null, true);
+        autoQuarantineForRepeatedHost(context.workspaceId(), context.ownerId(), slug, assessment.normalizedTargetHost(), record, now);
         record(
                 record.signalCount() == 1 ? SecurityEventType.ABUSE_CASE_OPENED : SecurityEventType.ABUSE_CASE_SIGNAL_INCREMENTED,
                 context.ownerId(),
@@ -102,6 +107,7 @@ public class LinkAbuseReviewService {
                 link.hostname(),
                 null,
                 now);
+        workspaceAbuseIntelligenceService.recordHostSignal(link.workspaceId(), link.hostname());
         record(
                 record.signalCount() == 1 ? SecurityEventType.ABUSE_CASE_OPENED : SecurityEventType.ABUSE_CASE_SIGNAL_INCREMENTED,
                 link.ownerId(),
@@ -111,7 +117,7 @@ public class LinkAbuseReviewService {
         if (link.abuseStatus() != LinkAbuseStatus.QUARANTINED) {
             linkStore.flagLinkForAbuse(link.workspaceId(), slug, record.summary(), now, null, null, true);
         }
-        if (record.signalCount() >= runtimeProperties.getAbuse().getAutoQuarantineThreshold()
+        if (record.signalCount() >= workspaceAbuseIntelligenceService.redirectRateLimitThreshold(link.workspaceId())
                 && link.abuseStatus() != LinkAbuseStatus.QUARANTINED) {
             linkStore.quarantineLink(link.workspaceId(), slug, record.summary(), now, null, null);
             linkAbuseStore.resolveCase(
@@ -156,12 +162,15 @@ public class LinkAbuseReviewService {
                 null,
                 context.ownerId(),
                 now);
+        String host = linkAbuseStore.findLinkScope(slug).map(LinkAbuseStore.LinkScopeRecord::hostname).orElse(null);
+        workspaceAbuseIntelligenceService.recordHostSignal(context.workspaceId(), host);
         record(
                 record.signalCount() == 1 ? SecurityEventType.ABUSE_CASE_OPENED : SecurityEventType.ABUSE_CASE_SIGNAL_INCREMENTED,
                 context.ownerId(),
                 context.workspaceId(),
                 slug,
                 record.summary());
+        autoQuarantineForRepeatedHost(context.workspaceId(), context.ownerId(), slug, host, record, now);
         if (quarantineNow) {
             return quarantineCase(context, record.id(), null);
         }
@@ -231,6 +240,34 @@ public class LinkAbuseReviewService {
         if (linkStore.findStoredDetailsBySlug(slug, workspaceId).isEmpty()) {
             throw new LinkNotFoundException(slug);
         }
+    }
+
+    private void autoQuarantineForRepeatedHost(
+            long workspaceId,
+            Long ownerId,
+            String slug,
+            String normalizedHost,
+            LinkAbuseCaseRecord record,
+            OffsetDateTime now) {
+        if (normalizedHost == null
+                || !workspaceAbuseIntelligenceService.repeatedHostThresholdReached(workspaceId, normalizedHost)) {
+            return;
+        }
+        LinkAbuseStatus currentStatus = linkStore.findAbuseStatusBySlug(slug, workspaceId).orElse(LinkAbuseStatus.ACTIVE);
+        if (currentStatus == LinkAbuseStatus.QUARANTINED) {
+            return;
+        }
+        linkStore.quarantineLink(workspaceId, slug, record.summary(), now, ownerId, null);
+        linkAbuseStore.resolveCase(
+                workspaceId,
+                record.id(),
+                LinkAbuseCaseStatus.OPEN,
+                LinkAbuseCaseStatus.QUARANTINED,
+                "QUARANTINE",
+                ownerId,
+                null,
+                now);
+        record(SecurityEventType.LINK_QUARANTINED, ownerId, workspaceId, slug, record.summary());
     }
 
     private void record(SecurityEventType eventType, Long ownerId, Long workspaceId, String slug, String detail) {

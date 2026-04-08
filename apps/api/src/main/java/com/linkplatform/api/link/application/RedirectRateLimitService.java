@@ -88,6 +88,7 @@ public class RedirectRateLimitService {
                         "Redirect rate limit rejected",
                         now);
                 if (linkAbuseReviewService != null) {
+                    // Workspace redirect abuse policy can override the default auto-quarantine threshold.
                     linkAbuseReviewService.recordRedirectRateLimitSignal(slug);
                 }
                 return RedirectRateLimitDecision.rejected(false, false, count, limit);
@@ -110,6 +111,7 @@ public class RedirectRateLimitService {
                         "Redirect rate limit rejected",
                         now);
                 if (linkAbuseReviewService != null) {
+                    // Workspace redirect abuse policy can override the default auto-quarantine threshold.
                     linkAbuseReviewService.recordRedirectRateLimitSignal(slug);
                 }
                 return RedirectRateLimitDecision.rejected(true, true, count, limit);
