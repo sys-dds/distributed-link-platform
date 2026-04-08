@@ -1,6 +1,7 @@
 FROM maven:3.9.14-eclipse-temurin-21 AS build
 WORKDIR /workspace
 COPY . .
+# Shared single-backend image used by the standalone platform compose api service.
 RUN chmod +x ./apps/api/mvnw && ./apps/api/mvnw -f ./apps/api/pom.xml -DskipTests package
 
 FROM eclipse-temurin:21-jre

@@ -185,6 +185,7 @@ public class WorkspacesController {
             throw new DuplicateWorkspaceMemberException("Workspace membership already exists for owner " + ownerId);
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
+        // Add-member quota failures must surface through the shared workspace quota exception path.
         workspaceEntitlementService.enforceMembersQuota(context.workspaceId());
         workspaceStore.addMember(context.workspaceId(), ownerId, role, now, context.ownerId());
         workspaceEntitlementService.recordCurrentMembersSnapshot(context.workspaceId(), "workspace_member_add", Long.toString(ownerId), now);

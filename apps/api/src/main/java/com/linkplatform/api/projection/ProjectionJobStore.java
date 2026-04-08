@@ -47,8 +47,10 @@ public interface ProjectionJobStore {
 
     void markFailed(long id, OffsetDateTime completedAt, String errorSummary);
 
+    @Deprecated(forRemoval = false)
     long countQueued();
 
+    @Deprecated(forRemoval = false)
     long countActive();
 
     long countQueued(long workspaceId);

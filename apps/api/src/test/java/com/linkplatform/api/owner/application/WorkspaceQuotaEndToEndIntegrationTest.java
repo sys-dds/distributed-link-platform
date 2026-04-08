@@ -144,6 +144,33 @@ class WorkspaceQuotaEndToEndIntegrationTest {
     }
 
     @Test
+    void monthlyWebhookDeliveryQuotaUsesStructuredWorkspaceQuotaException() {
+        OffsetDateTime now = OffsetDateTime.now();
+        WorkspaceRecord workspace = workspaceStore.createWorkspace("quota-webhook-monthly", "quota-webhook-monthly", false, now, 1L);
+        workspaceStore.addMember(workspace.id(), 1L, WorkspaceRole.OWNER, now, 1L);
+        workspacePlanStore.upsertPlan(workspace.id(), WorkspacePlanCode.FREE, now);
+        workspaceRetentionPolicyStore.upsert(workspace.id(), 365, 365, 90, 365, 365, now, 1L);
+        jdbcTemplate.update(
+                "UPDATE workspace_plans SET monthly_webhook_deliveries_limit = 1 WHERE workspace_id = ?",
+                workspace.id());
+        workspaceEntitlementService.recordWebhookDeliveryUsage(
+                workspace.id(),
+                1L,
+                "test",
+                "already-used",
+                now);
+
+        WorkspaceQuotaExceededException exception = assertThrows(
+                WorkspaceQuotaExceededException.class,
+                () -> workspaceEntitlementService.enforceMonthlyWebhookDeliveryQuota(workspace.id(), 1L));
+
+        assertThat(exception.quotaMetric()).isEqualTo(WorkspaceUsageMetric.WEBHOOK_DELIVERIES);
+        assertThat(exception.currentUsage()).isEqualTo(1L);
+        assertThat(exception.limit()).isEqualTo(1L);
+        assertThat(exception.detail()).isEqualTo("Workspace monthly webhook delivery quota exceeded");
+    }
+
+    @Test
     void quotaExceededProblemDetailsStayStructurallyConsistentAcrossHttpFlows() throws Exception {
         OffsetDateTime now = OffsetDateTime.now();
         WorkspaceRecord workspace = workspaceStore.createWorkspace("quota-http", "quota-http", false, now, 1L);

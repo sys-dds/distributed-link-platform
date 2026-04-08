@@ -125,9 +125,10 @@ public class ProjectionJobRunner {
     }
 
     private void markJobFailed(ProjectionJob job, RuntimeException exception) {
+        OffsetDateTime failedAt = OffsetDateTime.now(clock);
         projectionJobStore.markFailed(
                 job.id(),
-                OffsetDateTime.now(clock),
+                failedAt,
                 compactErrorSummary(exception));
     }
 }

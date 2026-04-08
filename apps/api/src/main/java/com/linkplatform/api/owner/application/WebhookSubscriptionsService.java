@@ -247,6 +247,7 @@ public class WebhookSubscriptionsService {
     }
 
     private void enforceEnabledWebhookQuota(long workspaceId) {
+        // Create and enable flows both delegate to the same quota path so HTTP failures stay structurally identical.
         workspaceEntitlementService.enforceWebhooksQuota(workspaceId, enabledWebhookCount(workspaceId));
     }
 
@@ -274,8 +275,10 @@ public class WebhookSubscriptionsService {
     private void validateCallbackScheme(String scheme) {
         boolean https = "https".equalsIgnoreCase(scheme);
         boolean http = "http".equalsIgnoreCase(scheme);
-        // allow-http-callbacks only relaxes the scheme requirement. Host safety remains unchanged here.
-        if (!https && !(http && !runtimeProperties.getWebhooks().requireHttpsCallbacks())) {
+        boolean httpAllowed = runtimeProperties.getWebhooks().isAllowHttpCallbacks();
+        // Scheme and host validation are intentionally separate: allow-http-callbacks only relaxes the scheme
+        // requirement, and it does not make localhost/private hosts legal on its own.
+        if (!https && !(http && httpAllowed)) {
             throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must use https");
         }
     }
@@ -283,8 +286,10 @@ public class WebhookSubscriptionsService {
     private void validateCallbackHost(String host) {
         boolean localhost = "localhost".equals(host);
         boolean privateOrLocalHost = localhost || isPrivateOrLocalAddress(host);
-        // allow-private-callback-hosts only relaxes host safety. Scheme validation has already happened above.
-        if (privateOrLocalHost && runtimeProperties.getWebhooks().requirePublicCallbackHosts()) {
+        boolean privateHostsAllowed = runtimeProperties.getWebhooks().isAllowPrivateCallbackHosts();
+        // Host safety stays strict unless allow-private-callback-hosts is explicitly enabled. This does not relax
+        // the scheme requirement, which has already been checked above.
+        if (privateOrLocalHost && !privateHostsAllowed) {
             throw new InvalidWebhookCallbackUrlException("Webhook callbackUrl must not target localhost or private addresses");
         }
     }

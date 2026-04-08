@@ -10,12 +10,12 @@ public enum ApiKeyScope {
     ANALYTICS_READ("analytics:read"),
     API_KEYS_READ("api_keys:read"),
     API_KEYS_WRITE("api_keys:write"),
-    // Plan and usage reads stay intentionally coupled to membership visibility.
+    // Plan and usage reads intentionally require MEMBERS_READ.
     MEMBERS_READ("members:read"),
     MEMBERS_WRITE("members:write"),
     WEBHOOKS_READ("webhooks:read"),
     WEBHOOKS_WRITE("webhooks:write"),
-    // Retention remains separate so editor/viewer-style keys do not gain accidental access.
+    // Retention remains separate so editor/viewer roles do not gain accidental access through broad read semantics.
     EXPORTS_READ("exports:read"),
     EXPORTS_WRITE("exports:write"),
     RETENTION_READ("retention:read"),

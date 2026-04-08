@@ -73,11 +73,12 @@ public class ProjectionJobService {
             Long requestedByOwnerId,
             String operatorNote) {
         validateScope(jobType, from, to);
+        long requiredWorkspaceId = requireWorkspaceScope(workspaceId);
         return projectionJobStore.createJob(
                 jobType,
                 OffsetDateTime.now(clock),
                 ownerId,
-                requireWorkspaceScope(workspaceId),
+                requiredWorkspaceId,
                 blankToNull(slug),
                 from,
                 to,

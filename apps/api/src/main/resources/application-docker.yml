@@ -3,9 +3,11 @@ spring:
     activate:
       on-profile: docker
 
+# Standalone docker platform profile used by docker-compose.platform.yml.
 link-platform:
   webhooks:
-    # The local docker platform stack uses an in-cluster HTTP webhook sink on a private host.
+    # The standalone local docker platform stack uses an in-cluster HTTP webhook sink on a private host.
+    # Both relaxations are required here because scheme and host safety are controlled independently.
     allow-private-callback-hosts: true
     allow-http-callbacks: true
 

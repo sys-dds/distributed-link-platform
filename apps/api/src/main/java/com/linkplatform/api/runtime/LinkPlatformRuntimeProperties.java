@@ -222,10 +222,12 @@ public class LinkPlatformRuntimeProperties {
             this.allowHttpCallbacks = allowHttpCallbacks;
         }
 
+        // False means strict HTTPS-only behavior. True relaxes scheme checks only.
         public boolean requireHttpsCallbacks() {
             return !allowHttpCallbacks;
         }
 
+        // False means strict public-host-only behavior. True relaxes host checks only.
         public boolean requirePublicCallbackHosts() {
             return !allowPrivateCallbackHosts;
         }

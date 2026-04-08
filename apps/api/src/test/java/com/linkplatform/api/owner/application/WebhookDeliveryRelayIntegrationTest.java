@@ -56,6 +56,7 @@ class WebhookDeliveryRelayIntegrationTest {
     @Test
     void relayParksThenDisablesAfterRepeatedFailures() {
         WorkspaceAccessContext context = createWorkspaceContext("relay-failure-workspace");
+        // This proof intentionally opts into both relaxations because the relay target is an HTTP loopback URL.
         WebhookSubscriptionsService.CreatedSubscription created = webhookSubscriptionsService.createSubscription(
                 context,
                 "relay-failure",

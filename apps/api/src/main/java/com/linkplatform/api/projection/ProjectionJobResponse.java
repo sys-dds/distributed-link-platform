@@ -30,6 +30,7 @@ public record ProjectionJobResponse(
         String operatorNote) {
 
     public static ProjectionJobResponse from(ProjectionJob job, String workspaceSlug) {
+        String resolvedWorkspaceSlug = normalizeWorkspaceSlug(workspaceSlug);
         return new ProjectionJobResponse(
                 job.id(),
                 job.jobType(),
@@ -49,7 +50,7 @@ public record ProjectionJobResponse(
                 job.claimedBy(),
                 job.claimedUntil(),
                 job.ownerId(),
-                workspaceSlug,
+                resolvedWorkspaceSlug,
                 job.slug(),
                 job.rangeStart(),
                 job.rangeEnd(),
@@ -63,5 +64,12 @@ public record ProjectionJobResponse(
 
     public static ProjectionJobResponse from(ProjectionJob job) {
         return from(job, (String) null);
+    }
+
+    private static String normalizeWorkspaceSlug(String workspaceSlug) {
+        if (workspaceSlug == null || workspaceSlug.isBlank()) {
+            return null;
+        }
+        return workspaceSlug;
     }
 }

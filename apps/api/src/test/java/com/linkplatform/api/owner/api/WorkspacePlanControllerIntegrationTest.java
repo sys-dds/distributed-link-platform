@@ -115,6 +115,7 @@ class WorkspacePlanControllerIntegrationTest {
 
         String ownerKey = bootstrapWorkspaceApiKey(workspaceId, 1L, "team-plan-owner", "[\"members:read\",\"retention:read\"]");
         String adminKey = bootstrapWorkspaceApiKey(workspaceId, 3L, "team-plan-admin", "[\"members:read\",\"retention:read\"]");
+        // Editors/viewers can request the scopes on the key payload, but granted scopes are still intersected with role permissions.
         String editorKey = bootstrapWorkspaceApiKey(workspaceId, 4L, "team-plan-editor", "[\"members:read\",\"retention:read\"]");
         String viewerKey = bootstrapWorkspaceApiKey(workspaceId, 5L, "team-plan-viewer", "[\"members:read\",\"retention:read\"]");
 

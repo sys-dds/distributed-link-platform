@@ -19,7 +19,8 @@ link-platform:
   projection-jobs:
     runner-delay: 600000
   webhooks:
-    # Tests stay strict by default and opt in only where a local HTTP/private callback sink is part of the proof.
+    # Tests stay strict by default.
+    # Individual integration tests opt in explicitly when they need HTTP and/or private callback allowances.
     allow-private-callback-hosts: false
     allow-http-callbacks: false
     runner-delay-ms: 600000
