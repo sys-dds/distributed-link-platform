@@ -7,6 +7,7 @@ import com.linkplatform.api.owner.application.WebhookSubscriptionsService;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Set;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -97,6 +98,53 @@ public class WebhooksController {
                 WebhookSubscriptionResponse.from(rotated.record()),
                 rotated.plaintextSecret(),
                 rotated.record().signingSecretPrefix());
+    }
+
+    @PostMapping("/{subscriptionId}/verify")
+    public ResponseEntity<WebhookSubscriptionHealthResponse> verify(
+            @PathVariable long subscriptionId,
+            @RequestBody(required = false) VerifyWebhookSubscriptionRequest requestBody,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.WEBHOOKS_WRITE);
+        WebhookSubscriptionsService.VerificationAttempt attempt = webhookSubscriptionsService.verifySubscription(context, subscriptionId);
+        ResponseEntity.BodyBuilder builder = attempt.verified() ? ResponseEntity.ok() : ResponseEntity.status(HttpStatus.CONFLICT);
+        builder.header("X-LinkPlatform-Verification-Delivery-Id", Long.toString(attempt.deliveryId()));
+        if (attempt.httpStatus() != null) {
+            builder.header("X-LinkPlatform-Verification-Http-Status", Integer.toString(attempt.httpStatus()));
+        }
+        if (attempt.failureReason() != null) {
+            builder.header("X-LinkPlatform-Verification-Failure", attempt.failureReason());
+        }
+        return builder.body(WebhookSubscriptionHealthResponse.from(attempt.record()));
+    }
+
+    @PostMapping("/{subscriptionId}/test-fire")
+    public TestWebhookSubscriptionResponse testFire(
+            @PathVariable long subscriptionId,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.WEBHOOKS_WRITE);
+        var delivery = webhookSubscriptionsService.testFireSubscription(context, subscriptionId);
+        return new TestWebhookSubscriptionResponse(delivery.id(), delivery.createdAt());
+    }
+
+    @GetMapping("/{subscriptionId}/health")
+    public WebhookSubscriptionHealthResponse health(
+            @PathVariable long subscriptionId,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
+                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.WEBHOOKS_READ);
+        return WebhookSubscriptionHealthResponse.from(webhookSubscriptionsService.subscriptionHealth(context, subscriptionId));
     }
 
     @GetMapping("/{subscriptionId}/deliveries")

@@ -36,6 +36,10 @@ public interface WebhookSubscriptionsStore {
             String signingSecretPrefix,
             OffsetDateTime updatedAt);
 
+    WebhookSubscriptionRecord markVerified(long workspaceId, long subscriptionId, OffsetDateTime verifiedAt);
+
+    WebhookSubscriptionRecord recordTestFired(long workspaceId, long subscriptionId, long deliveryId, OffsetDateTime firedAt);
+
     long countEnabledByWorkspaceId(long workspaceId);
 
     List<WebhookSubscriptionRecord> findEnabledByWorkspaceIdAndEventType(long workspaceId, WebhookEventType eventType);

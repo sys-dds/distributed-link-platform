@@ -105,6 +105,17 @@ public class JdbcWebhookDeliveryStore implements WebhookDeliveryStore {
     }
 
     @Override
+    public java.util.Optional<WebhookDeliveryRecord> findLatestBySubscription(long workspaceId, long subscriptionId) {
+        return jdbcTemplate.query(
+                        selectSql() + " WHERE d.workspace_id = ? AND d.subscription_id = ? ORDER BY d.created_at DESC, d.id DESC LIMIT 1",
+                        this::mapDelivery,
+                        workspaceId,
+                        subscriptionId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public List<DispatchItem> claimDueDeliveries(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) {
         return transactionTemplate.execute(status -> {
             List<Long> ids = jdbcTemplate.query(
@@ -276,8 +287,9 @@ public class JdbcWebhookDeliveryStore implements WebhookDeliveryStore {
                        d.next_attempt_at, d.delivered_at, d.last_error, d.http_status,
                        d.response_excerpt, d.created_at, d.updated_at, d.parked_at,
                        s.name, s.callback_url, s.signing_secret_hash, s.signing_secret_prefix,
-                       s.enabled, s.event_types_json, s.last_delivery_at, s.last_failure_at,
-                       s.consecutive_failures, s.disabled_at, s.disabled_reason
+                       s.event_version, s.verification_status, s.verified_at, s.enabled, s.event_types_json,
+                       s.last_delivery_at, s.last_failure_at, s.consecutive_failures,
+                       s.disabled_at, s.disabled_reason, s.last_test_fired_at, s.last_test_delivery_id
                 FROM webhook_deliveries d
                 JOIN webhook_subscriptions s ON s.id = d.subscription_id
                 JOIN workspaces w ON w.id = d.workspace_id
@@ -296,6 +308,9 @@ public class JdbcWebhookDeliveryStore implements WebhookDeliveryStore {
                 resultSet.getString("callback_url"),
                 resultSet.getString("signing_secret_hash"),
                 resultSet.getString("signing_secret_prefix"),
+                resultSet.getInt("event_version"),
+                resultSet.getString("verification_status"),
+                resultSet.getObject("verified_at", OffsetDateTime.class),
                 resultSet.getBoolean("enabled"),
                 deserializeEvents(resultSet.getString("event_types_json")),
                 resultSet.getObject("created_at", OffsetDateTime.class),
@@ -304,7 +319,9 @@ public class JdbcWebhookDeliveryStore implements WebhookDeliveryStore {
                 resultSet.getObject("last_failure_at", OffsetDateTime.class),
                 resultSet.getInt("consecutive_failures"),
                 resultSet.getObject("disabled_at", OffsetDateTime.class),
-                resultSet.getString("disabled_reason"));
+                resultSet.getString("disabled_reason"),
+                resultSet.getObject("last_test_fired_at", OffsetDateTime.class),
+                resultSet.getObject("last_test_delivery_id", Long.class));
         return new DispatchItem(delivery, subscription);
     }
 

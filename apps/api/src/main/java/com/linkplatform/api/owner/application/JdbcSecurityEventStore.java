@@ -182,6 +182,8 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case WEBHOOK_SUBSCRIPTION_CREATED -> "Webhook subscription created";
             case WEBHOOK_SUBSCRIPTION_UPDATED -> "Webhook subscription updated";
             case WEBHOOK_SECRET_ROTATED -> "Webhook secret rotated";
+            case WEBHOOK_SUBSCRIPTION_VERIFIED -> "Webhook subscription verified";
+            case WEBHOOK_TEST_FIRED -> "Webhook test fired";
             case WEBHOOK_DELIVERY_REPLAYED -> "Webhook delivery replayed";
             case WEBHOOK_SUBSCRIPTION_DISABLED -> "Webhook subscription disabled";
             case WORKSPACE_EXPORT_REQUESTED -> "Workspace export requested";

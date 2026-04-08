@@ -11,6 +11,9 @@ public record WebhookSubscriptionRecord(
         String callbackUrl,
         String signingSecretHash,
         String signingSecretPrefix,
+        int eventVersion,
+        String verificationStatus,
+        OffsetDateTime verifiedAt,
         boolean enabled,
         Set<WebhookEventType> eventTypes,
         OffsetDateTime createdAt,
@@ -19,5 +22,7 @@ public record WebhookSubscriptionRecord(
         OffsetDateTime lastFailureAt,
         int consecutiveFailures,
         OffsetDateTime disabledAt,
-        String disabledReason) {
+        String disabledReason,
+        OffsetDateTime lastTestFiredAt,
+        Long lastTestDeliveryId) {
 }
