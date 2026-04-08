@@ -200,11 +200,12 @@ class WorkspacePlanControllerIntegrationTest {
     }
 
     private Long createWorkspace(String slug) {
+        OffsetDateTime now = OffsetDateTime.now();
         jdbcTemplate.update(
                 "INSERT INTO workspaces (slug, display_name, personal_workspace, created_at, created_by_owner_id) VALUES (?, ?, FALSE, ?, 1)",
                 slug,
                 slug,
-                OffsetDateTime.now());
+                now);
         Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, slug);
         jdbcTemplate.update(
                 """
@@ -215,10 +216,19 @@ class WorkspacePlanControllerIntegrationTest {
                 ) VALUES (?, 'FREE', 'ACTIVE', 100, 5, 10, 5, 10000, TRUE, ?, ?, ?, ?)
                 """,
                 workspaceId,
-                OffsetDateTime.now(),
-                OffsetDateTime.now().plusDays(30),
-                OffsetDateTime.now(),
-                OffsetDateTime.now());
+                now,
+                now.plusDays(30),
+                now,
+                now);
+        jdbcTemplate.update(
+                """
+                INSERT INTO workspace_retention_policies (
+                    workspace_id, click_history_days, security_events_days, webhook_deliveries_days,
+                    abuse_cases_days, operator_action_log_days, updated_at, updated_by_owner_id
+                ) VALUES (?, 90, 90, 90, 90, 90, ?, 1)
+                """,
+                workspaceId,
+                now);
         return workspaceId;
     }
 
