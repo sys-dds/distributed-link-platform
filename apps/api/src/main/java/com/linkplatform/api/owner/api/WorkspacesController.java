@@ -16,6 +16,7 @@ import com.linkplatform.api.owner.application.WorkspaceInvitationService;
 import com.linkplatform.api.owner.application.WorkspaceInvitationStore;
 import com.linkplatform.api.owner.application.WorkspaceMemberRecord;
 import com.linkplatform.api.owner.application.WorkspaceLifecycleService;
+import com.linkplatform.api.owner.application.WorkspacePlanCode;
 import com.linkplatform.api.owner.application.WorkspacePermissionService;
 import com.linkplatform.api.owner.application.WorkspaceRecord;
 import com.linkplatform.api.owner.application.WorkspaceRole;
@@ -129,6 +130,7 @@ public class WorkspacesController {
                 now,
                 context.ownerId());
         workspaceStore.addMember(workspace.id(), context.ownerId(), WorkspaceRole.OWNER, now, null);
+        workspaceEntitlementService.updatePlan(workspace.id(), WorkspacePlanCode.FREE, now);
         securityEventStore.record(
                 SecurityEventType.WORKSPACE_CREATED,
                 context.ownerId(),

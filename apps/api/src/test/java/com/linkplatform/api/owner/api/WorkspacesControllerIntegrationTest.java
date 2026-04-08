@@ -78,6 +78,14 @@ class WorkspacesControllerIntegrationTest {
                 .andExpect(jsonPath("$.category").value("invalid-role-change"));
     }
 
+    @Test
+    void workspaceLifecycleFieldsDoNotBreakCurrentWorkspaceHappyPath() throws Exception {
+        mockMvc.perform(get("/api/v1/workspaces/current").header("X-API-Key", FREE_API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slug").value("free-owner"))
+                .andExpect(jsonPath("$.grantedScopes").isArray());
+    }
+
     private String bootstrapWorkspaceApiKey(String workspaceSlug, String plaintextKey, String keyPrefix) {
         Long workspaceId = jdbcTemplate.queryForObject(
                 "SELECT id FROM workspaces WHERE slug = ?",
@@ -87,7 +95,7 @@ class WorkspacesControllerIntegrationTest {
                 """
                 INSERT INTO owner_api_keys (
                     owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?)
                 """,
                 1L,
                 workspaceId,

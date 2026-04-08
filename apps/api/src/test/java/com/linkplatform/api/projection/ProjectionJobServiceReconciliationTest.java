@@ -177,12 +177,12 @@ class ProjectionJobServiceReconciliationTest {
         @Override public void markFailed(long id, OffsetDateTime failedAt, String errorSummary) { }
         @Override public long countQueued() { return 0; }
         @Override public long countActive() { return 0; }
-        @Override public long countQueued(Long workspaceId) { return 0; }
-        @Override public long countActive(Long workspaceId) { return 0; }
-        @Override public long countFailed(Long workspaceId) { return 0; }
-        @Override public long countCompleted(Long workspaceId) { return 0; }
-        @Override public Optional<OffsetDateTime> findLatestStartedAt(Long workspaceId) { return Optional.empty(); }
-        @Override public Optional<OffsetDateTime> findLatestFailedAt(Long workspaceId) { return Optional.empty(); }
+        @Override public long countQueued(long workspaceId) { return 0; }
+        @Override public long countActive(long workspaceId) { return 0; }
+        @Override public long countFailed(long workspaceId) { return 0; }
+        @Override public long countCompleted(long workspaceId) { return 0; }
+        @Override public Optional<OffsetDateTime> findLatestStartedAt(long workspaceId) { return Optional.empty(); }
+        @Override public Optional<OffsetDateTime> findLatestFailedAt(long workspaceId) { return Optional.empty(); }
     }
 
     private static final class NoOpLifecycleOutboxStore implements LinkLifecycleOutboxStore {

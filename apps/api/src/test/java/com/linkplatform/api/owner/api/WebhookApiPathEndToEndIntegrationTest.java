@@ -95,7 +95,8 @@ class WebhookApiPathEndToEndIntegrationTest {
                         .content("""
                                 {"name":"api-path-strict-check","callbackUrl":"https://127.0.0.1:8443/blocked","eventTypes":["link.created"],"enabled":true}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.subscription.callbackUrl").value("https://127.0.0.1:8443/blocked"));
 
         String createResponse = mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
                         .header("X-API-Key", scopedApiKey)
@@ -105,6 +106,8 @@ class WebhookApiPathEndToEndIntegrationTest {
                                 """.formatted(callbackUrl)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.secret").isNotEmpty())
+                .andExpect(jsonPath("$.subscription.eventVersion").value(1))
+                .andExpect(jsonPath("$.subscription.verificationStatus").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.subscription.callbackUrl").value(callbackUrl))
                 .andReturn()
                 .getResponse()

@@ -37,7 +37,7 @@ class AbuseReviewControllerIntegrationTest {
     void opsReadAndWriteAreWorkspaceScopedAndCursorPaginationIsStable() throws Exception {
         createWorkspace("abuse-team");
         String opsReadKey = bootstrapWorkspaceApiKey("abuse-team", "abuse-read-key", "[\"ops:read\"]");
-        String opsWriteKey = bootstrapWorkspaceApiKey("abuse-team", "abuse-write-key", "[\"ops:write\"]");
+        String opsWriteKey = bootstrapWorkspaceApiKey("abuse-team", "abuse-write-key", "[\"ops:write\",\"links:read\",\"links:write\"]");
         String linksOnlyKey = bootstrapWorkspaceApiKey("abuse-team", "links-only-key", "[\"links:read\"]");
 
         createLink("abuse-team", opsWriteKey, "review-a", "https://example.com/a");
@@ -51,7 +51,7 @@ class AbuseReviewControllerIntegrationTest {
         createManualCase("abuse-team", opsWriteKey, "review-c", false);
 
         createWorkspace("other-team");
-        String otherOpsWriteKey = bootstrapWorkspaceApiKey("other-team", "other-write-key", "[\"ops:write\"]");
+        String otherOpsWriteKey = bootstrapWorkspaceApiKey("other-team", "other-write-key", "[\"ops:write\",\"links:read\",\"links:write\"]");
         createLink("other-team", otherOpsWriteKey, "other-review", "https://example.com/other");
         createManualCase("other-team", otherOpsWriteKey, "other-review", false);
 
@@ -101,6 +101,12 @@ class AbuseReviewControllerIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.source").value("manual_operator"));
+
+        mockMvc.perform(get("/api/v1/workspaces/current/abuse/trends")
+                        .header("X-API-Key", opsReadKey)
+                        .header("X-Workspace-Slug", "abuse-team"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalOpenAbuseCases").value(3));
     }
 
     @Test
@@ -210,7 +216,7 @@ class AbuseReviewControllerIntegrationTest {
                 """
                 INSERT INTO owner_api_keys (
                     owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?)
                 """,
                 1L,
                 workspaceId,

@@ -70,6 +70,7 @@ class WorkspaceScopedApiKeysIntegrationTest {
                         .header("X-Workspace-Slug", "team-keys"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value("team-keys"))
+                .andExpect(jsonPath("$.personalWorkspace").value(false))
                 .andExpect(jsonPath("$.grantedScopes[0]").value("links:read"));
 
         mockMvc.perform(get("/api/v1/workspaces/current")
@@ -86,7 +87,7 @@ class WorkspaceScopedApiKeysIntegrationTest {
                 """
                 INSERT INTO owner_api_keys (
                     owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?)
                 """,
                 1L,
                 workspaceId,
