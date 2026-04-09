@@ -1,5 +1,6 @@
 package com.linkplatform.api.runtime;
 
+import java.time.Clock;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.boot.web.servlet.server.ConfigurableServletWebServerFactory;
@@ -9,6 +10,11 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(LinkPlatformRuntimeProperties.class)
 public class LinkPlatformRuntimeConfiguration {
+
+    @Bean
+    Clock systemClock() {
+        return Clock.systemUTC();
+    }
 
     @Bean
     WebServerFactoryCustomizer<ConfigurableServletWebServerFactory> runtimeModeWebServerCustomizer(

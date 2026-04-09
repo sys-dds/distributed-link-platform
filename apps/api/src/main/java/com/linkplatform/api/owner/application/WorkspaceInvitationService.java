@@ -9,7 +9,6 @@ import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.Locale;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +20,6 @@ public class WorkspaceInvitationService {
     private final WorkspaceInvitationStore workspaceInvitationStore;
     private final WorkspaceStore workspaceStore;
     private final SecurityEventStore securityEventStore;
-    private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
     private final int expiryDays;
 
@@ -29,13 +27,12 @@ public class WorkspaceInvitationService {
             WorkspaceInvitationStore workspaceInvitationStore,
             WorkspaceStore workspaceStore,
             SecurityEventStore securityEventStore,
-            JdbcTemplate jdbcTemplate,
+            Clock clock,
             @Value("${link-platform.workspaces.invitation-expiry-days:7}") int expiryDays) {
         this.workspaceInvitationStore = workspaceInvitationStore;
         this.workspaceStore = workspaceStore;
         this.securityEventStore = securityEventStore;
-        this.jdbcTemplate = jdbcTemplate;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
         this.expiryDays = expiryDays;
     }
 
@@ -148,7 +145,7 @@ public class WorkspaceInvitationService {
     }
 
     private String requireExistingOwnerEmail(long ownerId) {
-        String ownerKey = jdbcTemplate.queryForObject("SELECT owner_key FROM owners WHERE id = ?", String.class, ownerId);
+        String ownerKey = workspaceStore.findOwnerEmailById(ownerId).orElse(null);
         if (ownerKey == null || ownerKey.isBlank()) {
             throw new IllegalArgumentException("Owner account not found");
         }
@@ -162,13 +159,7 @@ public class WorkspaceInvitationService {
     }
 
     private long requireExistingOwnerIdByEmail(String email) {
-        Long ownerId = jdbcTemplate.query(
-                        "SELECT id FROM owners WHERE lower(owner_key) = lower(?)",
-                        (resultSet, rowNum) -> resultSet.getLong("id"),
-                        email)
-                .stream()
-                .findFirst()
-                .orElse(null);
+        Long ownerId = workspaceStore.findOwnerIdByEmail(email).orElse(null);
         if (ownerId == null) {
             throw new IllegalArgumentException("Owner account not found for invited email");
         }

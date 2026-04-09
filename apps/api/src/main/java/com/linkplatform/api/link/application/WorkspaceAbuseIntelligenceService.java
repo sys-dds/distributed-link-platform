@@ -28,12 +28,13 @@ public class WorkspaceAbuseIntelligenceService {
             WorkspaceAbusePolicyStore workspaceAbusePolicyStore,
             WorkspacePermissionService workspacePermissionService,
             LinkAbuseStore linkAbuseStore,
-            SecurityEventStore securityEventStore) {
+            SecurityEventStore securityEventStore,
+            Clock clock) {
         this.workspaceAbusePolicyStore = workspaceAbusePolicyStore;
         this.workspacePermissionService = workspacePermissionService;
         this.linkAbuseStore = linkAbuseStore;
         this.securityEventStore = securityEventStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)

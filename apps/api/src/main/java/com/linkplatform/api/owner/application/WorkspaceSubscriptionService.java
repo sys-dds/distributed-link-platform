@@ -16,11 +16,12 @@ public class WorkspaceSubscriptionService {
     public WorkspaceSubscriptionService(
             WorkspacePlanStore workspacePlanStore,
             SecurityEventStore securityEventStore,
-            OperatorActionLogStore operatorActionLogStore) {
+            OperatorActionLogStore operatorActionLogStore,
+            Clock clock) {
         this.workspacePlanStore = workspacePlanStore;
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional

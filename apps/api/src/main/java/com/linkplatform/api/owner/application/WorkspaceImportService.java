@@ -44,7 +44,8 @@ public class WorkspaceImportService {
             WebhookSubscriptionsStore webhookSubscriptionsStore,
             SecurityEventStore securityEventStore,
             ObjectMapper objectMapper,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate,
+            Clock clock) {
         this.workspaceImportStore = workspaceImportStore;
         this.workspaceExportService = workspaceExportService;
         this.workspaceEntitlementService = workspaceEntitlementService;
@@ -54,7 +55,7 @@ public class WorkspaceImportService {
         this.securityEventStore = securityEventStore;
         this.objectMapper = objectMapper;
         this.jdbcTemplate = jdbcTemplate;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)

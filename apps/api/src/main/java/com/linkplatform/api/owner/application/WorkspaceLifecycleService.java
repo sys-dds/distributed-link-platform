@@ -20,12 +20,13 @@ public class WorkspaceLifecycleService {
             WorkspaceStore workspaceStore,
             ServiceAccountStore serviceAccountStore,
             SecurityEventStore securityEventStore,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate,
+            Clock clock) {
         this.workspaceStore = workspaceStore;
         this.serviceAccountStore = serviceAccountStore;
         this.securityEventStore = securityEventStore;
         this.jdbcTemplate = jdbcTemplate;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional
