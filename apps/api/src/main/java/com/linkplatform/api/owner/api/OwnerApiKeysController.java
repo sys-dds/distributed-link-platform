@@ -30,10 +30,11 @@ public class OwnerApiKeysController {
 
     public OwnerApiKeysController(
             OwnerAccessService ownerAccessService,
-            ApiKeyLifecycleService apiKeyLifecycleService) {
+            ApiKeyLifecycleService apiKeyLifecycleService,
+            Clock clock) {
         this.ownerAccessService = ownerAccessService;
         this.apiKeyLifecycleService = apiKeyLifecycleService;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @PostMapping

@@ -30,14 +30,15 @@ public class LinkAbuseReviewService {
             WorkspaceAbuseIntelligenceService workspaceAbuseIntelligenceService,
             SecurityEventStore securityEventStore,
             LinkPlatformRuntimeProperties runtimeProperties,
-            WebhookEventPublisher webhookEventPublisher) {
+            WebhookEventPublisher webhookEventPublisher,
+            Clock clock) {
         this.linkAbuseStore = linkAbuseStore;
         this.linkStore = linkStore;
         this.workspaceAbuseIntelligenceService = workspaceAbuseIntelligenceService;
         this.securityEventStore = securityEventStore;
         this.runtimeProperties = runtimeProperties;
         this.webhookEventPublisher = webhookEventPublisher;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional

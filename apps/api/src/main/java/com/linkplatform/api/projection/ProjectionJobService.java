@@ -45,13 +45,14 @@ public class ProjectionJobService {
             LinkStore linkStore,
             LinkReadCache linkReadCache,
             SecurityEventStore securityEventStore,
+            Clock clock,
             @Value("${link-platform.projection-jobs.chunk-size}") int chunkSize) {
         this.projectionJobStore = projectionJobStore;
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
         this.linkStore = linkStore;
         this.linkReadCache = linkReadCache;
         this.securityEventStore = securityEventStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
         this.chunkSize = chunkSize;
     }
 

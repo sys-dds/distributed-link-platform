@@ -63,7 +63,8 @@ public class WorkspacesController {
             WorkspaceEntitlementService workspaceEntitlementService,
             WorkspaceInvitationStore workspaceInvitationStore,
             WorkspaceInvitationService workspaceInvitationService,
-            WorkspaceLifecycleService workspaceLifecycleService) {
+            WorkspaceLifecycleService workspaceLifecycleService,
+            Clock clock) {
         this.ownerAccessService = ownerAccessService;
         this.workspaceStore = workspaceStore;
         this.workspacePermissionService = workspacePermissionService;
@@ -72,7 +73,7 @@ public class WorkspacesController {
         this.workspaceInvitationStore = workspaceInvitationStore;
         this.workspaceInvitationService = workspaceInvitationService;
         this.workspaceLifecycleService = workspaceLifecycleService;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @GetMapping
