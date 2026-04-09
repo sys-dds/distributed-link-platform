@@ -99,24 +99,12 @@ public class WorkspaceLifecycleService {
     public WorkspaceMemberRecord suspendMember(WorkspaceAccessContext context, long ownerId, String reason) {
         requireActiveWorkspace(context.workspaceId());
         WorkspaceMemberRecord member = requireMembership(context.workspaceId(), ownerId);
-        if ("HUMAN".equals(member.memberType()) && member.role() == WorkspaceRole.OWNER
-                && workspaceStore.countActiveHumanOwners(context.workspaceId()) <= 1) {
-            throw new InvalidWorkspaceRoleChangeException("Cannot suspend the last active HUMAN OWNER");
-        }
+        requireSuspendableMember(context.workspaceId(), member);
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (!workspaceStore.suspendMember(context.workspaceId(), ownerId, now, context.ownerId(), sanitizeReason(reason))) {
             throw new IllegalArgumentException("Workspace member cannot be suspended");
         }
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_MEMBER_SUSPENDED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
-                "POST",
-                "/api/v1/workspaces/current/members/" + ownerId + "/suspend",
-                null,
-                "Workspace member suspended",
-                now);
+        recordMemberSuspended(context, ownerId, now);
         return workspaceStore.findMembership(context.workspaceId(), ownerId).orElseThrow();
     }
 
@@ -128,16 +116,7 @@ public class WorkspaceLifecycleService {
         if (!workspaceStore.resumeMember(context.workspaceId(), ownerId)) {
             throw new IllegalArgumentException("Workspace member cannot be resumed");
         }
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_MEMBER_RESUMED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
-                "POST",
-                "/api/v1/workspaces/current/members/" + ownerId + "/resume",
-                null,
-                "Workspace member resumed",
-                now);
+        recordMemberResumed(context, ownerId, now);
         return workspaceStore.findMembership(context.workspaceId(), ownerId).orElseThrow();
     }
 
@@ -147,16 +126,7 @@ public class WorkspaceLifecycleService {
         if (!workspaceStore.suspendWorkspace(context.workspaceId(), now, context.ownerId(), sanitizeReason(reason))) {
             throw new IllegalArgumentException("Workspace cannot be suspended");
         }
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_SUSPENDED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
-                "POST",
-                "/api/v1/workspaces/current/suspend",
-                null,
-                "Workspace suspended",
-                now);
+        recordWorkspaceSuspended(context, now);
     }
 
     @Transactional
@@ -165,16 +135,7 @@ public class WorkspaceLifecycleService {
         if (!workspaceStore.resumeWorkspace(context.workspaceId())) {
             throw new IllegalArgumentException("Workspace cannot be resumed");
         }
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_RESUMED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
-                "POST",
-                "/api/v1/workspaces/current/resume",
-                null,
-                "Workspace resumed",
-                now);
+        recordWorkspaceResumed(context, now);
     }
 
     @Transactional
@@ -188,16 +149,7 @@ public class WorkspaceLifecycleService {
         OffsetDateTime now = OffsetDateTime.now(clock);
         workspaceStore.updateMemberRole(context.workspaceId(), toOwnerId, WorkspaceRole.OWNER);
         workspaceStore.updateMemberRole(context.workspaceId(), fromOwnerId, WorkspaceRole.ADMIN);
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_OWNERSHIP_TRANSFERRED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
-                "POST",
-                "/api/v1/workspaces/current/ownership-transfer",
-                null,
-                "Workspace ownership transferred",
-                now);
+        recordOwnershipTransferred(context, now);
     }
 
     private void requireActiveWorkspace(long workspaceId) {
@@ -218,6 +170,14 @@ public class WorkspaceLifecycleService {
             throw new InvalidWorkspaceRoleChangeException("Ownership transfer requires active HUMAN members");
         }
         return member;
+    }
+
+    private void requireSuspendableMember(long workspaceId, WorkspaceMemberRecord member) {
+        if ("HUMAN".equals(member.memberType())
+                && member.role() == WorkspaceRole.OWNER
+                && workspaceStore.countActiveHumanOwners(workspaceId) <= 1) {
+            throw new InvalidWorkspaceRoleChangeException("Cannot suspend the last active HUMAN OWNER");
+        }
     }
 
     private String sanitizeReason(String reason) {
@@ -253,5 +213,70 @@ public class WorkspaceLifecycleService {
             throw new IllegalStateException("Unable to allocate service account owner id");
         }
         return ownerId;
+    }
+
+    private void recordMemberSuspended(WorkspaceAccessContext context, long ownerId, OffsetDateTime now) {
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_MEMBER_SUSPENDED,
+                context.ownerId(),
+                context.workspaceId(),
+                context.apiKeyHash(),
+                "POST",
+                "/api/v1/workspaces/current/members/" + ownerId + "/suspend",
+                null,
+                "Workspace member suspended",
+                now);
+    }
+
+    private void recordMemberResumed(WorkspaceAccessContext context, long ownerId, OffsetDateTime now) {
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_MEMBER_RESUMED,
+                context.ownerId(),
+                context.workspaceId(),
+                context.apiKeyHash(),
+                "POST",
+                "/api/v1/workspaces/current/members/" + ownerId + "/resume",
+                null,
+                "Workspace member resumed",
+                now);
+    }
+
+    private void recordWorkspaceSuspended(WorkspaceAccessContext context, OffsetDateTime now) {
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_SUSPENDED,
+                context.ownerId(),
+                context.workspaceId(),
+                context.apiKeyHash(),
+                "POST",
+                "/api/v1/workspaces/current/suspend",
+                null,
+                "Workspace suspended",
+                now);
+    }
+
+    private void recordWorkspaceResumed(WorkspaceAccessContext context, OffsetDateTime now) {
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_RESUMED,
+                context.ownerId(),
+                context.workspaceId(),
+                context.apiKeyHash(),
+                "POST",
+                "/api/v1/workspaces/current/resume",
+                null,
+                "Workspace resumed",
+                now);
+    }
+
+    private void recordOwnershipTransferred(WorkspaceAccessContext context, OffsetDateTime now) {
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_OWNERSHIP_TRANSFERRED,
+                context.ownerId(),
+                context.workspaceId(),
+                context.apiKeyHash(),
+                "POST",
+                "/api/v1/workspaces/current/ownership-transfer",
+                null,
+                "Workspace ownership transferred",
+                now);
     }
 }

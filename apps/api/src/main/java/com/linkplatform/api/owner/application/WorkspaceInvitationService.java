@@ -59,16 +59,7 @@ public class WorkspaceInvitationService {
                 now.plusDays(expiryDays),
                 now,
                 context.ownerId());
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_INVITATION_CREATED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
-                "POST",
-                "/api/v1/workspaces/current/invitations",
-                null,
-                "Workspace invitation created",
-                now);
+        recordInvitationCreated(context, now);
         return new CreatedInvitation(record, plaintextToken);
     }
 
@@ -78,25 +69,14 @@ public class WorkspaceInvitationService {
                 .orElseThrow(() -> new IllegalArgumentException("Workspace invitation not found"));
         requireActiveWorkspace(invitation.workspaceId());
         OffsetDateTime now = OffsetDateTime.now(clock);
-        if (!invitation.email().equalsIgnoreCase(requireExistingOwnerEmail(acceptedByOwnerId))) {
-            throw new IllegalArgumentException("Workspace invitation email does not match accepting owner");
-        }
+        requireMatchingOwnerEmail(invitation, acceptedByOwnerId);
         if (!invitation.expiresAt().isAfter(now)) {
             workspaceInvitationStore.markExpired(invitation.id());
             throw new IllegalArgumentException("Workspace invitation has expired");
         }
         workspaceStore.addMember(invitation.workspaceId(), acceptedByOwnerId, invitation.role(), now, invitation.createdByOwnerId());
         workspaceInvitationStore.markAccepted(invitation.id(), now, acceptedByOwnerId);
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_INVITATION_ACCEPTED,
-                acceptedByOwnerId,
-                invitation.workspaceId(),
-                null,
-                "POST",
-                "/api/v1/workspaces/invitations/accept",
-                null,
-                "Workspace invitation accepted",
-                now);
+        recordInvitationAccepted(invitation, acceptedByOwnerId, now);
         return workspaceInvitationStore.findById(invitation.id()).orElseThrow();
     }
 
@@ -112,6 +92,49 @@ public class WorkspaceInvitationService {
         if (!workspaceInvitationStore.markRevoked(invitationId, now, context.ownerId())) {
             throw new IllegalArgumentException("Workspace invitation cannot be revoked");
         }
+        recordInvitationRevoked(context, invitationId, now);
+        return workspaceInvitationStore.findById(invitationId).orElseThrow();
+    }
+
+    private void requireMatchingOwnerEmail(WorkspaceInvitationRecord invitation, long acceptedByOwnerId) {
+        if (!invitation.email().equalsIgnoreCase(requireExistingOwnerEmail(acceptedByOwnerId))) {
+            throw new IllegalArgumentException("Workspace invitation email does not match accepting owner");
+        }
+    }
+
+    private void recordInvitationCreated(WorkspaceAccessContext context, OffsetDateTime now) {
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_INVITATION_CREATED,
+                context.ownerId(),
+                context.workspaceId(),
+                context.apiKeyHash(),
+                "POST",
+                "/api/v1/workspaces/current/invitations",
+                null,
+                "Workspace invitation created",
+                now);
+    }
+
+    private void recordInvitationAccepted(
+            WorkspaceInvitationRecord invitation,
+            long acceptedByOwnerId,
+            OffsetDateTime now) {
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_INVITATION_ACCEPTED,
+                acceptedByOwnerId,
+                invitation.workspaceId(),
+                null,
+                "POST",
+                "/api/v1/workspaces/invitations/accept",
+                null,
+                "Workspace invitation accepted",
+                now);
+    }
+
+    private void recordInvitationRevoked(
+            WorkspaceAccessContext context,
+            long invitationId,
+            OffsetDateTime now) {
         securityEventStore.record(
                 SecurityEventType.WORKSPACE_INVITATION_REVOKED,
                 context.ownerId(),
@@ -122,7 +145,6 @@ public class WorkspaceInvitationService {
                 null,
                 "Workspace invitation revoked",
                 now);
-        return workspaceInvitationStore.findById(invitationId).orElseThrow();
     }
 
     private String requireExistingOwnerEmail(long ownerId) {

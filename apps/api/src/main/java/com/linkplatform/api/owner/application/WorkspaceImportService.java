@@ -78,15 +78,8 @@ public class WorkspaceImportService {
             Boolean dryRun,
             Boolean overwriteConflicts) {
         workspacePermissionService.requireImportsWrite(context);
-        if (!workspaceEntitlementService.exportsEnabled(context.workspaceId())) {
-            throw new IllegalArgumentException("Workspace imports are not enabled for this plan");
-        }
-        if ((sourceExportId == null) == (payloadJson == null)) {
-            throw new IllegalArgumentException("Exactly one of sourceExportId or payloadJson must be provided");
-        }
-        JsonNode resolvedPayload = sourceExportId != null
-                ? workspaceExportService.resolveImportPayload(context, sourceExportId)
-                : payloadJson;
+        requireImportsEnabled(context.workspaceId());
+        JsonNode resolvedPayload = resolvePayload(context, sourceExportId, payloadJson);
         OffsetDateTime now = OffsetDateTime.now(clock);
         WorkspaceImportRecord record = workspaceImportStore.create(
                 context.workspaceId(),
@@ -114,9 +107,7 @@ public class WorkspaceImportService {
         workspacePermissionService.requireImportsWrite(context);
         WorkspaceImportRecord record = workspaceImportStore.findById(context.workspaceId(), importId)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace import not found: " + importId));
-        if (!"READY_TO_APPLY".equals(record.status())) {
-            throw new IllegalArgumentException("Workspace import is not ready to apply");
-        }
+        requireReadyToApply(record);
         ImportExecution execution = execute(record, true);
         OffsetDateTime now = OffsetDateTime.now(clock);
         workspaceImportStore.markCompleted(record.id(), execution.summaryJson(), now);
@@ -137,35 +128,9 @@ public class WorkspaceImportService {
     public void processQueuedImport(WorkspaceImportRecord record) {
         try {
             ImportExecution execution = execute(record, !record.dryRun());
-            OffsetDateTime now = OffsetDateTime.now(clock);
-            if (record.dryRun()) {
-                workspaceImportStore.markReadyToApply(record.id(), execution.summaryJson(), now);
-            } else {
-                workspaceImportStore.markCompleted(record.id(), execution.summaryJson(), now);
-            }
-            securityEventStore.record(
-                    SecurityEventType.WORKSPACE_IMPORT_COMPLETED,
-                    record.requestedByOwnerId(),
-                    record.workspaceId(),
-                    null,
-                    "POST",
-                    "/api/v1/workspaces/current/imports/" + record.id(),
-                    null,
-                    "Workspace import completed",
-                    now);
+            completeQueuedImport(record, execution);
         } catch (Exception exception) {
-            OffsetDateTime now = OffsetDateTime.now(clock);
-            workspaceImportStore.markFailed(record.id(), exception.getMessage(), now);
-            securityEventStore.record(
-                    SecurityEventType.WORKSPACE_IMPORT_FAILED,
-                    record.requestedByOwnerId(),
-                    record.workspaceId(),
-                    null,
-                    "POST",
-                    "/api/v1/workspaces/current/imports/" + record.id(),
-                    null,
-                    "Workspace import failed",
-                    now);
+            failQueuedImport(record, exception);
         }
     }
 
@@ -180,53 +145,7 @@ public class WorkspaceImportService {
     private void processLinks(WorkspaceImportRecord record, boolean apply, SummaryAccumulator summary) {
         for (JsonNode item : arrayOrEmpty(record.payloadJson().path("links"))) {
             try {
-                ImportedLink importedLink = ImportedLink.from(item);
-                LinkDetails existing = linkStore.findStoredDetailsBySlug(importedLink.slug(), record.workspaceId()).orElse(null);
-                if (existing != null && !record.overwriteConflicts()) {
-                    summary.addConflict("link:" + importedLink.slug());
-                    continue;
-                }
-                if (!apply) {
-                    if (existing == null) {
-                        summary.linksCreated++;
-                    } else {
-                        summary.linksUpdated++;
-                    }
-                    continue;
-                }
-                if (existing == null) {
-                    workspaceEntitlementService.enforceActiveLinksQuota(record.workspaceId(), linkStore.countActiveLinksByOwner(record.workspaceId()));
-                    boolean saved = linkStore.save(
-                            new Link(new LinkSlug(importedLink.slug()), new OriginalUrl(importedLink.originalUrl())),
-                            importedLink.expiresAt(),
-                            importedLink.title(),
-                            importedLink.tags(),
-                            hostname(importedLink.originalUrl()),
-                            1L,
-                            record.workspaceId());
-                    if (!saved) {
-                        summary.addConflict("link:" + importedLink.slug());
-                        continue;
-                    }
-                    summary.linksCreated++;
-                } else {
-                    boolean updated = linkStore.update(
-                            importedLink.slug(),
-                            importedLink.originalUrl(),
-                            importedLink.expiresAt(),
-                            importedLink.title(),
-                            importedLink.tags(),
-                            hostname(importedLink.originalUrl()),
-                            existing.version(),
-                            existing.version() + 1,
-                            record.workspaceId());
-                    if (!updated) {
-                        summary.addConflict("link:" + importedLink.slug());
-                        continue;
-                    }
-                    summary.linksUpdated++;
-                }
-                applyImportedLifecycle(record.workspaceId(), importedLink);
+                processLink(record, apply, summary, ImportedLink.from(item));
             } catch (Exception exception) {
                 summary.addSkipped("link");
             }
@@ -239,23 +158,174 @@ public class WorkspaceImportService {
         }
         for (JsonNode item : arrayOrEmpty(record.payloadJson().path("webhooks"))) {
             try {
-                ImportedWebhook importedWebhook = ImportedWebhook.from(item);
-                if (!apply) {
-                    continue;
-                }
-                webhookSubscriptionsStore.create(
-                        record.workspaceId(),
-                        importedWebhook.name(),
-                        importedWebhook.callbackUrl(),
-                        "imported-disabled",
-                        "imported",
-                        false,
-                        importedWebhook.eventTypes(),
-                        OffsetDateTime.now(clock));
+                processWebhook(record, apply, ImportedWebhook.from(item));
             } catch (Exception exception) {
                 summary.addSkipped("webhook");
             }
         }
+    }
+
+    private void requireImportsEnabled(long workspaceId) {
+        if (!workspaceEntitlementService.exportsEnabled(workspaceId)) {
+            throw new IllegalArgumentException("Workspace imports are not enabled for this plan");
+        }
+    }
+
+    private JsonNode resolvePayload(WorkspaceAccessContext context, Long sourceExportId, JsonNode payloadJson) {
+        if ((sourceExportId == null) == (payloadJson == null)) {
+            throw new IllegalArgumentException("Exactly one of sourceExportId or payloadJson must be provided");
+        }
+        if (sourceExportId != null) {
+            return workspaceExportService.resolveImportPayload(context, sourceExportId);
+        }
+        return payloadJson;
+    }
+
+    private void requireReadyToApply(WorkspaceImportRecord record) {
+        if (!"READY_TO_APPLY".equals(record.status())) {
+            throw new IllegalArgumentException("Workspace import is not ready to apply");
+        }
+    }
+
+    private void completeQueuedImport(WorkspaceImportRecord record, ImportExecution execution) {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (record.dryRun()) {
+            workspaceImportStore.markReadyToApply(record.id(), execution.summaryJson(), now);
+        } else {
+            workspaceImportStore.markCompleted(record.id(), execution.summaryJson(), now);
+        }
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_IMPORT_COMPLETED,
+                record.requestedByOwnerId(),
+                record.workspaceId(),
+                null,
+                "POST",
+                "/api/v1/workspaces/current/imports/" + record.id(),
+                null,
+                "Workspace import completed",
+                now);
+    }
+
+    private void failQueuedImport(WorkspaceImportRecord record, Exception exception) {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        workspaceImportStore.markFailed(record.id(), exception.getMessage(), now);
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_IMPORT_FAILED,
+                record.requestedByOwnerId(),
+                record.workspaceId(),
+                null,
+                "POST",
+                "/api/v1/workspaces/current/imports/" + record.id(),
+                null,
+                "Workspace import failed",
+                now);
+    }
+
+    private void processLink(
+            WorkspaceImportRecord record,
+            boolean apply,
+            SummaryAccumulator summary,
+            ImportedLink importedLink) {
+        LinkDetails existing = findExistingLink(record.workspaceId(), importedLink.slug());
+        if (hasLinkConflict(record, importedLink, existing, summary)) {
+            return;
+        }
+        if (!apply) {
+            summarizeLinkPreview(summary, existing);
+            return;
+        }
+        boolean changed = existing == null
+                ? createImportedLink(record, summary, importedLink)
+                : updateImportedLink(record, summary, importedLink, existing);
+        if (!changed) {
+            return;
+        }
+        applyImportedLifecycle(record.workspaceId(), importedLink);
+    }
+
+    private LinkDetails findExistingLink(long workspaceId, String slug) {
+        return linkStore.findStoredDetailsBySlug(slug, workspaceId).orElse(null);
+    }
+
+    private boolean hasLinkConflict(
+            WorkspaceImportRecord record,
+            ImportedLink importedLink,
+            LinkDetails existing,
+            SummaryAccumulator summary) {
+        if (existing == null || record.overwriteConflicts()) {
+            return false;
+        }
+        summary.addConflict("link:" + importedLink.slug());
+        return true;
+    }
+
+    private void summarizeLinkPreview(SummaryAccumulator summary, LinkDetails existing) {
+        if (existing == null) {
+            summary.linksCreated++;
+            return;
+        }
+        summary.linksUpdated++;
+    }
+
+    private boolean createImportedLink(
+            WorkspaceImportRecord record,
+            SummaryAccumulator summary,
+            ImportedLink importedLink) {
+        workspaceEntitlementService.enforceActiveLinksQuota(
+                record.workspaceId(),
+                linkStore.countActiveLinksByOwner(record.workspaceId()));
+        boolean saved = linkStore.save(
+                new Link(new LinkSlug(importedLink.slug()), new OriginalUrl(importedLink.originalUrl())),
+                importedLink.expiresAt(),
+                importedLink.title(),
+                importedLink.tags(),
+                hostname(importedLink.originalUrl()),
+                1L,
+                record.workspaceId());
+        if (!saved) {
+            summary.addConflict("link:" + importedLink.slug());
+            return false;
+        }
+        summary.linksCreated++;
+        return true;
+    }
+
+    private boolean updateImportedLink(
+            WorkspaceImportRecord record,
+            SummaryAccumulator summary,
+            ImportedLink importedLink,
+            LinkDetails existing) {
+        boolean updated = linkStore.update(
+                importedLink.slug(),
+                importedLink.originalUrl(),
+                importedLink.expiresAt(),
+                importedLink.title(),
+                importedLink.tags(),
+                hostname(importedLink.originalUrl()),
+                existing.version(),
+                existing.version() + 1,
+                record.workspaceId());
+        if (!updated) {
+            summary.addConflict("link:" + importedLink.slug());
+            return false;
+        }
+        summary.linksUpdated++;
+        return true;
+    }
+
+    private void processWebhook(WorkspaceImportRecord record, boolean apply, ImportedWebhook importedWebhook) {
+        if (!apply) {
+            return;
+        }
+        webhookSubscriptionsStore.create(
+                record.workspaceId(),
+                importedWebhook.name(),
+                importedWebhook.callbackUrl(),
+                "imported-disabled",
+                "imported",
+                false,
+                importedWebhook.eventTypes(),
+                OffsetDateTime.now(clock));
     }
 
     private void applyImportedLifecycle(long workspaceId, ImportedLink importedLink) {
@@ -346,19 +416,32 @@ public class WorkspaceImportService {
 
         private static ImportedLink from(JsonNode node) {
             String lifecycle = node.path("lifecycleState").asText("ACTIVE").trim().toUpperCase(Locale.ROOT);
-            List<String> tags = new java.util.ArrayList<>();
-            if (node.path("tags").isArray()) {
-                for (JsonNode tag : node.path("tags")) {
-                    tags.add(tag.asText());
-                }
-            }
+            List<String> tags = readTags(node.path("tags"));
             return new ImportedLink(
                     node.path("slug").asText(),
                     node.path("originalUrl").asText(),
-                    node.path("expiresAt").isNull() || node.path("expiresAt").isMissingNode() ? null : OffsetDateTime.parse(node.path("expiresAt").asText()),
+                    readOptionalOffsetDateTime(node.path("expiresAt")),
                     node.path("title").isMissingNode() || node.path("title").isNull() ? null : node.path("title").asText(),
                     tags,
                     LinkLifecycleState.valueOf(lifecycle));
+        }
+
+        private static List<String> readTags(JsonNode tagsNode) {
+            List<String> tags = new java.util.ArrayList<>();
+            if (!tagsNode.isArray()) {
+                return tags;
+            }
+            for (JsonNode tag : tagsNode) {
+                tags.add(tag.asText());
+            }
+            return tags;
+        }
+
+        private static OffsetDateTime readOptionalOffsetDateTime(JsonNode node) {
+            if (node.isNull() || node.isMissingNode()) {
+                return null;
+            }
+            return OffsetDateTime.parse(node.asText());
         }
     }
 

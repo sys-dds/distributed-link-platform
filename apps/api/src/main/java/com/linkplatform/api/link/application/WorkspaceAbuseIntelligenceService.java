@@ -51,15 +51,8 @@ public class WorkspaceAbuseIntelligenceService {
             Integer redirectRateLimitQuarantineThreshold) {
         workspacePermissionService.requireOpsWrite(context);
         WorkspaceAbusePolicyRecord current = policyForWorkspace(context.workspaceId());
-        int repeatedThreshold = repeatedHostQuarantineThreshold == null
-                ? current.repeatedHostQuarantineThreshold()
-                : repeatedHostQuarantineThreshold;
-        int redirectThreshold = redirectRateLimitQuarantineThreshold == null
-                ? current.redirectRateLimitQuarantineThreshold()
-                : redirectRateLimitQuarantineThreshold;
-        if (repeatedThreshold <= 0 || redirectThreshold <= 0) {
-            throw new IllegalArgumentException("Abuse thresholds must be positive");
-        }
+        int repeatedThreshold = resolveRepeatedHostThreshold(current, repeatedHostQuarantineThreshold);
+        int redirectThreshold = resolveRedirectThreshold(current, redirectRateLimitQuarantineThreshold);
         OffsetDateTime now = OffsetDateTime.now(clock);
         WorkspaceAbusePolicyRecord updated = workspaceAbusePolicyStore.upsertPolicy(
                 context.workspaceId(),
@@ -93,9 +86,7 @@ public class WorkspaceAbuseIntelligenceService {
         workspacePermissionService.requireOpsWrite(context);
         String normalizedHost = normalizeHost(host);
         String normalizedRuleType = normalizeRuleType(ruleType);
-        if (workspaceAbusePolicyStore.findHostRule(context.workspaceId(), normalizedHost, normalizedRuleType).isPresent()) {
-            throw new IllegalArgumentException("Workspace host rule already exists");
-        }
+        requireMissingHostRule(context.workspaceId(), normalizedHost, normalizedRuleType);
         OffsetDateTime now = OffsetDateTime.now(clock);
         WorkspaceHostRuleRecord record = workspaceAbusePolicyStore.createHostRule(
                 context.workspaceId(),
@@ -213,6 +204,38 @@ public class WorkspaceAbuseIntelligenceService {
             throw new IllegalArgumentException("ruleType must be ALLOW or DENY");
         }
         return normalized;
+    }
+
+    private int resolveRepeatedHostThreshold(
+            WorkspaceAbusePolicyRecord current,
+            Integer repeatedHostQuarantineThreshold) {
+        int threshold = repeatedHostQuarantineThreshold == null
+                ? current.repeatedHostQuarantineThreshold()
+                : repeatedHostQuarantineThreshold;
+        validatePositiveThreshold(threshold);
+        return threshold;
+    }
+
+    private int resolveRedirectThreshold(
+            WorkspaceAbusePolicyRecord current,
+            Integer redirectRateLimitQuarantineThreshold) {
+        int threshold = redirectRateLimitQuarantineThreshold == null
+                ? current.redirectRateLimitQuarantineThreshold()
+                : redirectRateLimitQuarantineThreshold;
+        validatePositiveThreshold(threshold);
+        return threshold;
+    }
+
+    private void validatePositiveThreshold(int threshold) {
+        if (threshold <= 0) {
+            throw new IllegalArgumentException("Abuse thresholds must be positive");
+        }
+    }
+
+    private void requireMissingHostRule(long workspaceId, String normalizedHost, String normalizedRuleType) {
+        if (workspaceAbusePolicyStore.findHostRule(workspaceId, normalizedHost, normalizedRuleType).isPresent()) {
+            throw new IllegalArgumentException("Workspace host rule already exists");
+        }
     }
 
     private String sanitizeNote(String note) {
