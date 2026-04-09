@@ -56,6 +56,22 @@ public class JdbcServiceAccountStore implements ServiceAccountStore {
     }
 
     @Override
+    public Optional<ServiceAccountRecord> findByWorkspaceIdAndId(long workspaceId, long serviceAccountId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT id, workspace_id, name, slug, status, created_at, created_by_owner_id, disabled_at, disabled_by_owner_id
+                        FROM service_accounts
+                        WHERE workspace_id = ?
+                          AND id = ?
+                        """,
+                        (resultSet, rowNum) -> mapRecord(resultSet),
+                        workspaceId,
+                        serviceAccountId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public Optional<ServiceAccountRecord> findByWorkspaceIdAndSlug(long workspaceId, String slug) {
         return jdbcTemplate.query(
                         """

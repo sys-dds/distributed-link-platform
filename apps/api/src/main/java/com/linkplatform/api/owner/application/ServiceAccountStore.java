@@ -17,6 +17,8 @@ public interface ServiceAccountStore {
 
     Optional<ServiceAccountRecord> findById(long serviceAccountId);
 
+    Optional<ServiceAccountRecord> findByWorkspaceIdAndId(long workspaceId, long serviceAccountId);
+
     Optional<ServiceAccountRecord> findByWorkspaceIdAndSlug(long workspaceId, String slug);
 
     List<ServiceAccountRecord> findByWorkspaceId(long workspaceId);

@@ -6,9 +6,13 @@ import java.util.Optional;
 
 public interface ProjectionJobStore {
 
-    ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt);
+    default ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+        return createJob(jobType, requestedAt, null, null, null, null, null, null, null);
+    }
 
-    ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug);
+    default ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
+        return createJob(jobType, requestedAt, ownerId, null, slug, null, null, null, null);
+    }
 
     ProjectionJob createJob(
             ProjectionJobType jobType,
@@ -38,14 +42,17 @@ public interface ProjectionJobStore {
 
     void markProgress(long id, OffsetDateTime occurredAt, long processedCountIncrement, Long checkpointId);
 
-    @Deprecated(forRemoval = false)
-    void markProgress(long id, long processedCountIncrement, Long checkpointId);
+    default void markProgress(long id, long processedCountIncrement, Long checkpointId) {
+        markProgress(id, OffsetDateTime.now(java.time.Clock.systemUTC()), processedCountIncrement, checkpointId);
+    }
 
     void markCompleted(long id, OffsetDateTime completedAt, long processedCountIncrement, Long checkpointId);
 
     void markFailed(long id, OffsetDateTime completedAt, long failedItemsIncrement, String errorSummary);
 
-    void markFailed(long id, OffsetDateTime completedAt, String errorSummary);
+    default void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
+        markFailed(id, completedAt, 0L, errorSummary);
+    }
 
     @Deprecated(forRemoval = false)
     long countQueued();

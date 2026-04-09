@@ -86,6 +86,16 @@ public class ProjectionJobService {
                 blankToNull(operatorNote));
     }
 
+    @Transactional(readOnly = true)
+    public Optional<ProjectionJob> findVisibleJob(long id, long workspaceId, long ownerId, boolean personalWorkspace) {
+        return projectionJobStore.findByIdVisibleToWorkspace(id, workspaceId, ownerId, personalWorkspace);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProjectionJob> findRecentVisibleJobs(int limit, long workspaceId, long ownerId, boolean personalWorkspace) {
+        return projectionJobStore.findRecentVisibleToWorkspace(limit, workspaceId, ownerId, personalWorkspace);
+    }
+
     @Transactional
     public ProjectionJobChunkResult executeClaimedJobChunk(ProjectionJob job) {
         ProjectionJobChunkResult result = switch (job.jobType()) {

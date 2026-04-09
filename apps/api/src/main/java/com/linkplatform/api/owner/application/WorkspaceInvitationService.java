@@ -78,6 +78,20 @@ public class WorkspaceInvitationService {
     }
 
     @Transactional
+    public WorkspaceInvitationRecord acceptInvitation(
+            String expectedWorkspaceSlug,
+            String plaintextToken,
+            long acceptedByOwnerId) {
+        WorkspaceInvitationRecord invitation = acceptInvitation(plaintextToken, acceptedByOwnerId);
+        WorkspaceRecord workspace = workspaceStore.findById(invitation.workspaceId())
+                .orElseThrow(() -> new IllegalArgumentException("Workspace not found for invitation"));
+        if (!workspace.slug().equals(expectedWorkspaceSlug)) {
+            throw new IllegalArgumentException("Workspace invitation does not belong to requested workspace");
+        }
+        return invitation;
+    }
+
+    @Transactional
     public WorkspaceInvitationRecord revokeInvitation(WorkspaceAccessContext context, long invitationId) {
         requireActiveWorkspace(context.workspaceId());
         WorkspaceInvitationRecord invitation = workspaceInvitationStore.findById(invitationId)

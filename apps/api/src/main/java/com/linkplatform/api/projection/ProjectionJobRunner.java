@@ -129,6 +129,7 @@ public class ProjectionJobRunner {
         projectionJobStore.markFailed(
                 job.id(),
                 failedAt,
+                0L,
                 compactErrorSummary(exception));
     }
 }
