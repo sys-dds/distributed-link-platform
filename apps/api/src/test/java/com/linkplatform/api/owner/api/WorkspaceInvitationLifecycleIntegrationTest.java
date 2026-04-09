@@ -85,6 +85,8 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                                 """.formatted(token)))
                 .andExpect(status().isBadRequest());
 
+        ensureOwnerWithPersonalWorkspace(21L, "revokee@example.com", "revokee-key");
+
         String revoked = mockMvc.perform(post("/api/v1/workspaces/{workspaceSlug}/invitations", "team-invite")
                         .header("X-API-Key", workspaceKey)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -95,7 +97,6 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        ensureOwnerWithPersonalWorkspace(21L, "revokee@example.com", "revokee-key");
         long revokedId = objectMapper.readTree(revoked).path("invitation").path("id").asLong();
 
         mockMvc.perform(delete("/api/v1/workspaces/{workspaceSlug}/invitations/{invitationId}", "team-invite", revokedId)
@@ -116,6 +117,16 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                 Integer.class,
                 invitationId);
         org.assertj.core.api.Assertions.assertThat(acceptedState).isEqualTo(1);
+        OffsetDateTime acceptedAt = jdbcTemplate.queryForObject(
+                "SELECT accepted_at FROM workspace_invitations WHERE id = ?",
+                OffsetDateTime.class,
+                invitationId);
+        OffsetDateTime revokedAt = jdbcTemplate.queryForObject(
+                "SELECT revoked_at FROM workspace_invitations WHERE id = ?",
+                OffsetDateTime.class,
+                revokedId);
+        org.assertj.core.api.Assertions.assertThat(acceptedAt).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(revokedAt).isNotNull();
     }
 
     @Test
@@ -162,6 +173,12 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.ownerId == 23)].role").value(org.hamcrest.Matchers.contains("owner")))
                 .andExpect(jsonPath("$[?(@.ownerId == 1)].role").value(org.hamcrest.Matchers.contains("admin")));
+
+        Integer expiredState = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM workspace_invitations WHERE id = ? AND status = 'EXPIRED'",
+                Integer.class,
+                invitationId);
+        org.assertj.core.api.Assertions.assertThat(expiredState).isEqualTo(1);
     }
 
     @Test

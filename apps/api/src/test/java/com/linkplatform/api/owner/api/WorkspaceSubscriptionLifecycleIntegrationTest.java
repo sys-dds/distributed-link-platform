@@ -116,11 +116,20 @@ class WorkspaceSubscriptionLifecycleIntegrationTest {
         mockMvc.perform(patch("/api/v1/ops/workspaces/{workspaceSlug}/subscription", "team-subscription")
                         .header("X-API-Key", opsKey)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                .content("""
                                 {"subscriptionStatus":"ACTIVE"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.subscriptionStatus").value("ACTIVE"));
+
+        mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", linkKey)
+                        .header("X-Workspace-Slug", "team-subscription")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"slug":"after-resume","originalUrl":"https://example.com/after-resume"}
+                                """))
+                .andExpect(status().isCreated());
     }
 
     private void createWorkspace(String slug) throws Exception {

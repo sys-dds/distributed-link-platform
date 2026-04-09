@@ -51,16 +51,32 @@ class ServiceAccountLifecycleIntegrationTest {
 
         long serviceAccountId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(created).path("id").asLong();
 
+        mockMvc.perform(get("/api/v1/workspaces/{workspaceSlug}/service-accounts", "team-service")
+                        .header("X-API-Key", adminKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].slug").value("relay-bot"))
+                .andExpect(jsonPath("$[0].status").value("active"));
+
         mockMvc.perform(post("/api/v1/workspaces/{workspaceSlug}/service-accounts/{serviceAccountId}/disable", "team-service", serviceAccountId)
                         .header("X-API-Key", adminKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("disabled"));
+
+        mockMvc.perform(get("/api/v1/workspaces/{workspaceSlug}/service-accounts", "team-service")
+                        .header("X-API-Key", adminKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("disabled"));
 
         Integer disabledMemberships = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-service') AND owner_id = ? AND member_type = 'SERVICE_ACCOUNT' AND suspended_at IS NOT NULL",
                 Integer.class,
                 serviceAccountId);
         org.assertj.core.api.Assertions.assertThat(disabledMemberships).isEqualTo(1);
+        OffsetDateTime disabledAt = jdbcTemplate.queryForObject(
+                "SELECT disabled_at FROM service_accounts WHERE id = ?",
+                OffsetDateTime.class,
+                serviceAccountId);
+        org.assertj.core.api.Assertions.assertThat(disabledAt).isNotNull();
     }
 
     @Test
