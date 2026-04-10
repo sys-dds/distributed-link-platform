@@ -29,10 +29,6 @@ public interface ProjectionJobStore {
 
     void markFailed(long id, OffsetDateTime completedAt, long failedItemsIncrement, String errorSummary);
 
-    default void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
-        markFailed(id, completedAt, 0L, errorSummary);
-    }
-
     long countQueued(long workspaceId);
 
     long countActive(long workspaceId);

@@ -35,9 +35,6 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
     @Qualifier("dataSource")
     private DataSource dataSource;
 
-    @Autowired
-    private ProjectionJobStore projectionJobStore;
-
     @Test
     void projectionStoreOperatorCriticalMethodsDoNotUseInterfaceDefaultFallbacks() throws Exception {
         assertNotDefault("findByIdVisibleToWorkspace", Long.TYPE, Long.TYPE, Long.TYPE, Boolean.TYPE);
@@ -71,6 +68,13 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
                         String.class,
                         OffsetDateTime.class,
                         OffsetDateTime.class));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod(
+                        "markFailed",
+                        Long.TYPE,
+                        OffsetDateTime.class,
+                        String.class));
     }
 
     @Test
