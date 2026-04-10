@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(LinkPlatformRuntimeProperties.class)
 public class LinkPlatformRuntimeConfiguration {
 
-    @Bean
+    @Bean(name = "systemClock")
     Clock systemClock() {
         return Clock.systemUTC();
     }

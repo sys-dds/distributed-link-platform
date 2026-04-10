@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +34,7 @@ public class WorkspaceLifecycleService {
         this.workspaceEntitlementService = workspaceEntitlementService;
         this.securityEventStore = securityEventStore;
         this.jdbcTemplate = jdbcTemplate;
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Transactional(readOnly = true)

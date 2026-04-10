@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.Locale;
+import java.util.Objects;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +33,7 @@ public class WorkspaceInvitationService {
         this.workspaceInvitationStore = workspaceInvitationStore;
         this.workspaceStore = workspaceStore;
         this.securityEventStore = securityEventStore;
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.expiryDays = expiryDays;
     }
 

@@ -16,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -55,7 +56,7 @@ public class WorkspaceImportService {
         this.securityEventStore = securityEventStore;
         this.objectMapper = objectMapper;
         this.jdbcTemplate = jdbcTemplate;
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Transactional(readOnly = true)
