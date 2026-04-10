@@ -87,12 +87,17 @@ class WorkspaceImportRestoreIntegrationTest {
         String lifecycle = jdbcTemplate.queryForObject(
                 "SELECT lifecycle_state FROM links WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-import') AND slug = 'restored-link'",
                 String.class);
-        org.assertj.core.api.Assertions.assertThat(lifecycle).isEqualTo("ARCHIVED");
+        org.assertj.core.api.Assertions.assertThat(lifecycle).isEqualTo("ACTIVE");
 
         String secretHash = jdbcTemplate.queryForObject(
                 "SELECT signing_secret_hash FROM webhook_subscriptions WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-import') AND name = 'Imported Hook'",
                 String.class);
         org.assertj.core.api.Assertions.assertThat(secretHash).isEqualTo("imported-disabled");
+        OffsetDateTime completedAt = jdbcTemplate.queryForObject(
+                "SELECT completed_at FROM workspace_import_jobs WHERE id = ?",
+                OffsetDateTime.class,
+                importId);
+        org.assertj.core.api.Assertions.assertThat(completedAt).isNotNull();
     }
 
     @Test

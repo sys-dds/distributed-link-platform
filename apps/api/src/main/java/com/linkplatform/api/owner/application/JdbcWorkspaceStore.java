@@ -90,6 +90,34 @@ public class JdbcWorkspaceStore implements WorkspaceStore {
     }
 
     @Override
+    public Optional<Long> findOwnerIdByEmail(String email) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT id
+                        FROM owners
+                        WHERE lower(owner_key) = lower(?)
+                        """,
+                        (resultSet, rowNum) -> resultSet.getLong("id"),
+                        email)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<String> findOwnerEmailById(long ownerId) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT owner_key
+                        FROM owners
+                        WHERE id = ?
+                        """,
+                        (resultSet, rowNum) -> resultSet.getString("owner_key"),
+                        ownerId)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
     public List<WorkspaceRecord> findActiveWorkspacesForOwner(long ownerId) {
         return jdbcTemplate.query(
                 """

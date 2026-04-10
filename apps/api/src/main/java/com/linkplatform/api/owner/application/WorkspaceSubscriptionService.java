@@ -16,11 +16,12 @@ public class WorkspaceSubscriptionService {
     public WorkspaceSubscriptionService(
             WorkspacePlanStore workspacePlanStore,
             SecurityEventStore securityEventStore,
-            OperatorActionLogStore operatorActionLogStore) {
+            OperatorActionLogStore operatorActionLogStore,
+            Clock clock) {
         this.workspacePlanStore = workspacePlanStore;
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional
@@ -66,25 +67,47 @@ public class WorkspaceSubscriptionService {
                 "Subscription set to " + updated.subscriptionStatus().name(),
                 now);
         if (updated.scheduledPlanCode() != null && updated.scheduledPlanEffectiveAt() != null) {
-            securityEventStore.record(
-                    SecurityEventType.WORKSPACE_PLAN_CHANGE_SCHEDULED,
-                    operatorOwnerId,
+            recordScheduledPlanChange(
+                    updated,
                     workspaceId,
+                    workspaceSlug,
+                    operatorOwnerId,
                     apiKeyHash,
                     requestMethod,
                     requestPath,
                     remoteAddress,
-                    "Workspace plan change scheduled",
-                    now);
-            operatorActionLogStore.recordWorkspaceSubscriptionChange(
-                    workspaceId,
-                    operatorOwnerId,
-                    "workspace_plan_schedule",
-                    workspaceSlug,
-                    "Plan scheduled to " + updated.scheduledPlanCode().name(),
                     now);
         }
         return updated;
+    }
+
+    private void recordScheduledPlanChange(
+            WorkspacePlanRecord updated,
+            long workspaceId,
+            String workspaceSlug,
+            Long operatorOwnerId,
+            String apiKeyHash,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress,
+            OffsetDateTime now) {
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_PLAN_CHANGE_SCHEDULED,
+                operatorOwnerId,
+                workspaceId,
+                apiKeyHash,
+                requestMethod,
+                requestPath,
+                remoteAddress,
+                "Workspace plan change scheduled",
+                now);
+        operatorActionLogStore.recordWorkspaceSubscriptionChange(
+                workspaceId,
+                operatorOwnerId,
+                "workspace_plan_schedule",
+                workspaceSlug,
+                "Plan scheduled to " + updated.scheduledPlanCode().name(),
+                now);
     }
 
     private void validateRequest(

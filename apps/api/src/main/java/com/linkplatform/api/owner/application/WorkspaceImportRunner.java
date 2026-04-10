@@ -14,14 +14,17 @@ public class WorkspaceImportRunner {
 
     public WorkspaceImportRunner(
             WorkspaceImportStore workspaceImportStore,
-            WorkspaceImportService workspaceImportService) {
+            WorkspaceImportService workspaceImportService,
+            Clock clock) {
         this.workspaceImportStore = workspaceImportStore;
         this.workspaceImportService = workspaceImportService;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Scheduled(fixedDelayString = "${link-platform.imports.runner-delay-ms:10000}")
     public void runQueuedImports() {
-        workspaceImportStore.claimNextQueued(OffsetDateTime.now(clock)).ifPresent(workspaceImportService::processQueuedImport);
+        OffsetDateTime claimedAt = OffsetDateTime.now(clock);
+        workspaceImportStore.claimNextQueued(claimedAt)
+                .ifPresent(workspaceImportService::processQueuedImport);
     }
 }

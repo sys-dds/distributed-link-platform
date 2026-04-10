@@ -1,12 +1,9 @@
 package com.linkplatform.api.owner.api;
 
 import com.linkplatform.api.owner.application.ApiKeyScope;
-import com.linkplatform.api.owner.application.DuplicateWorkspaceMemberException;
 import com.linkplatform.api.owner.application.InvalidWorkspaceRoleChangeException;
 import com.linkplatform.api.owner.application.OwnerAccessService;
-import com.linkplatform.api.owner.application.OwnerStore;
 import com.linkplatform.api.owner.application.ServiceAccountRecord;
-import com.linkplatform.api.owner.application.ServiceAccountStore;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
@@ -49,39 +46,34 @@ public class WorkspacesController {
     private static final Pattern WORKSPACE_SLUG_PATTERN = Pattern.compile("^[a-z0-9-]{3,60}$");
 
     private final OwnerAccessService ownerAccessService;
-    private final OwnerStore ownerStore;
     private final WorkspaceStore workspaceStore;
     private final WorkspacePermissionService workspacePermissionService;
     private final SecurityEventStore securityEventStore;
     private final WorkspaceEntitlementService workspaceEntitlementService;
     private final WorkspaceInvitationStore workspaceInvitationStore;
     private final WorkspaceInvitationService workspaceInvitationService;
-    private final ServiceAccountStore serviceAccountStore;
     private final WorkspaceLifecycleService workspaceLifecycleService;
     private final Clock clock;
 
     public WorkspacesController(
             OwnerAccessService ownerAccessService,
-            OwnerStore ownerStore,
             WorkspaceStore workspaceStore,
             WorkspacePermissionService workspacePermissionService,
             SecurityEventStore securityEventStore,
             WorkspaceEntitlementService workspaceEntitlementService,
             WorkspaceInvitationStore workspaceInvitationStore,
             WorkspaceInvitationService workspaceInvitationService,
-            ServiceAccountStore serviceAccountStore,
-            WorkspaceLifecycleService workspaceLifecycleService) {
+            WorkspaceLifecycleService workspaceLifecycleService,
+            Clock clock) {
         this.ownerAccessService = ownerAccessService;
-        this.ownerStore = ownerStore;
         this.workspaceStore = workspaceStore;
         this.workspacePermissionService = workspacePermissionService;
         this.securityEventStore = securityEventStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
         this.workspaceInvitationStore = workspaceInvitationStore;
         this.workspaceInvitationService = workspaceInvitationService;
-        this.serviceAccountStore = serviceAccountStore;
         this.workspaceLifecycleService = workspaceLifecycleService;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @GetMapping
@@ -246,13 +238,9 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
         WorkspaceInvitationRecord invitation = workspaceInvitationService.acceptInvitation(
+                workspaceSlug,
                 request == null ? null : request.token(),
                 caller.ownerId());
-        WorkspaceRecord workspace = workspaceStore.findById(invitation.workspaceId())
-                .orElseThrow(() -> new IllegalArgumentException("Workspace not found for invitation"));
-        if (!workspace.slug().equals(workspaceSlug)) {
-            throw new IllegalArgumentException("Workspace invitation does not belong to requested workspace");
-        }
         return toWorkspaceInvitationResponse(invitation);
     }
 
@@ -290,8 +278,7 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.MEMBERS_READ);
-        ensureSharedWorkspace(context, "Service accounts are not available for personal workspaces");
-        return serviceAccountStore.findByWorkspaceId(context.workspaceId()).stream()
+        return workspaceLifecycleService.listServiceAccounts(context).stream()
                 .map(this::toServiceAccountResponse)
                 .toList();
     }
@@ -312,7 +299,6 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.MEMBERS_WRITE);
-        ensureSharedWorkspace(context, "Service accounts are not available for personal workspaces");
         ServiceAccountRecord serviceAccount = workspaceLifecycleService.createServiceAccount(
                 context,
                 request == null ? null : request.name(),
@@ -336,7 +322,6 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.MEMBERS_WRITE);
-        ensureSharedWorkspace(context, "Service accounts are not available for personal workspaces");
         return toServiceAccountResponse(workspaceLifecycleService.disableServiceAccount(context, serviceAccountId));
     }
 
@@ -356,29 +341,13 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.MEMBERS_WRITE);
-        ensureSharedWorkspace(context);
-        WorkspaceRole role = parseRole(request == null ? null : request.role());
-        long ownerId = request == null ? 0L : request.ownerId();
-        ownerStore.findById(ownerId).orElseThrow(() -> new IllegalArgumentException("Owner not found: " + ownerId));
-        if (workspaceStore.findActiveMembership(context.workspaceId(), ownerId).isPresent()) {
-            throw new DuplicateWorkspaceMemberException("Workspace membership already exists for owner " + ownerId);
-        }
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        // Add-member quota failures must surface through the shared workspace quota exception path.
-        workspaceEntitlementService.enforceMembersQuota(context.workspaceId());
-        workspaceStore.addMember(context.workspaceId(), ownerId, role, now, context.ownerId());
-        workspaceEntitlementService.recordCurrentMembersSnapshot(context.workspaceId(), "workspace_member_add", Long.toString(ownerId), now);
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_MEMBER_ADDED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
+        return toMemberResponse(workspaceLifecycleService.addMember(
+                context,
+                request == null ? 0L : request.ownerId(),
+                parseRole(request == null ? null : request.role()),
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                "Workspace member added",
-                now);
-        return toMemberResponse(workspaceStore.findActiveMembership(context.workspaceId(), ownerId).orElseThrow());
+                httpServletRequest.getRemoteAddr()));
     }
 
     @PatchMapping("/{workspaceSlug}/members/{ownerId}")
@@ -397,25 +366,13 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.MEMBERS_WRITE);
-        WorkspaceRole nextRole = parseRole(request == null ? null : request.role());
-        WorkspaceMemberRecord existing = workspaceStore.findActiveMembership(context.workspaceId(), ownerId)
-                .orElseThrow(() -> new IllegalArgumentException("Workspace membership not found for owner " + ownerId));
-        if (existing.role() == WorkspaceRole.OWNER && nextRole != WorkspaceRole.OWNER && workspaceStore.countActiveOwners(context.workspaceId()) <= 1) {
-            throw new InvalidWorkspaceRoleChangeException("Cannot demote the last OWNER");
-        }
-        workspaceStore.updateMemberRole(context.workspaceId(), ownerId, nextRole);
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_MEMBER_ROLE_CHANGED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
+        return toMemberResponse(workspaceLifecycleService.updateMemberRole(
+                context,
+                ownerId,
+                parseRole(request == null ? null : request.role()),
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                "Workspace member role changed",
-                now);
-        return toMemberResponse(workspaceStore.findActiveMembership(context.workspaceId(), ownerId).orElseThrow());
+                httpServletRequest.getRemoteAddr()));
     }
 
     @DeleteMapping("/{workspaceSlug}/members/{ownerId}")
@@ -434,27 +391,12 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.MEMBERS_WRITE);
-        WorkspaceMemberRecord existing = workspaceStore.findActiveMembership(context.workspaceId(), ownerId)
-                .orElseThrow(() -> new IllegalArgumentException("Workspace membership not found for owner " + ownerId));
-        if (existing.role() == WorkspaceRole.OWNER && workspaceStore.countActiveOwners(context.workspaceId()) <= 1) {
-            throw new InvalidWorkspaceRoleChangeException("Cannot remove the last OWNER");
-        }
-        workspaceStore.removeMember(context.workspaceId(), ownerId, OffsetDateTime.now(clock));
-        workspaceEntitlementService.recordCurrentMembersSnapshot(
-                context.workspaceId(),
-                "workspace_member_remove",
-                Long.toString(ownerId),
-                OffsetDateTime.now(clock));
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_MEMBER_REMOVED,
-                context.ownerId(),
-                context.workspaceId(),
-                context.apiKeyHash(),
+        workspaceLifecycleService.removeMember(
+                context,
+                ownerId,
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                "Workspace member removed",
-                OffsetDateTime.now(clock));
+                httpServletRequest.getRemoteAddr());
     }
 
     @PostMapping("/{workspaceSlug}/members/{ownerId}/suspend")
@@ -535,16 +477,10 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr());
         workspacePermissionService.requireScope(context, ApiKeyScope.MEMBERS_WRITE);
-        String status = request == null || request.status() == null ? null : request.status().trim().toUpperCase(Locale.ROOT);
-        if ("SUSPENDED".equals(status)) {
-            workspaceLifecycleService.suspendWorkspace(context, request.reason());
-            return;
-        }
-        if ("ACTIVE".equals(status)) {
-            workspaceLifecycleService.resumeWorkspace(context);
-            return;
-        }
-        throw new IllegalArgumentException("status must be ACTIVE or SUSPENDED");
+        workspaceLifecycleService.updateWorkspaceStatus(
+                context,
+                request == null ? null : request.status(),
+                request == null ? null : request.reason());
     }
 
     private void ensureSharedWorkspace(WorkspaceAccessContext context) {

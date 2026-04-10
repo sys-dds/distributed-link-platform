@@ -29,8 +29,8 @@ public record ProjectionJobResponse(
         Long requestedByOwnerId,
         String operatorNote) {
 
-    public static ProjectionJobResponse from(ProjectionJob job, String workspaceSlug) {
-        String resolvedWorkspaceSlug = normalizeWorkspaceSlug(workspaceSlug);
+    public static ProjectionJobResponse from(ProjectionJob job, WorkspaceAccessContext context) {
+        String resolvedWorkspaceSlug = normalizeWorkspaceSlug(context.workspaceSlug());
         return new ProjectionJobResponse(
                 job.id(),
                 job.jobType(),
@@ -56,14 +56,6 @@ public record ProjectionJobResponse(
                 job.rangeEnd(),
                 job.requestedByOwnerId(),
                 job.operatorNote());
-    }
-
-    public static ProjectionJobResponse from(ProjectionJob job, WorkspaceAccessContext context) {
-        return from(job, context.workspaceSlug());
-    }
-
-    public static ProjectionJobResponse from(ProjectionJob job) {
-        return from(job, (String) null);
     }
 
     private static String normalizeWorkspaceSlug(String workspaceSlug) {

@@ -45,13 +45,14 @@ public class ProjectionJobService {
             LinkStore linkStore,
             LinkReadCache linkReadCache,
             SecurityEventStore securityEventStore,
+            Clock clock,
             @Value("${link-platform.projection-jobs.chunk-size}") int chunkSize) {
         this.projectionJobStore = projectionJobStore;
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
         this.linkStore = linkStore;
         this.linkReadCache = linkReadCache;
         this.securityEventStore = securityEventStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
         this.chunkSize = chunkSize;
     }
 
@@ -84,6 +85,16 @@ public class ProjectionJobService {
                 to,
                 requestedByOwnerId,
                 blankToNull(operatorNote));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ProjectionJob> findVisibleJob(long id, long workspaceId, long ownerId, boolean personalWorkspace) {
+        return projectionJobStore.findByIdVisibleToWorkspace(id, workspaceId, ownerId, personalWorkspace);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProjectionJob> findRecentVisibleJobs(int limit, long workspaceId, long ownerId, boolean personalWorkspace) {
+        return projectionJobStore.findRecentVisibleToWorkspace(limit, workspaceId, ownerId, personalWorkspace);
     }
 
     @Transactional

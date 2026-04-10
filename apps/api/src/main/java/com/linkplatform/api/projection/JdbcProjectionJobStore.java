@@ -47,16 +47,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
-        return createJob(jobType, requestedAt, null, null, null, null, null, null, null);
-    }
-
-    @Override
-    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
-        return createJob(jobType, requestedAt, ownerId, null, slug, null, null, null, null);
-    }
-
-    @Override
     public ProjectionJob createJob(
             ProjectionJobType jobType,
             OffsetDateTime requestedAt,
@@ -98,6 +88,16 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
+    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+        return ProjectionJobStore.super.createJob(jobType, requestedAt);
+    }
+
+    @Override
+    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
+        return ProjectionJobStore.super.createJob(jobType, requestedAt, ownerId, slug);
+    }
+
+    @Override
     public Optional<ProjectionJob> findByIdVisibleToWorkspace(long id, long workspaceId, long ownerId, boolean personalWorkspace) {
         if (personalWorkspace) {
             return jdbcTemplate.query(
@@ -119,16 +119,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public Optional<ProjectionJob> findById(long id) {
-        throw new UnsupportedOperationException("Legacy unscoped projection job lookup is not supported");
-    }
-
-    @Override
-    public List<ProjectionJob> findRecent(int limit) {
-        throw new UnsupportedOperationException("Legacy unscoped projection job listing is not supported");
-    }
-
-    @Override
     public List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace) {
         if (personalWorkspace) {
             return jdbcTemplate.query(
@@ -143,6 +133,16 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                 this::mapJob,
                 workspaceId,
                 limit);
+    }
+
+    @Override
+    public Optional<ProjectionJob> findById(long id) {
+        throw new UnsupportedOperationException("Legacy unscoped projection job lookup is not supported");
+    }
+
+    @Override
+    public List<ProjectionJob> findRecent(int limit) {
+        throw new UnsupportedOperationException("Legacy unscoped projection job listing is not supported");
     }
 
     @Override
@@ -213,11 +213,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public void markProgress(long id, long processedCountIncrement, Long checkpointId) {
-        markProgress(id, OffsetDateTime.now(clock), processedCountIncrement, checkpointId);
-    }
-
-    @Override
     public void markCompleted(long id, OffsetDateTime completedAt, long processedCountIncrement, Long checkpointId) {
         jdbcTemplate.update(
                 """
@@ -271,7 +266,7 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
 
     @Override
     public void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
-        markFailed(id, completedAt, 0L, errorSummary);
+        ProjectionJobStore.super.markFailed(id, completedAt, errorSummary);
     }
 
     @Override

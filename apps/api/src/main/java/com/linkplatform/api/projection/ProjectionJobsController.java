@@ -31,19 +31,16 @@ public class ProjectionJobsController {
     private static final int MAX_LIMIT = 100;
 
     private final ProjectionJobService projectionJobService;
-    private final ProjectionJobStore projectionJobStore;
     private final OwnerAccessService ownerAccessService;
     private final WorkspaceStore workspaceStore;
     private final OperatorActionLogStore operatorActionLogStore;
 
     public ProjectionJobsController(
             ProjectionJobService projectionJobService,
-            ProjectionJobStore projectionJobStore,
             OwnerAccessService ownerAccessService,
             WorkspaceStore workspaceStore,
             OperatorActionLogStore operatorActionLogStore) {
         this.projectionJobService = projectionJobService;
-        this.projectionJobStore = projectionJobStore;
         this.ownerAccessService = ownerAccessService;
         this.workspaceStore = workspaceStore;
         this.operatorActionLogStore = operatorActionLogStore;
@@ -85,7 +82,7 @@ public class ProjectionJobsController {
                 job.id(),
                 safeNote,
                 job.requestedAt());
-        return toResponse(job, context);
+        return ProjectionJobResponse.from(job, context);
     }
 
     @GetMapping("/{id}")
@@ -103,8 +100,8 @@ public class ProjectionJobsController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_READ);
-        return findVisibleJob(id, context)
-                .map(job -> toResponse(job, context))
+        return projectionJobService.findVisibleJob(id, context.workspaceId(), context.ownerId(), context.personalWorkspace())
+                .map(job -> ProjectionJobResponse.from(job, context))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Projection job not found: " + id));
     }
 
@@ -124,17 +121,9 @@ public class ProjectionJobsController {
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_READ);
         validateLimit(limit);
-        return projectionJobStore.findRecentVisibleToWorkspace(limit, context.workspaceId(), context.ownerId(), context.personalWorkspace()).stream()
-                .map(job -> toResponse(job, context))
+        return projectionJobService.findRecentVisibleJobs(limit, context.workspaceId(), context.ownerId(), context.personalWorkspace()).stream()
+                .map(job -> ProjectionJobResponse.from(job, context))
                 .toList();
-    }
-
-    private java.util.Optional<ProjectionJob> findVisibleJob(long id, WorkspaceAccessContext context) {
-        return projectionJobStore.findByIdVisibleToWorkspace(id, context.workspaceId(), context.ownerId(), context.personalWorkspace());
-    }
-
-    private ProjectionJobResponse toResponse(ProjectionJob job, WorkspaceAccessContext context) {
-        return ProjectionJobResponse.from(job, context);
     }
 
     private void validateLimit(int limit) {

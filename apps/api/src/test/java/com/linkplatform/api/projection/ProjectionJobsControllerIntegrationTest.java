@@ -218,8 +218,8 @@ class ProjectionJobsControllerIntegrationTest {
                 .getResponse()
                 .getContentAsString());
 
-        assertThat(controllerJob.path("startedAt").asText()).isEqualTo(persisted.startedAt().toString());
-        assertThat(controllerJob.path("lastChunkAt").asText()).isEqualTo(persisted.lastChunkAt().toString());
+        assertThat(OffsetDateTime.parse(controllerJob.path("startedAt").asText())).isEqualTo(persisted.startedAt());
+        assertThat(OffsetDateTime.parse(controllerJob.path("lastChunkAt").asText())).isEqualTo(persisted.lastChunkAt());
         assertThat(controllerJob.path("workspaceSlug").asText()).isEqualTo(personalWorkspaceSlug);
         assertThat(controllerJob.path("processedItems").asLong()).isEqualTo(persisted.processedItems());
         assertThat(controllerJob.path("processedCount").asLong()).isEqualTo(persisted.processedItems());
