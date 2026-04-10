@@ -26,11 +26,12 @@ public class PipelineHealthIndicator extends AbstractHealthIndicator {
     public PipelineHealthIndicator(
             PipelineControlStore pipelineControlStore,
             AnalyticsOutboxStore analyticsOutboxStore,
-            LinkLifecycleOutboxStore linkLifecycleOutboxStore) {
+            LinkLifecycleOutboxStore linkLifecycleOutboxStore,
+            Clock clock) {
         this.pipelineControlStore = pipelineControlStore;
         this.analyticsOutboxStore = analyticsOutboxStore;
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Override

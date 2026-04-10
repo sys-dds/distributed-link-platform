@@ -40,7 +40,8 @@ public class RedirectRuntimeService {
             LinkAbuseReviewService linkAbuseReviewService,
             LinkPlatformRuntimeProperties runtimeProperties,
             RedirectRuntimeState redirectRuntimeState,
-            @Value("${link-platform.public-base-url}") String publicBaseUrl) {
+            @Value("${link-platform.public-base-url}") String publicBaseUrl,
+            Clock clock) {
         this.linkStore = linkStore;
         this.linkReadCache = linkReadCache;
         this.redirectRateLimitService = redirectRateLimitService;
@@ -49,7 +50,7 @@ public class RedirectRuntimeService {
         this.runtimeProperties = runtimeProperties;
         this.redirectRuntimeState = redirectRuntimeState;
         URI.create(publicBaseUrl);
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     public RedirectDecision resolve(String slug, String requestPath, String queryString, String remoteAddress) {

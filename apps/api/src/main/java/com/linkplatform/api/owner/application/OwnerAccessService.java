@@ -28,7 +28,8 @@ public class OwnerAccessService {
             ApiKeyLifecycleService apiKeyLifecycleService,
             ControlPlaneRateLimitStore controlPlaneRateLimitStore,
             SecurityEventStore securityEventStore,
-            WorkspaceEntitlementService workspaceEntitlementService) {
+            WorkspaceEntitlementService workspaceEntitlementService,
+            Clock clock) {
         this.ownerStore = ownerStore;
         this.workspaceStore = workspaceStore;
         this.workspacePermissionService = workspacePermissionService;
@@ -36,7 +37,7 @@ public class OwnerAccessService {
         this.controlPlaneRateLimitStore = controlPlaneRateLimitStore;
         this.securityEventStore = securityEventStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     public WorkspaceAccessContext authorizeRead(

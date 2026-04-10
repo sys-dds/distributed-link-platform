@@ -51,7 +51,8 @@ public class WorkspacePlanController {
             WorkspaceRetentionPurgeRunner workspaceRetentionPurgeRunner,
             WorkspaceStore workspaceStore,
             SecurityEventStore securityEventStore,
-            OperatorActionLogStore operatorActionLogStore) {
+            OperatorActionLogStore operatorActionLogStore,
+            Clock clock) {
         this.ownerAccessService = ownerAccessService;
         this.workspacePlanStore = workspacePlanStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
@@ -61,7 +62,7 @@ public class WorkspacePlanController {
         this.workspaceStore = workspaceStore;
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @GetMapping("/api/v1/workspaces/current/plan")

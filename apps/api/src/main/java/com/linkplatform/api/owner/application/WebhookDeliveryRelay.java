@@ -29,14 +29,15 @@ public class WebhookDeliveryRelay {
             WorkspaceEntitlementService workspaceEntitlementService,
             SecurityEventStore securityEventStore,
             WebhookDispatcher webhookDispatcher,
-            LinkPlatformRuntimeProperties runtimeProperties) {
+            LinkPlatformRuntimeProperties runtimeProperties,
+            Clock clock) {
         this.webhookDeliveryStore = webhookDeliveryStore;
         this.webhookSubscriptionsStore = webhookSubscriptionsStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
         this.securityEventStore = securityEventStore;
         this.webhookDispatcher = webhookDispatcher;
         this.runtimeProperties = runtimeProperties;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
         this.workerId = UUID.randomUUID().toString();
     }
 

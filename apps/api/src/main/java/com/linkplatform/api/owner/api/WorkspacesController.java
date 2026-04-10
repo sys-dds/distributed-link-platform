@@ -133,7 +133,12 @@ public class WorkspacesController {
                 httpServletRequest.getRemoteAddr(),
                 "Workspace created",
                 now);
-        return new WorkspaceResponse(workspace.id(), workspace.slug(), workspace.displayName(), workspace.personalWorkspace(), WorkspaceRole.OWNER.name().toLowerCase(Locale.ROOT));
+        return new WorkspaceResponse(
+                workspace.id(),
+                workspace.slug(),
+                workspace.displayName(),
+                workspace.personalWorkspace(),
+                WorkspaceRole.OWNER.name().toLowerCase(Locale.ROOT));
     }
 
     @GetMapping("/current")
@@ -495,7 +500,8 @@ public class WorkspacesController {
 
     private void validateWorkspaceSlug(String slug) {
         if (slug == null || !WORKSPACE_SLUG_PATTERN.matcher(slug.trim()).matches()) {
-            throw new IllegalArgumentException("Workspace slug must match lowercase letters, numbers, hyphen and be 3 to 60 chars");
+            throw new IllegalArgumentException(
+                    "Workspace slug must match lowercase letters, numbers, hyphen and be 3 to 60 chars");
         }
     }
 

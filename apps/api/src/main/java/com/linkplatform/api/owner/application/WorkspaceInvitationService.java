@@ -19,6 +19,7 @@ public class WorkspaceInvitationService {
 
     private final WorkspaceInvitationStore workspaceInvitationStore;
     private final WorkspaceStore workspaceStore;
+    private final OwnerStore ownerStore;
     private final SecurityEventStore securityEventStore;
     private final Clock clock;
     private final int expiryDays;
@@ -26,11 +27,13 @@ public class WorkspaceInvitationService {
     public WorkspaceInvitationService(
             WorkspaceInvitationStore workspaceInvitationStore,
             WorkspaceStore workspaceStore,
+            OwnerStore ownerStore,
             SecurityEventStore securityEventStore,
             Clock clock,
             @Value("${link-platform.workspaces.invitation-expiry-days:7}") int expiryDays) {
         this.workspaceInvitationStore = workspaceInvitationStore;
         this.workspaceStore = workspaceStore;
+        this.ownerStore = ownerStore;
         this.securityEventStore = securityEventStore;
         this.clock = clock;
         this.expiryDays = expiryDays;
@@ -71,7 +74,12 @@ public class WorkspaceInvitationService {
             workspaceInvitationStore.markExpired(invitation.id());
             throw new IllegalArgumentException("Workspace invitation has expired");
         }
-        workspaceStore.addMember(invitation.workspaceId(), acceptedByOwnerId, invitation.role(), now, invitation.createdByOwnerId());
+        workspaceStore.addMember(
+                invitation.workspaceId(),
+                acceptedByOwnerId,
+                invitation.role(),
+                now,
+                invitation.createdByOwnerId());
         workspaceInvitationStore.markAccepted(invitation.id(), now, acceptedByOwnerId);
         recordInvitationAccepted(invitation, acceptedByOwnerId, now);
         return workspaceInvitationStore.findById(invitation.id()).orElseThrow();
@@ -159,7 +167,7 @@ public class WorkspaceInvitationService {
     }
 
     private String requireExistingOwnerEmail(long ownerId) {
-        String ownerKey = workspaceStore.findOwnerEmailById(ownerId).orElse(null);
+        String ownerKey = ownerStore.findById(ownerId).map(AuthenticatedOwner::ownerKey).orElse(null);
         if (ownerKey == null || ownerKey.isBlank()) {
             throw new IllegalArgumentException("Owner account not found");
         }
@@ -173,7 +181,7 @@ public class WorkspaceInvitationService {
     }
 
     private long requireExistingOwnerIdByEmail(String email) {
-        Long ownerId = workspaceStore.findOwnerIdByEmail(email).orElse(null);
+        Long ownerId = ownerStore.findByOwnerKeyIgnoreCase(email).map(AuthenticatedOwner::id).orElse(null);
         if (ownerId == null) {
             throw new IllegalArgumentException("Owner account not found for invited email");
         }

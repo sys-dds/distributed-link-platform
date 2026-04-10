@@ -47,7 +47,7 @@ public class LinkPlatformRuntimeConfiguration {
     }
 
     @Bean
-    RedirectRuntimeState redirectRuntimeState(io.micrometer.core.instrument.MeterRegistry meterRegistry) {
-        return new RedirectRuntimeState(meterRegistry);
+    RedirectRuntimeState redirectRuntimeState(io.micrometer.core.instrument.MeterRegistry meterRegistry, Clock clock) {
+        return new RedirectRuntimeState(meterRegistry, clock);
     }
 }

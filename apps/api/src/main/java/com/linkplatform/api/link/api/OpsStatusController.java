@@ -45,7 +45,8 @@ public class OpsStatusController {
             QueryDataSourceHealthIndicator queryDataSourceHealthIndicator,
             PipelineHealthIndicator pipelineHealthIndicator,
             ProjectionJobStore projectionJobStore,
-            LinkAbuseReviewService linkAbuseReviewService) {
+            LinkAbuseReviewService linkAbuseReviewService,
+            Clock clock) {
         this.ownerAccessService = ownerAccessService;
         this.runtimeRoleHealthIndicator = runtimeRoleHealthIndicator;
         this.redirectRuntimeHealthIndicator = redirectRuntimeHealthIndicator;
@@ -53,7 +54,7 @@ public class OpsStatusController {
         this.pipelineHealthIndicator = pipelineHealthIndicator;
         this.projectionJobStore = projectionJobStore;
         this.linkAbuseReviewService = linkAbuseReviewService;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @GetMapping

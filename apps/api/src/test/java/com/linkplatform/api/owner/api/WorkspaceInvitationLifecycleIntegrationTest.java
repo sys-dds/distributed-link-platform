@@ -44,7 +44,11 @@ class WorkspaceInvitationLifecycleIntegrationTest {
     void invitationCreateListAcceptAndRevokeWorksAndTokenIsOneTime() throws Exception {
         ensureOwnerWithPersonalWorkspace(20L, "invitee@example.com", "invitee-key");
         createWorkspace("team-invite");
-        String workspaceKey = bootstrapWorkspaceApiKey("team-invite", 1L, "team-invite-admin", membersWriteReadScopes());
+        String workspaceKey = bootstrapWorkspaceApiKey(
+                "team-invite",
+                1L,
+                "team-invite-admin",
+                membersWriteReadScopes());
 
         String created = mockMvc.perform(post("/api/v1/workspaces/{workspaceSlug}/invitations", "team-invite")
                         .header("X-API-Key", workspaceKey)
@@ -99,12 +103,21 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                 .getContentAsString();
         long revokedId = objectMapper.readTree(revoked).path("invitation").path("id").asLong();
 
-        mockMvc.perform(delete("/api/v1/workspaces/{workspaceSlug}/invitations/{invitationId}", "team-invite", revokedId)
+        mockMvc.perform(delete(
+                        "/api/v1/workspaces/{workspaceSlug}/invitations/{invitationId}",
+                        "team-invite",
+                        revokedId)
                         .header("X-API-Key", workspaceKey))
                 .andExpect(status().isNoContent());
 
         Integer acceptedMembers = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-invite') AND owner_id = 20 AND removed_at IS NULL",
+                """
+                SELECT COUNT(*)
+                FROM workspace_members
+                WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-invite')
+                  AND owner_id = 20
+                  AND removed_at IS NULL
+                """,
                 Integer.class);
         org.assertj.core.api.Assertions.assertThat(acceptedMembers).isEqualTo(1);
         Integer revokedPending = jdbcTemplate.queryForObject(
@@ -133,7 +146,11 @@ class WorkspaceInvitationLifecycleIntegrationTest {
     void expiredInvitationCannotBeAcceptedAndOwnershipTransferWorks() throws Exception {
         ensureOwnerWithPersonalWorkspace(22L, "expired@example.com", "expired-key");
         createWorkspace("team-expire");
-        String workspaceKey = bootstrapWorkspaceApiKey("team-expire", 1L, "team-expire-admin", membersWriteReadScopes());
+        String workspaceKey = bootstrapWorkspaceApiKey(
+                "team-expire",
+                1L,
+                "team-expire-admin",
+                membersWriteReadScopes());
 
         String created = mockMvc.perform(post("/api/v1/workspaces/{workspaceSlug}/invitations", "team-expire")
                         .header("X-API-Key", workspaceKey)
@@ -147,7 +164,10 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                 .getContentAsString();
         long invitationId = objectMapper.readTree(created).path("invitation").path("id").asLong();
         String token = objectMapper.readTree(created).path("invitationToken").asText();
-        jdbcTemplate.update("UPDATE workspace_invitations SET expires_at = ? WHERE id = ?", OffsetDateTime.now().minusMinutes(1), invitationId);
+        jdbcTemplate.update(
+                "UPDATE workspace_invitations SET expires_at = ? WHERE id = ?",
+                OffsetDateTime.now().minusMinutes(1),
+                invitationId);
 
         mockMvc.perform(post("/api/v1/workspaces/{workspaceSlug}/invitations/accept", "team-expire")
                         .header("X-API-Key", "expired-key")
@@ -184,7 +204,11 @@ class WorkspaceInvitationLifecycleIntegrationTest {
     @Test
     void lastHumanOwnerCannotBeRemovedSuspendedOrDemoted() throws Exception {
         createWorkspace("team-last-owner");
-        String workspaceKey = bootstrapWorkspaceApiKey("team-last-owner", 1L, "team-last-owner-admin", membersWriteReadScopes());
+        String workspaceKey = bootstrapWorkspaceApiKey(
+                "team-last-owner",
+                1L,
+                "team-last-owner-admin",
+                membersWriteReadScopes());
 
         mockMvc.perform(delete("/api/v1/workspaces/{workspaceSlug}/members/{ownerId}", "team-last-owner", 1L)
                         .header("X-API-Key", workspaceKey))
@@ -221,9 +245,17 @@ class WorkspaceInvitationLifecycleIntegrationTest {
     }
 
     private void addMember(String workspaceSlug, long ownerId, String role) {
-        Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, workspaceSlug);
+        Long workspaceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM workspaces WHERE slug = ?",
+                Long.class,
+                workspaceSlug);
         jdbcTemplate.update(
-                "INSERT INTO workspace_members (workspace_id, owner_id, role, member_type, joined_at, added_by_owner_id, removed_at) VALUES (?, ?, ?, 'HUMAN', ?, 1, NULL)",
+                """
+                INSERT INTO workspace_members (
+                    workspace_id, owner_id, role, member_type, joined_at, added_by_owner_id, removed_at
+                )
+                VALUES (?, ?, ?, 'HUMAN', ?, 1, NULL)
+                """,
                 workspaceId,
                 ownerId,
                 role,
@@ -231,7 +263,10 @@ class WorkspaceInvitationLifecycleIntegrationTest {
     }
 
     private void ensureOwnerWithPersonalWorkspace(long ownerId, String ownerKey, String apiKey) {
-        Integer ownerCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM owners WHERE id = ?", Integer.class, ownerId);
+        Integer ownerCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM owners WHERE id = ?",
+                Integer.class,
+                ownerId);
         if (ownerCount == null || ownerCount == 0) {
             jdbcTemplate.update(
                     "INSERT INTO owners (id, owner_key, display_name, plan, created_at) VALUES (?, ?, ?, 'FREE', ?)",
@@ -246,7 +281,12 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                 ownerId);
         if (workspaceCount == null || workspaceCount == 0) {
             jdbcTemplate.update(
-                    "INSERT INTO workspaces (slug, display_name, personal_workspace, status, created_at, created_by_owner_id) VALUES (?, ?, TRUE, 'ACTIVE', ?, ?)",
+                    """
+                    INSERT INTO workspaces (
+                        slug, display_name, personal_workspace, status, created_at, created_by_owner_id
+                    )
+                    VALUES (?, ?, TRUE, 'ACTIVE', ?, ?)
+                    """,
                     ownerKey.replace("@", "-").replace(".", "-"),
                     ownerKey,
                     OffsetDateTime.now(),
@@ -256,7 +296,12 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                     Long.class,
                     ownerId);
             jdbcTemplate.update(
-                    "INSERT INTO workspace_members (workspace_id, owner_id, role, member_type, joined_at, added_by_owner_id, removed_at) VALUES (?, ?, 'OWNER', 'HUMAN', ?, ?, NULL)",
+                    """
+                    INSERT INTO workspace_members (
+                        workspace_id, owner_id, role, member_type, joined_at, added_by_owner_id, removed_at
+                    )
+                    VALUES (?, ?, 'OWNER', 'HUMAN', ?, ?, NULL)
+                    """,
                     workspaceId,
                     ownerId,
                     OffsetDateTime.now(),
@@ -265,7 +310,8 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                     """
                     INSERT INTO workspace_plans (
                         workspace_id, plan_code, subscription_status, active_links_limit, members_limit, api_keys_limit,
-                        webhooks_limit, monthly_webhook_deliveries_limit, exports_enabled, current_period_start, current_period_end,
+                        webhooks_limit, monthly_webhook_deliveries_limit, exports_enabled,
+                        current_period_start, current_period_end,
                         created_at, updated_at
                     ) VALUES (?, 'FREE', 'ACTIVE', 100, 5, 10, 5, 10000, TRUE, ?, ?, ?, ?)
                     """,
@@ -275,7 +321,10 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                     OffsetDateTime.now(),
                     OffsetDateTime.now());
         }
-        Integer keyCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM owner_api_keys WHERE key_prefix = ?", Integer.class, apiKey);
+        Integer keyCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM owner_api_keys WHERE key_prefix = ?",
+                Integer.class,
+                apiKey);
         if (keyCount == null || keyCount == 0) {
             Long workspaceId = jdbcTemplate.queryForObject(
                     "SELECT id FROM workspaces WHERE created_by_owner_id = ? AND personal_workspace = TRUE",
@@ -283,7 +332,10 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                     ownerId);
             jdbcTemplate.update(
                     """
-                    INSERT INTO owner_api_keys (owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by)
+                    INSERT INTO owner_api_keys (
+                        owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json,
+                        created_at, created_by
+                    )
                     VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, 'test-bootstrap')
                     """,
                     ownerId,
@@ -292,16 +344,26 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                     sha256(apiKey),
                     apiKey,
                     apiKey,
-                    "[\"members:read\",\"members:write\",\"links:read\",\"links:write\",\"webhooks:read\",\"webhooks:write\",\"ops:read\",\"ops:write\",\"exports:read\",\"exports:write\"]",
+                    membersWriteReadScopes(),
                     OffsetDateTime.now());
         }
     }
 
-    private String bootstrapWorkspaceApiKey(String workspaceSlug, long ownerId, String plaintextKey, String scopesJson) {
-        Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, workspaceSlug);
+    private String bootstrapWorkspaceApiKey(
+            String workspaceSlug,
+            long ownerId,
+            String plaintextKey,
+            String scopesJson) {
+        Long workspaceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM workspaces WHERE slug = ?",
+                Long.class,
+                workspaceSlug);
         jdbcTemplate.update(
                 """
-                INSERT INTO owner_api_keys (owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by)
+                INSERT INTO owner_api_keys (
+                    owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json,
+                    created_at, created_by
+                )
                 VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, 'test-bootstrap')
                 """,
                 ownerId,
@@ -316,7 +378,10 @@ class WorkspaceInvitationLifecycleIntegrationTest {
     }
 
     private String membersWriteReadScopes() {
-        return "[\"members:read\",\"members:write\",\"links:read\",\"links:write\",\"webhooks:read\",\"webhooks:write\",\"ops:read\",\"ops:write\",\"exports:read\",\"exports:write\"]";
+        return """
+                ["members:read","members:write","links:read","links:write","webhooks:read","webhooks:write",\
+                "ops:read","ops:write","exports:read","exports:write"]
+                """;
     }
 
     private String sha256(String value) {

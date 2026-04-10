@@ -29,11 +29,12 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             MeterRegistry meterRegistry,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
         Gauge.builder("link.analytics.outbox.unpublished", this, JdbcAnalyticsOutboxStore::countUnpublished)
                 .description("Number of unpublished analytics outbox records")
                 .register(meterRegistry);

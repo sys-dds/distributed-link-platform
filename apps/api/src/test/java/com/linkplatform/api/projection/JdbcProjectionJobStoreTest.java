@@ -23,6 +23,8 @@ import org.springframework.test.context.ActiveProfiles;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class JdbcProjectionJobStoreTest {
 
+    private static final long WORKSPACE_ID = 1L;
+
     @Autowired
     private JdbcProjectionJobStore store;
 
@@ -35,9 +37,14 @@ class JdbcProjectionJobStoreTest {
                 ProjectionJobType.ACTIVITY_FEED_REPLAY,
                 OffsetDateTime.parse("2026-04-04T10:00:00Z"),
                 null,
+                WORKSPACE_ID,
+                null,
+                null,
+                null,
+                null,
                 null);
 
-        assertEquals(1L, store.countQueued());
+        assertEquals(1L, store.countQueued(WORKSPACE_ID));
         assertEquals(1.0, meterRegistry.get("link.projection.jobs.queued").gauge().value());
 
         ProjectionJob claimed = store.claimNext(
@@ -48,15 +55,15 @@ class JdbcProjectionJobStoreTest {
 
         assertEquals(created.id(), claimed.id());
         assertEquals(ProjectionJobStatus.RUNNING, claimed.status());
-        assertEquals(0L, store.countQueued());
-        assertEquals(1L, store.countActive());
+        assertEquals(0L, store.countQueued(WORKSPACE_ID));
+        assertEquals(1L, store.countActive(WORKSPACE_ID));
         assertEquals(1.0, meterRegistry.get("link.projection.jobs.active").gauge().value());
     }
 
     @Test
     void concurrentWorkersDoNotClaimSameJob() throws Exception {
-        store.createJob(ProjectionJobType.ACTIVITY_FEED_REPLAY, OffsetDateTime.parse("2026-04-04T10:00:00Z"), null, null);
-        store.createJob(ProjectionJobType.CLICK_ROLLUP_REBUILD, OffsetDateTime.parse("2026-04-04T10:00:01Z"), null, null);
+        createJob(ProjectionJobType.ACTIVITY_FEED_REPLAY, OffsetDateTime.parse("2026-04-04T10:00:00Z"));
+        createJob(ProjectionJobType.CLICK_ROLLUP_REBUILD, OffsetDateTime.parse("2026-04-04T10:00:01Z"));
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
@@ -83,6 +90,11 @@ class JdbcProjectionJobStoreTest {
                 ProjectionJobType.ACTIVITY_FEED_REPLAY,
                 OffsetDateTime.parse("2026-04-04T10:00:00Z"),
                 null,
+                WORKSPACE_ID,
+                null,
+                null,
+                null,
+                null,
                 null);
         store.claimNext(
                 "worker-a",
@@ -105,10 +117,15 @@ class JdbcProjectionJobStoreTest {
                 ProjectionJobType.LINK_CATALOG_REBUILD,
                 OffsetDateTime.parse("2026-04-04T10:00:00Z"),
                 null,
+                WORKSPACE_ID,
+                null,
+                null,
+                null,
+                null,
                 null);
         store.markFailed(created.id(), OffsetDateTime.parse("2026-04-04T10:05:00Z"), "boom");
 
-        assertEquals(1L, store.countQueued());
+        assertEquals(1L, store.countQueued(WORKSPACE_ID));
 
         ProjectionJob reclaimed = store.claimNext(
                         "worker-c",
@@ -134,5 +151,9 @@ class JdbcProjectionJobStoreTest {
             Thread.sleep(50);
         }
         throw new java.util.NoSuchElementException("No projection job could be claimed");
+    }
+
+    private ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+        return store.createJob(jobType, requestedAt, null, WORKSPACE_ID, null, null, null, null, null);
     }
 }

@@ -27,10 +27,11 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     public JdbcProjectionJobStore(
             JdbcTemplate jdbcTemplate,
             TransactionTemplate transactionTemplate,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
         Gauge.builder("link.projection.jobs.queued", this, JdbcProjectionJobStore::countQueuedForMetrics)
                 .description("Number of queued projection jobs")
                 .register(meterRegistry);
@@ -88,16 +89,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
-        return ProjectionJobStore.super.createJob(jobType, requestedAt);
-    }
-
-    @Override
-    public ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
-        return ProjectionJobStore.super.createJob(jobType, requestedAt, ownerId, slug);
-    }
-
-    @Override
     public Optional<ProjectionJob> findByIdVisibleToWorkspace(long id, long workspaceId, long ownerId, boolean personalWorkspace) {
         if (personalWorkspace) {
             return jdbcTemplate.query(
@@ -136,16 +127,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
-    public Optional<ProjectionJob> findById(long id) {
-        throw new UnsupportedOperationException("Legacy unscoped projection job lookup is not supported");
-    }
-
-    @Override
-    public List<ProjectionJob> findRecent(int limit) {
-        throw new UnsupportedOperationException("Legacy unscoped projection job listing is not supported");
-    }
-
-    @Override
     public Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
         return transactionTemplate.execute(status -> jdbcTemplate.query(
                         selectJobsSql() + """
@@ -179,11 +160,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
                             job.id());
                     return jdbcTemplate.query(selectJobsSql() + " WHERE id = ?", this::mapJob, job.id()).stream().findFirst().orElseThrow();
                 }));
-    }
-
-    @Override
-    public Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil) {
-        throw new UnsupportedOperationException("Legacy queued-only projection job claiming is not supported");
     }
 
     @Override
@@ -267,16 +243,6 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     @Override
     public void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
         ProjectionJobStore.super.markFailed(id, completedAt, errorSummary);
-    }
-
-    @Override
-    public long countQueued() {
-        throw new UnsupportedOperationException("Legacy unscoped queued projection job count is not supported");
-    }
-
-    @Override
-    public long countActive() {
-        throw new UnsupportedOperationException("Legacy unscoped active projection job count is not supported");
     }
 
     @Override

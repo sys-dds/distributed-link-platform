@@ -1,7 +1,6 @@
 package com.linkplatform.api.projection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -230,19 +229,18 @@ class ProjectionJobsControllerIntegrationTest {
     }
 
     @Test
-    void legacyGlobalProjectionStoreMethodsStayExplicitAndNonDefault() throws Exception {
-        assertFalse(ProjectionJobStore.class.getMethod("findRecent", int.class).isDefault());
-        assertFalse(ProjectionJobStore.class.getMethod("findById", long.class).isDefault());
-        assertFalse(ProjectionJobStore.class.getMethod("countQueued").isDefault());
-        assertFalse(ProjectionJobStore.class.getMethod("countActive").isDefault());
-        assertFalse(ProjectionJobStore.class.getMethod("claimNextQueued", String.class, OffsetDateTime.class, OffsetDateTime.class).isDefault());
-        assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findRecent(10));
-        assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findById(99L));
-        assertThrows(UnsupportedOperationException.class, projectionJobStore::countQueued);
-        assertThrows(UnsupportedOperationException.class, projectionJobStore::countActive);
+    void legacyGlobalProjectionStoreMethodsAreRemoved() {
+        assertThrows(NoSuchMethodException.class, () -> ProjectionJobStore.class.getMethod("findRecent", int.class));
+        assertThrows(NoSuchMethodException.class, () -> ProjectionJobStore.class.getMethod("findById", long.class));
+        assertThrows(NoSuchMethodException.class, () -> ProjectionJobStore.class.getMethod("countQueued"));
+        assertThrows(NoSuchMethodException.class, () -> ProjectionJobStore.class.getMethod("countActive"));
         assertThrows(
-                UnsupportedOperationException.class,
-                () -> projectionJobStore.claimNextQueued("worker", OffsetDateTime.now(), OffsetDateTime.now().plusSeconds(30)));
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod(
+                        "claimNextQueued",
+                        String.class,
+                        OffsetDateTime.class,
+                        OffsetDateTime.class));
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {

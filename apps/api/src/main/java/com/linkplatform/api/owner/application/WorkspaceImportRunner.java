@@ -24,7 +24,8 @@ public class WorkspaceImportRunner {
     @Scheduled(fixedDelayString = "${link-platform.imports.runner-delay-ms:10000}")
     public void runQueuedImports() {
         OffsetDateTime claimedAt = OffsetDateTime.now(clock);
-        workspaceImportStore.claimNextQueued(claimedAt)
+        workspaceImportStore
+                .claimNextQueued(claimedAt)
                 .ifPresent(workspaceImportService::processQueuedImport);
     }
 }

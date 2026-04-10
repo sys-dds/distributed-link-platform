@@ -19,12 +19,13 @@ public class WorkspaceEntitlementService {
             WorkspacePlanStore workspacePlanStore,
             WorkspaceUsageStore workspaceUsageStore,
             WorkspaceStore workspaceStore,
-            OwnerApiKeyStore ownerApiKeyStore) {
+            OwnerApiKeyStore ownerApiKeyStore,
+            Clock clock) {
         this.workspacePlanStore = workspacePlanStore;
         this.workspaceUsageStore = workspaceUsageStore;
         this.workspaceStore = workspaceStore;
         this.ownerApiKeyStore = ownerApiKeyStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)

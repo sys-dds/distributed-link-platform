@@ -42,10 +42,6 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
     void projectionStoreOperatorCriticalMethodsDoNotUseInterfaceDefaultFallbacks() throws Exception {
         assertNotDefault("findByIdVisibleToWorkspace", Long.TYPE, Long.TYPE, Long.TYPE, Boolean.TYPE);
         assertNotDefault("findRecentVisibleToWorkspace", Integer.TYPE, Long.TYPE, Long.TYPE, Boolean.TYPE);
-        assertNotDefault("findRecent", Integer.TYPE);
-        assertNotDefault("findById", Long.TYPE);
-        assertNotDefault("countQueued");
-        assertNotDefault("countActive");
         assertNotDefault("countQueued", Long.TYPE);
         assertNotDefault("countActive", Long.TYPE);
         assertNotDefault("countFailed", Long.TYPE);
@@ -55,14 +51,26 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
     }
 
     @Test
-    void legacyUnscopedProjectionStoreMethodsFailLoudly() {
-        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findRecent(5));
-        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findById(1L));
-        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, projectionJobStore::countQueued);
-        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, projectionJobStore::countActive);
+    void legacyUnscopedProjectionStoreMethodsAreRemoved() {
         org.junit.jupiter.api.Assertions.assertThrows(
-                UnsupportedOperationException.class,
-                () -> projectionJobStore.claimNextQueued("worker", OffsetDateTime.now(), OffsetDateTime.now().plusMinutes(1)));
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod("findRecent", Integer.TYPE));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod("findById", Long.TYPE));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod("countQueued"));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod("countActive"));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod(
+                        "claimNextQueued",
+                        String.class,
+                        OffsetDateTime.class,
+                        OffsetDateTime.class));
     }
 
     @Test

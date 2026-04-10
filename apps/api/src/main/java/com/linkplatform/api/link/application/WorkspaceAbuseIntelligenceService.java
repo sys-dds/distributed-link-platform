@@ -83,7 +83,11 @@ public class WorkspaceAbuseIntelligenceService {
     }
 
     @Transactional
-    public WorkspaceHostRuleRecord createHostRule(WorkspaceAccessContext context, String host, String ruleType, String note) {
+    public WorkspaceHostRuleRecord createHostRule(
+            WorkspaceAccessContext context,
+            String host,
+            String ruleType,
+            String note) {
         workspacePermissionService.requireOpsWrite(context);
         String normalizedHost = normalizeHost(host);
         String normalizedRuleType = normalizeRuleType(ruleType);
@@ -173,7 +177,8 @@ public class WorkspaceAbuseIntelligenceService {
             return false;
         }
         WorkspaceAbusePolicyRecord policy = policyForWorkspace(workspaceId);
-        return workspaceAbusePolicyStore.findHostSignalCount(workspaceId, normalizedHost) >= policy.repeatedHostQuarantineThreshold();
+        return workspaceAbusePolicyStore.findHostSignalCount(workspaceId, normalizedHost)
+                >= policy.repeatedHostQuarantineThreshold();
     }
 
     @Transactional(readOnly = true)

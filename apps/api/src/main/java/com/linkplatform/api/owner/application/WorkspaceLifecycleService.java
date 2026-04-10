@@ -90,11 +90,17 @@ public class WorkspaceLifecycleService {
     public ServiceAccountRecord disableServiceAccount(WorkspaceAccessContext context, long serviceAccountId) {
         requireSharedWorkspace(context, "Service accounts are not available for personal workspaces");
         requireActiveWorkspace(context.workspaceId());
-        ServiceAccountRecord serviceAccount = serviceAccountStore.findByWorkspaceIdAndId(context.workspaceId(), serviceAccountId)
+        ServiceAccountRecord serviceAccount = serviceAccountStore
+                .findByWorkspaceIdAndId(context.workspaceId(), serviceAccountId)
                 .orElseThrow(() -> new IllegalArgumentException("Service account not found"));
         OffsetDateTime now = OffsetDateTime.now(clock);
         serviceAccountStore.disable(serviceAccountId, now, context.ownerId());
-        workspaceStore.suspendMember(context.workspaceId(), serviceAccountId, now, context.ownerId(), "service account disabled");
+        workspaceStore.suspendMember(
+                context.workspaceId(),
+                serviceAccountId,
+                now,
+                context.ownerId(),
+                "service account disabled");
         securityEventStore.record(
                 SecurityEventType.SERVICE_ACCOUNT_DISABLED,
                 context.ownerId(),
@@ -217,7 +223,12 @@ public class WorkspaceLifecycleService {
         WorkspaceMemberRecord member = requireMembership(context.workspaceId(), ownerId);
         requireSuspendableMember(context.workspaceId(), member);
         OffsetDateTime now = OffsetDateTime.now(clock);
-        if (!workspaceStore.suspendMember(context.workspaceId(), ownerId, now, context.ownerId(), sanitizeReason(reason))) {
+        if (!workspaceStore.suspendMember(
+                context.workspaceId(),
+                ownerId,
+                now,
+                context.ownerId(),
+                sanitizeReason(reason))) {
             throw new IllegalArgumentException("Workspace member cannot be suspended");
         }
         recordMemberSuspended(context, ownerId, now);
@@ -281,7 +292,8 @@ public class WorkspaceLifecycleService {
 
     private WorkspaceMemberRecord requireActiveHumanMembership(long workspaceId, long ownerId) {
         WorkspaceMemberRecord member = workspaceStore.findActiveMembership(workspaceId, ownerId)
-                .orElseThrow(() -> new InvalidWorkspaceRoleChangeException("Ownership transfer requires active HUMAN members"));
+                .orElseThrow(() -> new InvalidWorkspaceRoleChangeException(
+                        "Ownership transfer requires active HUMAN members"));
         if (!"HUMAN".equals(member.memberType())) {
             throw new InvalidWorkspaceRoleChangeException("Ownership transfer requires active HUMAN members");
         }
@@ -338,7 +350,8 @@ public class WorkspaceLifecycleService {
         }
         String normalized = slug.trim().toLowerCase(Locale.ROOT);
         if (!normalized.matches("^[a-z0-9-]{3,60}$")) {
-            throw new IllegalArgumentException("Service account slug must match lowercase letters, numbers, hyphen and be 3 to 60 chars");
+            throw new IllegalArgumentException(
+                    "Service account slug must match lowercase letters, numbers, hyphen and be 3 to 60 chars");
         }
         return normalized;
     }

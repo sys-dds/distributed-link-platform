@@ -39,7 +39,8 @@ public class WorkspaceExportService {
             OperatorActionLogStore operatorActionLogStore,
             SecurityEventStore securityEventStore,
             ObjectMapper objectMapper,
-            com.linkplatform.api.runtime.LinkPlatformRuntimeProperties runtimeProperties) {
+            com.linkplatform.api.runtime.LinkPlatformRuntimeProperties runtimeProperties,
+            Clock clock) {
         this.workspaceExportStore = workspaceExportStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
         this.workspaceStore = workspaceStore;
@@ -48,7 +49,7 @@ public class WorkspaceExportService {
         this.securityEventStore = securityEventStore;
         this.objectMapper = objectMapper;
         this.runtimeProperties = runtimeProperties;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)

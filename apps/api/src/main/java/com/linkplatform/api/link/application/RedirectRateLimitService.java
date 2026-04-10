@@ -39,7 +39,8 @@ public class RedirectRateLimitService {
             SecurityEventStore securityEventStore,
             LinkAbuseReviewService linkAbuseReviewService,
             LinkPlatformRuntimeProperties runtimeProperties,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            Clock clock) {
         this.fallbackStore = fallbackStore;
         this.redisStore = redisStoreProvider.getIfAvailable();
         this.securityEventStore = securityEventStore;
@@ -49,7 +50,7 @@ public class RedirectRateLimitService {
         this.rejectedCounter = Counter.builder("link.redirect.rate_limit.rejected").register(meterRegistry);
         this.degradedCounter = Counter.builder("link.redirect.rate_limit.degraded_store").register(meterRegistry);
         this.fallbackCounter = Counter.builder("link.redirect.rate_limit.fallback_store").register(meterRegistry);
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     public RedirectRateLimitService(
@@ -57,8 +58,9 @@ public class RedirectRateLimitService {
             ObjectProvider<RedisRedirectRateLimitStore> redisStoreProvider,
             SecurityEventStore securityEventStore,
             LinkPlatformRuntimeProperties runtimeProperties,
-            MeterRegistry meterRegistry) {
-        this(fallbackStore, redisStoreProvider, securityEventStore, null, runtimeProperties, meterRegistry);
+            MeterRegistry meterRegistry,
+            Clock clock) {
+        this(fallbackStore, redisStoreProvider, securityEventStore, null, runtimeProperties, meterRegistry, clock);
     }
 
     public RedirectRateLimitDecision check(String slug, String requestPath, String remoteAddress) {

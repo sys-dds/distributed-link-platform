@@ -18,12 +18,13 @@ public class WorkspaceRetentionPurgeRunner {
             WorkspaceRetentionPolicyStore workspaceRetentionPolicyStore,
             WebhookDeliveryStore webhookDeliveryStore,
             OperatorActionLogStore operatorActionLogStore,
-            SecurityEventStore securityEventStore) {
+            SecurityEventStore securityEventStore,
+            Clock clock) {
         this.workspaceRetentionPolicyStore = workspaceRetentionPolicyStore;
         this.webhookDeliveryStore = webhookDeliveryStore;
         this.operatorActionLogStore = operatorActionLogStore;
         this.securityEventStore = securityEventStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional

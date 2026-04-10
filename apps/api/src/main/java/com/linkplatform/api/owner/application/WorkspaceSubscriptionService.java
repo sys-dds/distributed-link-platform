@@ -125,7 +125,8 @@ public class WorkspaceSubscriptionService {
             throw new IllegalArgumentException("graceUntil is only allowed when subscriptionStatus is GRACE");
         }
         if ((scheduledPlanCode == null) != (scheduledPlanEffectiveAt == null)) {
-            throw new IllegalArgumentException("scheduledPlanCode and scheduledPlanEffectiveAt must be provided together");
+            throw new IllegalArgumentException(
+                    "scheduledPlanCode and scheduledPlanEffectiveAt must be provided together");
         }
     }
 }

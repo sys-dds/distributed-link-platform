@@ -28,11 +28,12 @@ public class JdbcLinkLifecycleOutboxStore implements LinkLifecycleOutboxStore {
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             MeterRegistry meterRegistry,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
         Gauge.builder("link.lifecycle.outbox.unpublished", this, JdbcLinkLifecycleOutboxStore::countUnpublished)
                 .description("Number of unpublished lifecycle outbox records")
                 .register(meterRegistry);

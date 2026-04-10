@@ -11,9 +11,9 @@ public class WorkspaceRetentionService {
     private final WorkspaceRetentionPolicyStore workspaceRetentionPolicyStore;
     private final Clock clock;
 
-    public WorkspaceRetentionService(WorkspaceRetentionPolicyStore workspaceRetentionPolicyStore) {
+    public WorkspaceRetentionService(WorkspaceRetentionPolicyStore workspaceRetentionPolicyStore, Clock clock) {
         this.workspaceRetentionPolicyStore = workspaceRetentionPolicyStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)

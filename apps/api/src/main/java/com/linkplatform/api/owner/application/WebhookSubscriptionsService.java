@@ -41,7 +41,8 @@ public class WebhookSubscriptionsService {
             WebhookSigningService webhookSigningService,
             WebhookDispatcher webhookDispatcher,
             ObjectMapper objectMapper,
-            LinkPlatformRuntimeProperties runtimeProperties) {
+            LinkPlatformRuntimeProperties runtimeProperties,
+            Clock clock) {
         this.webhookSubscriptionsStore = webhookSubscriptionsStore;
         this.webhookDeliveryStore = webhookDeliveryStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
@@ -52,7 +53,7 @@ public class WebhookSubscriptionsService {
         this.webhookDispatcher = webhookDispatcher;
         this.objectMapper = objectMapper;
         this.runtimeProperties = runtimeProperties;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)

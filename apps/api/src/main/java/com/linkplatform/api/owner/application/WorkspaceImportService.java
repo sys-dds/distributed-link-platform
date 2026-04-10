@@ -331,7 +331,9 @@ public class WorkspaceImportService {
 
     private void applyImportedLifecycle(long workspaceId, ImportedLink importedLink) {
         LinkLifecycleState state = importedLink.lifecycleState();
-        if (state == LinkLifecycleState.ACTIVE || state == LinkLifecycleState.EXPIRED || state == LinkLifecycleState.ALL) {
+        if (state == LinkLifecycleState.ACTIVE
+                || state == LinkLifecycleState.EXPIRED
+                || state == LinkLifecycleState.ALL) {
             return;
         }
         jdbcTemplate.update(
@@ -422,7 +424,9 @@ public class WorkspaceImportService {
                     node.path("slug").asText(),
                     node.path("originalUrl").asText(),
                     readOptionalOffsetDateTime(node.path("expiresAt")),
-                    node.path("title").isMissingNode() || node.path("title").isNull() ? null : node.path("title").asText(),
+                    node.path("title").isMissingNode() || node.path("title").isNull()
+                            ? null
+                            : node.path("title").asText(),
                     tags,
                     LinkLifecycleState.valueOf(lifecycle));
         }

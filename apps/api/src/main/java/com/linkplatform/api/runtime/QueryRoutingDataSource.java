@@ -37,7 +37,8 @@ public class QueryRoutingDataSource extends AbstractDataSource {
             DataSource dedicatedQueryDataSource,
             boolean dedicatedConfigured,
             MeterRegistry meterRegistry,
-            SecurityEventStore securityEventStore) {
+            SecurityEventStore securityEventStore,
+            Clock clock) {
         this.primaryDataSource = primaryDataSource;
         this.dedicatedQueryDataSource = dedicatedQueryDataSource;
         this.dedicatedConfigured = dedicatedConfigured;
@@ -45,7 +46,7 @@ public class QueryRoutingDataSource extends AbstractDataSource {
         this.fallbackCounter = Counter.builder("link.query.datasource.fallback")
                 .description("Number of query datasource fallbacks to the primary datasource")
                 .register(meterRegistry);
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
         Gauge.builder("link.query.datasource.dedicated.configured", this, source -> source.dedicatedConfigured ? 1 : 0)
                 .description("Whether a dedicated query datasource is configured")
                 .register(meterRegistry);

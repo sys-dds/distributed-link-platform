@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,11 +28,17 @@ public class JdbcWebhookDeliveryStore implements WebhookDeliveryStore {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final Clock clock;
 
-    public JdbcWebhookDeliveryStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, TransactionTemplate transactionTemplate) {
+    public JdbcWebhookDeliveryStore(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            TransactionTemplate transactionTemplate,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
+        this.clock = clock;
     }
 
     @Override
@@ -167,7 +174,7 @@ public class JdbcWebhookDeliveryStore implements WebhookDeliveryStore {
 
     @Override
     public void markFailed(long deliveryId, int attemptCount, OffsetDateTime nextAttemptAt, Integer httpStatus, String lastError, String responseExcerpt) {
-        OffsetDateTime now = OffsetDateTime.now(java.time.Clock.systemUTC());
+        OffsetDateTime now = OffsetDateTime.now(clock);
         jdbcTemplate.update(
                 """
                 UPDATE webhook_deliveries
