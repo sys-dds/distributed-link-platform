@@ -42,6 +42,9 @@ class ProjectionJobsControllerIntegrationTest {
     @Autowired
     private ProjectionJobRunner projectionJobRunner;
 
+    @Autowired
+    private ProjectionJobStore projectionJobStore;
+
     @Test
     void projectionJobsPersistScopeAndScopedAndUnscopedRunsWork() throws Exception {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
@@ -245,12 +248,8 @@ class ProjectionJobsControllerIntegrationTest {
                         OffsetDateTime.class,
                         OffsetDateTime.class));
         assertThrows(
-                NoSuchMethodException.class,
-                () -> ProjectionJobStore.class.getMethod(
-                        "markFailed",
-                        long.class,
-                        OffsetDateTime.class,
-                        String.class));
+                UnsupportedOperationException.class,
+                () -> projectionJobStore.markFailed(1L, OffsetDateTime.now(), "failed"));
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {

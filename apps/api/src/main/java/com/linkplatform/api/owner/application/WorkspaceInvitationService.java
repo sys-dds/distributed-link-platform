@@ -22,6 +22,7 @@ public class WorkspaceInvitationService {
     private final WorkspaceInvitationStore workspaceInvitationStore;
     private final WorkspaceStore workspaceStore;
     private final SecurityEventStore securityEventStore;
+    private final WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService;
     private final Clock clock;
     private final int expiryDays;
 
@@ -29,11 +30,13 @@ public class WorkspaceInvitationService {
             WorkspaceInvitationStore workspaceInvitationStore,
             WorkspaceStore workspaceStore,
             SecurityEventStore securityEventStore,
+            WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService,
             Clock clock,
             @Value("${link-platform.workspaces.invitation-expiry-days:7}") int expiryDays) {
         this.workspaceInvitationStore = workspaceInvitationStore;
         this.workspaceStore = workspaceStore;
         this.securityEventStore = securityEventStore;
+        this.workspaceEnterprisePolicyService = workspaceEnterprisePolicyService;
         this.clock = Objects.requireNonNull(clock, "clock");
         this.expiryDays = expiryDays;
     }
@@ -123,7 +126,12 @@ public class WorkspaceInvitationService {
     }
 
     private void requireMatchingOwnerEmail(WorkspaceInvitationRecord invitation, long acceptedByOwnerId) {
-        if (!invitation.email().equalsIgnoreCase(requireExistingOwnerEmail(acceptedByOwnerId))) {
+        String ownerEmail = requireExistingOwnerEmail(acceptedByOwnerId);
+        workspaceEnterprisePolicyService.requireHumanOwnerId(
+                acceptedByOwnerId,
+                ownerEmail,
+                "Workspace invitations require a HUMAN owner");
+        if (!invitation.email().equalsIgnoreCase(ownerEmail)) {
             throw new IllegalArgumentException("Workspace invitation email does not match accepting owner");
         }
     }

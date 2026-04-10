@@ -29,6 +29,7 @@ public class WebhookDispatcher {
 
     public DispatchResult dispatch(WebhookDeliveryStore.DispatchItem item) {
         try {
+            OffsetDateTime occurredAt = OffsetDateTime.now();
             WebhookSigningService.DeliverySignature signature = webhookSigningService.sign(
                     item.subscription().signingSecretHash(),
                     item.subscription().eventVersion(),
@@ -36,7 +37,7 @@ public class WebhookDispatcher {
                     Long.toString(item.delivery().id()),
                     item.delivery().workspaceSlug(),
                     item.delivery().payload(),
-                    OffsetDateTime.now());
+                    occurredAt);
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(item.subscription().callbackUrl()))
                     .timeout(Duration.ofSeconds(runtimeProperties.getWebhooks().getRequestTimeoutSeconds()))

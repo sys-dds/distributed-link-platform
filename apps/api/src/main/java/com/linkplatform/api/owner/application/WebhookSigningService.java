@@ -48,6 +48,7 @@ public class WebhookSigningService {
             String timestamp = TIMESTAMP_FORMATTER.format(occurredAt.withOffsetSameInstant(ZoneOffset.UTC));
             String canonicalJson = objectMapper.writeValueAsString(payload);
             String signatureInput = timestamp + "." + canonicalJson;
+            String eventVersionHeader = Integer.toString(eventVersion <= 0 ? WebhookEventType.CURRENT_EVENT_VERSION : eventVersion);
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secretHash.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             String signature = Base64.getEncoder().encodeToString(mac.doFinal(signatureInput.getBytes(StandardCharsets.UTF_8)));
@@ -55,7 +56,7 @@ public class WebhookSigningService {
             headers.put("X-LinkPlatform-Signature", signature);
             headers.put("X-LinkPlatform-Timestamp", timestamp);
             headers.put("X-LinkPlatform-Event", eventType.value());
-            headers.put("X-LinkPlatform-Event-Version", Integer.toString(eventVersion));
+            headers.put("X-LinkPlatform-Event-Version", eventVersionHeader);
             headers.put("X-LinkPlatform-Delivery-Id", deliveryId);
             headers.put("X-LinkPlatform-Workspace-Slug", workspaceSlug);
             return new DeliverySignature(signature, timestamp, canonicalJson, headers);

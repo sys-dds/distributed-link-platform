@@ -93,6 +93,46 @@ public class JdbcWorkspacePlanStore implements WorkspacePlanStore {
         return findByWorkspaceId(workspaceId).orElseThrow();
     }
 
+    @Override
+    public long countOverQuotaWorkspaces() {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(DISTINCT workspace_slug)
+                FROM (
+                    SELECT w.slug AS workspace_slug
+                    FROM workspaces w
+                    JOIN workspace_plans p ON p.workspace_id = w.id
+                    JOIN LATERAL (
+                        SELECT COUNT(l.slug)::BIGINT AS current_usage, p.active_links_limit::BIGINT AS limit_value
+                        FROM links l
+                        WHERE l.workspace_id = w.id
+                          AND l.lifecycle_state = 'ACTIVE'
+                        UNION ALL
+                        SELECT COUNT(wm.owner_id)::BIGINT, p.members_limit::BIGINT
+                        FROM workspace_members wm
+                        WHERE wm.workspace_id = w.id
+                          AND wm.removed_at IS NULL
+                          AND wm.suspended_at IS NULL
+                        UNION ALL
+                        SELECT COUNT(k.id)::BIGINT, p.api_keys_limit::BIGINT
+                        FROM owner_api_keys k
+                        WHERE k.workspace_id = w.id
+                          AND k.revoked_at IS NULL
+                          AND (k.expires_at IS NULL OR k.expires_at > CURRENT_TIMESTAMP)
+                        UNION ALL
+                        SELECT COUNT(s.id)::BIGINT, p.webhooks_limit::BIGINT
+                        FROM webhook_subscriptions s
+                        WHERE s.workspace_id = w.id
+                          AND s.enabled = TRUE
+                          AND s.disabled_at IS NULL
+                    ) usage ON usage.current_usage > usage.limit_value
+                    WHERE w.archived_at IS NULL
+                ) over_quota
+                """,
+                Long.class);
+        return count == null ? 0L : count;
+    }
+
     private WorkspacePlanRecord mapRecord(ResultSet resultSet, int rowNum) throws SQLException {
         return new WorkspacePlanRecord(
                 resultSet.getLong("workspace_id"),

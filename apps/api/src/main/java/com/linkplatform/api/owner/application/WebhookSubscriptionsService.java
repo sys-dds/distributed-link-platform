@@ -420,7 +420,7 @@ public class WebhookSubscriptionsService {
 
     private JsonNode verificationPayload(WebhookSubscriptionRecord subscription, OffsetDateTime occurredAt) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("eventVersion", subscription.eventVersion());
+        payload.put("eventVersion", WebhookEventType.CURRENT_EVENT_VERSION);
         payload.put("type", WebhookEventType.WEBHOOK_VERIFICATION.value());
         payload.put("workspaceSlug", subscription.workspaceSlug());
         payload.put("subscriptionId", subscription.id());
@@ -431,7 +431,7 @@ public class WebhookSubscriptionsService {
 
     private JsonNode testPayload(WebhookSubscriptionRecord subscription, OffsetDateTime occurredAt) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("eventVersion", subscription.eventVersion());
+        payload.put("eventVersion", WebhookEventType.CURRENT_EVENT_VERSION);
         payload.put("type", WebhookEventType.WEBHOOK_TEST_FIRED.value());
         payload.put("workspaceSlug", subscription.workspaceSlug());
         payload.put("subscriptionId", subscription.id());

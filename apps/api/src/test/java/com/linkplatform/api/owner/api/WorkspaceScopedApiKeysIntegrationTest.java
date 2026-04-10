@@ -55,7 +55,7 @@ class WorkspaceScopedApiKeysIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"label":"team-reader","scopes":["links:read"]}
-                                """))
+                """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.apiKey.workspaceSlug").value("team-keys"))
                 .andExpect(jsonPath("$.apiKey.scopes[0]").value("links:read"))

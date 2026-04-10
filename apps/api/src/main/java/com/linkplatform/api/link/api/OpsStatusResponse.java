@@ -11,5 +11,6 @@ public record OpsStatusResponse(
         Map<String, Object> queryRuntime,
         Map<String, OpsPipelineSummaryResponse> pipelines,
         OpsProjectionSummaryResponse projectionJobs,
-        OpsAbuseSummaryResponse abuse) {
+        OpsAbuseSummaryResponse abuse,
+        GlobalGovernanceSummaryResponse governance) {
 }

@@ -15,6 +15,8 @@ public enum WebhookEventType {
     WEBHOOK_VERIFICATION("webhook.verification"),
     WEBHOOK_TEST_FIRED("webhook.test-fired");
 
+    public static final int CURRENT_EVENT_VERSION = 1;
+
     private final String value;
 
     WebhookEventType(String value) {

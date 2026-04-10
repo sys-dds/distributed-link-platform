@@ -57,6 +57,10 @@ public interface OwnerApiKeyStore {
 
     void touchLastUsed(long keyId, OffsetDateTime lastUsedAt);
 
+    default boolean isServiceAccountKeyActor(String actor) {
+        return actor != null && actor.startsWith("svc-");
+    }
+
     default void lockWorkspace(long workspaceId) {
         lockOwner(workspaceId);
     }

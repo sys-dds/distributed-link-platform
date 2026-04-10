@@ -15,6 +15,10 @@ public interface WorkspaceExportStore {
 
     Optional<WorkspaceExportRecord> findCompletedById(long workspaceId, long exportId);
 
+    default Optional<WorkspaceExportRecord> findRecoveryDrillSourceById(long workspaceId, long exportId) {
+        return findCompletedById(workspaceId, exportId);
+    }
+
     Optional<WorkspaceExportRecord> claimNextQueued(OffsetDateTime now);
 
     void markReady(long exportId, JsonNode payload, long payloadSizeBytes, OffsetDateTime completedAt);

@@ -21,11 +21,14 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
                 || runtimeProperties.getMode() == RuntimeMode.CONTROL_PLANE_API;
         builder.up()
                 .withDetail("required", required)
+                .withDetail("replicaEnabled", queryRoutingDataSource.isQueryReplicaEnabled())
+                .withDetail("lagSeconds", queryRoutingDataSource.getLastLagSeconds())
                 .withDetail("dedicatedConfigured", queryRoutingDataSource.isDedicatedConfigured())
                 .withDetail("usingPrimaryByDefault", queryRoutingDataSource.isUsingPrimaryByDefault())
                 .withDetail("fallbackPolicy", "primary-on-dedicated-query-failure")
                 .withDetail("route", queryRoutingDataSource.currentRoute())
                 .withDetail("fallbackActive", queryRoutingDataSource.isFallbackActive())
+                .withDetail("lastFallbackAt", queryRoutingDataSource.getLastFallbackAt())
                 .withDetail("redirectRateLimitEnabled", runtimeProperties.getRedirect().getRateLimit().isEnabled());
         if (!required) {
             builder.withDetail("reason", "query reads are not served in this runtime mode");
@@ -45,13 +48,19 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
     public QueryRuntimeSnapshot snapshot() {
         return new QueryRuntimeSnapshot(
                 queryRoutingDataSource.isDedicatedConfigured(),
+                queryRoutingDataSource.isQueryReplicaEnabled(),
+                queryRoutingDataSource.getLastLagSeconds(),
                 queryRoutingDataSource.isFallbackActive(),
+                queryRoutingDataSource.getLastFallbackAt(),
                 queryRoutingDataSource.getLastFallbackReason());
     }
 
     public record QueryRuntimeSnapshot(
             boolean dedicatedQueryConfigured,
+            boolean replicaEnabled,
+            Long lagSeconds,
             boolean fallbackActive,
+            java.time.OffsetDateTime lastFallbackAt,
             String lastFallbackReason) {
     }
 }

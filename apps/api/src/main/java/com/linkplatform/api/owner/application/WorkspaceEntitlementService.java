@@ -3,6 +3,7 @@ package com.linkplatform.api.owner.application;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,7 @@ public class WorkspaceEntitlementService {
     private final OwnerApiKeyStore ownerApiKeyStore;
     private final Clock clock;
 
+    @Autowired
     public WorkspaceEntitlementService(
             WorkspacePlanStore workspacePlanStore,
             WorkspaceUsageStore workspaceUsageStore,
@@ -26,6 +28,14 @@ public class WorkspaceEntitlementService {
         this.workspaceStore = workspaceStore;
         this.ownerApiKeyStore = ownerApiKeyStore;
         this.clock = clock;
+    }
+
+    public WorkspaceEntitlementService(
+            WorkspacePlanStore workspacePlanStore,
+            WorkspaceUsageStore workspaceUsageStore,
+            WorkspaceStore workspaceStore,
+            OwnerApiKeyStore ownerApiKeyStore) {
+        this(workspacePlanStore, workspaceUsageStore, workspaceStore, ownerApiKeyStore, Clock.systemUTC());
     }
 
     @Transactional(readOnly = true)

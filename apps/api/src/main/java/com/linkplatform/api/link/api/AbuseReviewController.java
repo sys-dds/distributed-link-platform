@@ -8,6 +8,8 @@ import com.linkplatform.api.owner.application.JdbcOperatorActionLogStore;
 import com.linkplatform.api.owner.application.OperatorActionLogStore;
 import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
+import com.linkplatform.api.owner.application.WorkspaceAccessContext;
+import com.linkplatform.api.owner.application.WorkspaceEnterprisePolicyService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.LinkPlatformRuntimeProperties;
 import com.linkplatform.api.runtime.RuntimeMode;
@@ -30,16 +32,19 @@ public class AbuseReviewController {
     private final OwnerAccessService ownerAccessService;
     private final LinkPlatformRuntimeProperties runtimeProperties;
     private final OperatorActionLogStore operatorActionLogStore;
+    private final WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService;
 
     public AbuseReviewController(
             LinkAbuseReviewService linkAbuseReviewService,
             OwnerAccessService ownerAccessService,
             LinkPlatformRuntimeProperties runtimeProperties,
-            OperatorActionLogStore operatorActionLogStore) {
+            OperatorActionLogStore operatorActionLogStore,
+            WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService) {
         this.linkAbuseReviewService = linkAbuseReviewService;
         this.ownerAccessService = ownerAccessService;
         this.runtimeProperties = runtimeProperties;
         this.operatorActionLogStore = operatorActionLogStore;
+        this.workspaceEnterprisePolicyService = workspaceEnterprisePolicyService;
     }
 
     @GetMapping
@@ -85,6 +90,7 @@ public class AbuseReviewController {
             throw new IllegalArgumentException("slug and summary are required");
         }
         var context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, httpServletRequest);
+        requireOpsApproval(context, "abuse_manual_case_create", httpServletRequest);
         var record = linkAbuseReviewService.createManualCase(
                 context,
                 request.slug().trim(),
@@ -147,6 +153,14 @@ public class AbuseReviewController {
             ResolveAbuseReviewRequest request,
             ResolutionAction action) {
         var context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, httpServletRequest);
+        requireOpsApproval(
+                context,
+                switch (action) {
+                    case QUARANTINE -> "abuse_quarantine";
+                    case RELEASE -> "abuse_release";
+                    case DISMISS -> "abuse_dismiss";
+                },
+                httpServletRequest);
         String note = request == null ? null : request.resolutionNote();
         var record = switch (action) {
             case QUARANTINE -> linkAbuseReviewService.quarantineCase(context, caseId, note);
@@ -174,6 +188,19 @@ public class AbuseReviewController {
         QUARANTINE,
         RELEASE,
         DISMISS
+    }
+
+    private void requireOpsApproval(
+            WorkspaceAccessContext context,
+            String actionType,
+            HttpServletRequest httpServletRequest) {
+        workspaceEnterprisePolicyService.requirePrivilegedActionApproval(
+                context,
+                actionType,
+                false,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
     }
 
     private com.linkplatform.api.owner.application.WorkspaceAccessContext authorizeOpsRead(

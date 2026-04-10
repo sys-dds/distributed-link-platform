@@ -189,6 +189,10 @@ public class WorkspaceImportService {
         }
     }
 
+    public void validateImportPayload(JsonNode payloadJson) {
+        validatePayload(payloadJson);
+    }
+
     private void completeQueuedImport(WorkspaceImportRecord record, ImportExecution execution) {
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (record.dryRun()) {

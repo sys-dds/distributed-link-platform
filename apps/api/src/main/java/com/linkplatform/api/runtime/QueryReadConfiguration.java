@@ -20,14 +20,22 @@ public class QueryReadConfiguration {
             @Qualifier("dataSource") DataSource dataSource,
             LinkPlatformQueryProperties queryProperties,
             LinkPlatformRuntimeProperties runtimeProperties,
+            QueryReplicaRuntimeStore queryReplicaRuntimeStore,
             MeterRegistry meterRegistry,
             SecurityEventStore securityEventStore,
-            Clock clock) {
+            Clock clock,
+            @org.springframework.beans.factory.annotation.Value("${link-platform.query-replica.enabled:false}") boolean queryReplicaEnabled,
+            @org.springframework.beans.factory.annotation.Value("${link-platform.query-replica.max-lag-seconds:30}") long maxLagSeconds,
+            @org.springframework.beans.factory.annotation.Value("${link-platform.query-replica.fallback-log-enabled:true}") boolean fallbackLogEnabled) {
         runtimeProperties.getMode();
         return new QueryRoutingDataSourceHolder(new QueryRoutingDataSource(
                 dataSource,
                 dedicatedQueryDataSource(queryProperties),
                 queryProperties.isDedicatedConfigured(),
+                queryReplicaEnabled,
+                fallbackLogEnabled,
+                queryReplicaRuntimeStore,
+                new QueryReplicaLagPolicy(maxLagSeconds, clock),
                 meterRegistry,
                 securityEventStore,
                 clock));

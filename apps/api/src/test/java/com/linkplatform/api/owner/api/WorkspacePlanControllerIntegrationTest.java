@@ -34,6 +34,7 @@ class WorkspacePlanControllerIntegrationTest {
 
     @Test
     void planAndUsageReadsRequireMembersRead() throws Exception {
+        jdbcTemplate.update("UPDATE owners SET plan = 'PRO' WHERE id = 1");
         String membersReadKey = bootstrapPersonalWorkspaceApiKey("members-read-key", "[\"members:read\"]");
         String retentionReadKey = bootstrapPersonalWorkspaceApiKey("retention-read-key", "[\"retention:read\"]");
         String linksReadKey = bootstrapPersonalWorkspaceApiKey("links-read-key", "[\"links:read\"]");
@@ -44,6 +45,9 @@ class WorkspacePlanControllerIntegrationTest {
         mockMvc.perform(get("/api/v1/workspaces/current/usage").header("X-API-Key", membersReadKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workspaceSlug").value("free-owner"));
+        mockMvc.perform(get("/api/v1/workspaces/current/enterprise-policy").header("X-API-Key", membersReadKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requireApiKeyExpiry").value(false));
 
         mockMvc.perform(get("/api/v1/workspaces/current/plan").header("X-API-Key", retentionReadKey))
                 .andExpect(status().isForbidden());

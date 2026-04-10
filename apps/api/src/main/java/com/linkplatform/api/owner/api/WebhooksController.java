@@ -132,7 +132,8 @@ public class WebhooksController {
         WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.WEBHOOKS_WRITE);
         var delivery = webhookSubscriptionsService.testFireSubscription(context, subscriptionId);
-        return new TestWebhookSubscriptionResponse(delivery.id(), delivery.createdAt());
+        int eventVersion = delivery.payload().path("eventVersion").asInt(WebhookEventType.CURRENT_EVENT_VERSION);
+        return new TestWebhookSubscriptionResponse(delivery.id(), delivery.createdAt(), eventVersion);
     }
 
     @GetMapping("/{subscriptionId}/health")

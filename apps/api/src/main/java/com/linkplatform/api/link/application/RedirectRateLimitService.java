@@ -32,6 +32,15 @@ public class RedirectRateLimitService {
     private final Clock clock;
     private volatile String lastStoreMode = "startup";
 
+    public RedirectRateLimitService(
+            RedirectRateLimitStore fallbackStore,
+            ObjectProvider<RedisRedirectRateLimitStore> redisStoreProvider,
+            SecurityEventStore securityEventStore,
+            LinkPlatformRuntimeProperties runtimeProperties,
+            MeterRegistry meterRegistry) {
+        this(fallbackStore, redisStoreProvider, securityEventStore, runtimeProperties, meterRegistry, Clock.systemUTC());
+    }
+
     @Autowired
     public RedirectRateLimitService(
             RedirectRateLimitStore fallbackStore,

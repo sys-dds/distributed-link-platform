@@ -104,6 +104,7 @@ class WebhookPlatformMaturityIntegrationTest {
                         .header("X-API-Key", apiKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deliveryId").isNumber())
+                .andExpect(jsonPath("$.eventVersion").value(1))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -115,6 +116,7 @@ class WebhookPlatformMaturityIntegrationTest {
                         .header("X-API-Key", apiKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.eventVersion").value(1))
                 .andExpect(jsonPath("$.lastTestDeliveryId").value(deliveryId))
                 .andExpect(jsonPath("$.lastTestFiredAt").isNotEmpty());
 

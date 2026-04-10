@@ -1,6 +1,7 @@
 package com.linkplatform.api.owner.api;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -229,8 +230,8 @@ class WebhookVersionVisibilityIntegrationTest {
 
     @Test
     void createdWebhookResponseExposesStableEventVersion() throws Exception {
-        String apiKey = bootstrapPersonalWorkspaceApiKey("webhook-version-key", "[\"webhooks:write\"]");
-        mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
+        String apiKey = bootstrapPersonalWorkspaceApiKey("webhook-version-key", "[\"webhooks:write\",\"webhooks:read\"]");
+        String created = mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
                         .header("X-API-Key", apiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -238,7 +239,20 @@ class WebhookVersionVisibilityIntegrationTest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.subscription.eventVersion").value(1))
-                .andExpect(jsonPath("$.subscription.verificationStatus").value("UNVERIFIED"));
+                .andExpect(jsonPath("$.subscription.verificationStatus").value("UNVERIFIED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long subscriptionId = com.fasterxml.jackson.databind.json.JsonMapper.builder()
+                .build()
+                .readTree(created)
+                .path("subscription")
+                .path("id")
+                .asLong();
+        mockMvc.perform(get("/api/v1/workspaces/current/webhooks/{subscriptionId}/health", subscriptionId)
+                        .header("X-API-Key", apiKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eventVersion").value(1));
     }
 
     private String bootstrapPersonalWorkspaceApiKey(String plaintextKey, String scopesJson) {

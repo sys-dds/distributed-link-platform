@@ -115,6 +115,16 @@ public class WorkspaceExportService {
         return exportRecord.payload();
     }
 
+    @Transactional(readOnly = true)
+    public JsonNode resolveRecoveryDrillPayload(WorkspaceAccessContext context, long exportId) {
+        WorkspaceExportRecord exportRecord = workspaceExportStore.findRecoveryDrillSourceById(context.workspaceId(), exportId)
+                .orElseThrow(() -> new IllegalArgumentException("Workspace export is not ready: " + exportId));
+        if (exportRecord.payload() == null) {
+            throw new IllegalArgumentException("Workspace export payload is not available");
+        }
+        return exportRecord.payload();
+    }
+
     @Transactional
     public void completeExport(WorkspaceExportRecord exportRecord) {
         try {
@@ -175,7 +185,7 @@ public class WorkspaceExportService {
                 SELECT slug, original_url, expires_at, title, tags_json, lifecycle_state
                 FROM links
                 WHERE workspace_id = ?
-                  AND deleted_at IS NULL
+                  AND lifecycle_state = 'ACTIVE'
                 ORDER BY slug ASC
                 """,
                 (resultSet, rowNum) -> toExportedLink(resultSet),

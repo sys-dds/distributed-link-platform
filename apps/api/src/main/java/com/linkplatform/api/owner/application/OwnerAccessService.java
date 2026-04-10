@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,6 +21,26 @@ public class OwnerAccessService {
     private final SecurityEventStore securityEventStore;
     private final WorkspaceEntitlementService workspaceEntitlementService;
     private final Clock clock;
+
+    @Autowired
+    public OwnerAccessService(
+            OwnerStore ownerStore,
+            WorkspaceStore workspaceStore,
+            WorkspacePermissionService workspacePermissionService,
+            ApiKeyLifecycleService apiKeyLifecycleService,
+            ControlPlaneRateLimitStore controlPlaneRateLimitStore,
+            SecurityEventStore securityEventStore,
+            WorkspaceEntitlementService workspaceEntitlementService) {
+        this(
+                ownerStore,
+                workspaceStore,
+                workspacePermissionService,
+                apiKeyLifecycleService,
+                controlPlaneRateLimitStore,
+                securityEventStore,
+                workspaceEntitlementService,
+                Clock.systemUTC());
+    }
 
     public OwnerAccessService(
             OwnerStore ownerStore,

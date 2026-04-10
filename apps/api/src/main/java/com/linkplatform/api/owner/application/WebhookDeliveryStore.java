@@ -39,6 +39,10 @@ public interface WebhookDeliveryStore {
 
     int disableQueuedDeliveriesForSubscription(long workspaceId, long subscriptionId, String reason, OffsetDateTime updatedAt);
 
+    default int currentEventVersion() {
+        return WebhookEventType.CURRENT_EVENT_VERSION;
+    }
+
     record DispatchItem(
             WebhookDeliveryRecord delivery,
             WebhookSubscriptionRecord subscription) {

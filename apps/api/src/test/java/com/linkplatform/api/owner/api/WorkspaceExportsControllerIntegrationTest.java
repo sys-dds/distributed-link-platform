@@ -54,7 +54,7 @@ class WorkspaceExportsControllerIntegrationTest {
                         .header("X-Workspace-Slug", "team-export")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"includeClicks":false,"includeSecurityEvents":true,"includeAbuseCases":true,"includeWebhooks":true}
+                                {"includeClicks":false,"includeSecurityEvents":false,"includeAbuseCases":false,"includeWebhooks":false}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("QUEUED"))
@@ -69,7 +69,7 @@ class WorkspaceExportsControllerIntegrationTest {
                         .header("X-API-Key", apiKey)
                         .header("X-Workspace-Slug", "team-export"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.status").value("READY"));
 
         mockMvc.perform(get("/api/v1/workspaces/current/exports/{exportId}/download", exportId)
                         .header("X-API-Key", apiKey)

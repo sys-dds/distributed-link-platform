@@ -241,6 +241,11 @@ public class JdbcProjectionJobStore implements ProjectionJobStore {
     }
 
     @Override
+    public void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
+        ProjectionJobStore.super.markFailed(id, completedAt, errorSummary);
+    }
+
+    @Override
     public long countQueued(long workspaceId) {
         return countByStatusesForWorkspace(workspaceId, "('QUEUED')");
     }

@@ -3,6 +3,7 @@ package com.linkplatform.api.link.api;
 import com.linkplatform.api.link.application.LinkAbuseCaseStatus;
 import com.linkplatform.api.link.application.LinkAbuseReviewService;
 import com.linkplatform.api.link.application.AnalyticsOutboxRelay;
+import com.linkplatform.api.link.application.GovernanceRollupStore;
 import com.linkplatform.api.link.application.LinkLifecycleOutboxRelay;
 import com.linkplatform.api.owner.application.ApiKeyScope;
 import com.linkplatform.api.owner.application.OwnerAccessService;
@@ -36,6 +37,7 @@ public class OpsStatusController {
     private final PipelineHealthIndicator pipelineHealthIndicator;
     private final ProjectionJobStore projectionJobStore;
     private final LinkAbuseReviewService linkAbuseReviewService;
+    private final GovernanceRollupStore governanceRollupStore;
     private final Clock clock;
 
     public OpsStatusController(
@@ -46,6 +48,7 @@ public class OpsStatusController {
             PipelineHealthIndicator pipelineHealthIndicator,
             ProjectionJobStore projectionJobStore,
             LinkAbuseReviewService linkAbuseReviewService,
+            GovernanceRollupStore governanceRollupStore,
             Clock clock) {
         this.ownerAccessService = ownerAccessService;
         this.runtimeRoleHealthIndicator = runtimeRoleHealthIndicator;
@@ -54,6 +57,7 @@ public class OpsStatusController {
         this.pipelineHealthIndicator = pipelineHealthIndicator;
         this.projectionJobStore = projectionJobStore;
         this.linkAbuseReviewService = linkAbuseReviewService;
+        this.governanceRollupStore = governanceRollupStore;
         this.clock = clock;
     }
 
@@ -97,7 +101,8 @@ public class OpsStatusController {
                         linkAbuseReviewService.countCasesByStatus(context.workspaceId(), LinkAbuseCaseStatus.QUARANTINED),
                         linkAbuseReviewService.countCasesResolvedOnDay(context.workspaceId(), LinkAbuseCaseStatus.RELEASED, LocalDate.now(clock)),
                         linkAbuseReviewService.countCasesResolvedOnDay(context.workspaceId(), LinkAbuseCaseStatus.DISMISSED, LocalDate.now(clock)),
-                        linkAbuseReviewService.findLatestUpdatedAt(context.workspaceId())));
+                        linkAbuseReviewService.findLatestUpdatedAt(context.workspaceId())),
+                GlobalGovernanceSummaryResponse.from(governanceRollupStore.summary(now)));
     }
 
     private OpsPipelineSummaryResponse toPipelineResponse(PipelineHealthIndicator.PipelineSnapshot snapshot) {
@@ -126,7 +131,10 @@ public class OpsStatusController {
     private Map<String, Object> queryRuntimeMap(QueryDataSourceHealthIndicator.QueryRuntimeSnapshot snapshot) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("dedicatedQueryConfigured", snapshot.dedicatedQueryConfigured());
+        map.put("replicaEnabled", snapshot.replicaEnabled());
+        map.put("lagSeconds", snapshot.lagSeconds());
         map.put("fallbackActive", snapshot.fallbackActive());
+        map.put("lastFallbackAt", snapshot.lastFallbackAt());
         map.put("lastFallbackReason", snapshot.lastFallbackReason());
         return map;
     }

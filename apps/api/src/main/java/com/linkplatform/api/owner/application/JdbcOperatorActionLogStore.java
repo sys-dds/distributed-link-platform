@@ -50,6 +50,15 @@ public class JdbcOperatorActionLogStore implements OperatorActionLogStore {
     }
 
     @Override
+    public void recordWorkspaceRecoveryDrill(
+            long workspaceId,
+            long ownerId,
+            String note,
+            OffsetDateTime createdAt) {
+        record(workspaceId, ownerId, "PIPELINE", "workspace_recovery_drill_request", null, null, null, note, createdAt);
+    }
+
+    @Override
     public List<OperatorActionLogRecord> findRecent(Long workspaceId, OperatorActionLogQuery query) {
         StringBuilder sql = new StringBuilder("""
                 SELECT id, workspace_id, owner_id, subsystem, action_type, target_slug,
@@ -94,6 +103,11 @@ public class JdbcOperatorActionLogStore implements OperatorActionLogStore {
                         resultSet.getString("note"),
                         resultSet.getObject("created_at", OffsetDateTime.class)),
                 parameters.toArray());
+    }
+
+    @Override
+    public boolean supportsGlobalGovernanceViews() {
+        return true;
     }
 
     public static String encodeCursor(OperatorActionLogRecord record) {
