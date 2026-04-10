@@ -14,6 +14,10 @@ public interface WorkspaceStore {
 
     Optional<WorkspaceRecord> findPersonalWorkspaceByOwnerId(long ownerId);
 
+    Optional<Long> findOwnerIdByEmail(String email);
+
+    Optional<String> findOwnerEmailById(long ownerId);
+
     List<WorkspaceRecord> findActiveWorkspacesForOwner(long ownerId);
 
     Optional<WorkspaceMemberRecord> findActiveMembership(long workspaceId, long ownerId);
