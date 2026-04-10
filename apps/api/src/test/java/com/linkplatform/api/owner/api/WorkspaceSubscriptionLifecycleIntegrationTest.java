@@ -66,6 +66,10 @@ class WorkspaceSubscriptionLifecycleIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.subscriptionStatus").value("GRACE"))
                 .andExpect(jsonPath("$.scheduledPlanCode").value("FREE"));
+        Integer subscriptionAuditEvents = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM operator_action_log WHERE action_type = 'workspace_subscription_update' AND workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-subscription')",
+                Integer.class);
+        org.assertj.core.api.Assertions.assertThat(subscriptionAuditEvents).isEqualTo(1);
 
         mockMvc.perform(get("/api/v1/workspaces/{workspaceSlug}/members", "team-subscription")
                         .header("X-API-Key", memberKey)

@@ -112,6 +112,12 @@ class ProjectionJobWorkspaceVisibilityIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workspaceSlug").value("proj-a"));
 
+        mockMvc.perform(get("/api/v1/projection-jobs")
+                        .header("X-API-Key", keyA)
+                        .header("X-Workspace-Slug", "proj-a"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id").value(org.hamcrest.Matchers.hasItem((int) jobId)));
+
         mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId)
                         .header("X-API-Key", keyB)
                         .header("X-Workspace-Slug", "proj-b"))

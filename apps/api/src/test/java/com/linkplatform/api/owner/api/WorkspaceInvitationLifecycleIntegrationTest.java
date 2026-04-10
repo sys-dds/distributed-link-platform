@@ -66,6 +66,11 @@ class WorkspaceInvitationLifecycleIntegrationTest {
         JsonNode createdJson = objectMapper.readTree(created);
         long invitationId = createdJson.path("invitation").path("id").asLong();
         String token = createdJson.path("invitationToken").asText();
+        String tokenPrefix = jdbcTemplate.queryForObject(
+                "SELECT token_prefix FROM workspace_invitations WHERE id = ?",
+                String.class,
+                invitationId);
+        org.assertj.core.api.Assertions.assertThat(tokenPrefix).isEqualTo(token.substring(0, 12));
 
         mockMvc.perform(get("/api/v1/workspaces/{workspaceSlug}/invitations", "team-invite")
                         .header("X-API-Key", workspaceKey))

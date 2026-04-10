@@ -143,6 +143,11 @@ class ProjectionJobsControllerIntegrationTest {
                 .getContentAsString());
 
         assertThat(failedJob.path("errorSummary").asText()).isEqualTo(failedJob.path("lastError").asText());
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT status FROM projection_jobs WHERE id = ?",
+                        String.class,
+                        jobId))
+                .isEqualTo("FAILED");
     }
 
     @Test
@@ -207,6 +212,7 @@ class ProjectionJobsControllerIntegrationTest {
                         resultSet.getString("operator_note")),
                 jobId);
 
+        assertThat(persisted.status()).isEqualTo(ProjectionJobStatus.COMPLETED);
         JsonNode controllerJob = jsonMapper.readTree(mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId)
                         .header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
