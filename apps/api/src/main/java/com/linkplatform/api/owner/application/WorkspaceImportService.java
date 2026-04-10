@@ -16,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -55,7 +56,7 @@ public class WorkspaceImportService {
         this.securityEventStore = securityEventStore;
         this.objectMapper = objectMapper;
         this.jdbcTemplate = jdbcTemplate;
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Transactional(readOnly = true)
@@ -331,7 +332,9 @@ public class WorkspaceImportService {
 
     private void applyImportedLifecycle(long workspaceId, ImportedLink importedLink) {
         LinkLifecycleState state = importedLink.lifecycleState();
-        if (state == LinkLifecycleState.ACTIVE || state == LinkLifecycleState.EXPIRED || state == LinkLifecycleState.ALL) {
+        if (state == LinkLifecycleState.ACTIVE
+                || state == LinkLifecycleState.EXPIRED
+                || state == LinkLifecycleState.ALL) {
             return;
         }
         jdbcTemplate.update(
@@ -422,7 +425,9 @@ public class WorkspaceImportService {
                     node.path("slug").asText(),
                     node.path("originalUrl").asText(),
                     readOptionalOffsetDateTime(node.path("expiresAt")),
-                    node.path("title").isMissingNode() || node.path("title").isNull() ? null : node.path("title").asText(),
+                    node.path("title").isMissingNode() || node.path("title").isNull()
+                            ? null
+                            : node.path("title").asText(),
                     tags,
                     LinkLifecycleState.valueOf(lifecycle));
         }

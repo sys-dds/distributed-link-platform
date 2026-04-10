@@ -17,10 +17,11 @@ public class WorkspaceExportRunner {
 
     public WorkspaceExportRunner(
             WorkspaceExportStore workspaceExportStore,
-            WorkspaceExportService workspaceExportService) {
+            WorkspaceExportService workspaceExportService,
+            Clock clock) {
         this.workspaceExportStore = workspaceExportStore;
         this.workspaceExportService = workspaceExportService;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Scheduled(fixedDelayString = "${link-platform.exports.runner-delay-ms:10000}")

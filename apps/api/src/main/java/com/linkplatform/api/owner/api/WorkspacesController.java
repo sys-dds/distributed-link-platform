@@ -1,19 +1,13 @@
 package com.linkplatform.api.owner.api;
 
 import com.linkplatform.api.owner.application.ApiKeyScope;
-import com.linkplatform.api.owner.application.InvalidWorkspaceRoleChangeException;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.ServiceAccountRecord;
-import com.linkplatform.api.owner.application.SecurityEventStore;
-import com.linkplatform.api.owner.application.SecurityEventType;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
-import com.linkplatform.api.owner.application.WorkspaceEntitlementService;
 import com.linkplatform.api.owner.application.WorkspaceInvitationRecord;
 import com.linkplatform.api.owner.application.WorkspaceInvitationService;
-import com.linkplatform.api.owner.application.WorkspaceInvitationStore;
 import com.linkplatform.api.owner.application.WorkspaceMemberRecord;
 import com.linkplatform.api.owner.application.WorkspaceLifecycleService;
-import com.linkplatform.api.owner.application.WorkspacePlanCode;
 import com.linkplatform.api.owner.application.WorkspacePermissionService;
 import com.linkplatform.api.owner.application.WorkspaceRecord;
 import com.linkplatform.api.owner.application.WorkspaceRole;
@@ -21,11 +15,8 @@ import com.linkplatform.api.owner.application.WorkspaceStore;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
-import java.time.Clock;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,37 +34,23 @@ import org.springframework.web.bind.annotation.RestController;
 @ConditionalOnRuntimeModes({RuntimeMode.ALL, RuntimeMode.CONTROL_PLANE_API})
 public class WorkspacesController {
 
-    private static final Pattern WORKSPACE_SLUG_PATTERN = Pattern.compile("^[a-z0-9-]{3,60}$");
-
     private final OwnerAccessService ownerAccessService;
     private final WorkspaceStore workspaceStore;
     private final WorkspacePermissionService workspacePermissionService;
-    private final SecurityEventStore securityEventStore;
-    private final WorkspaceEntitlementService workspaceEntitlementService;
-    private final WorkspaceInvitationStore workspaceInvitationStore;
     private final WorkspaceInvitationService workspaceInvitationService;
     private final WorkspaceLifecycleService workspaceLifecycleService;
-    private final Clock clock;
 
     public WorkspacesController(
             OwnerAccessService ownerAccessService,
             WorkspaceStore workspaceStore,
             WorkspacePermissionService workspacePermissionService,
-            SecurityEventStore securityEventStore,
-            WorkspaceEntitlementService workspaceEntitlementService,
-            WorkspaceInvitationStore workspaceInvitationStore,
             WorkspaceInvitationService workspaceInvitationService,
-            WorkspaceLifecycleService workspaceLifecycleService,
-            Clock clock) {
+            WorkspaceLifecycleService workspaceLifecycleService) {
         this.ownerAccessService = ownerAccessService;
         this.workspaceStore = workspaceStore;
         this.workspacePermissionService = workspacePermissionService;
-        this.securityEventStore = securityEventStore;
-        this.workspaceEntitlementService = workspaceEntitlementService;
-        this.workspaceInvitationStore = workspaceInvitationStore;
         this.workspaceInvitationService = workspaceInvitationService;
         this.workspaceLifecycleService = workspaceLifecycleService;
-        this.clock = clock;
     }
 
     @GetMapping
@@ -102,10 +79,6 @@ public class WorkspacesController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
-        validateWorkspaceSlug(request == null ? null : request.slug());
-        if (request == null || request.displayName() == null || request.displayName().isBlank()) {
-            throw new IllegalArgumentException("displayName is required");
-        }
         WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
@@ -114,26 +87,14 @@ public class WorkspacesController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.MEMBERS_WRITE);
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        WorkspaceRecord workspace = workspaceStore.createWorkspace(
-                request.slug().trim().toLowerCase(Locale.ROOT),
-                request.displayName().trim(),
-                false,
-                now,
-                context.ownerId());
-        workspaceStore.addMember(workspace.id(), context.ownerId(), WorkspaceRole.OWNER, now, null);
-        workspaceEntitlementService.updatePlan(workspace.id(), WorkspacePlanCode.FREE, now);
-        securityEventStore.record(
-                SecurityEventType.WORKSPACE_CREATED,
-                context.ownerId(),
-                workspace.id(),
-                context.apiKeyHash(),
+        WorkspaceRecord workspace = workspaceLifecycleService.createWorkspace(
+                context,
+                request == null ? null : request.slug(),
+                request == null ? null : request.displayName(),
                 httpServletRequest.getMethod(),
                 httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                "Workspace created",
-                now);
-        return new WorkspaceResponse(workspace.id(), workspace.slug(), workspace.displayName(), workspace.personalWorkspace(), WorkspaceRole.OWNER.name().toLowerCase(Locale.ROOT));
+                httpServletRequest.getRemoteAddr());
+        return toWorkspaceResponse(workspace, WorkspaceRole.OWNER);
     }
 
     @GetMapping("/current")
@@ -164,14 +125,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
+        WorkspaceAccessContext context = authorizeMembersRead(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_READ);
+                httpServletRequest);
         return workspaceStore.findActiveMembers(context.workspaceId()).stream()
                 .map(this::toMemberResponse)
                 .toList();
@@ -183,16 +141,12 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
+        WorkspaceAccessContext context = authorizeMembersRead(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_READ);
-        ensureSharedWorkspace(context, "Workspace invitations are not available for personal workspaces");
-        return workspaceInvitationStore.findByWorkspaceId(context.workspaceId()).stream()
+                httpServletRequest);
+        return workspaceInvitationService.listInvitations(context).stream()
                 .map(this::toWorkspaceInvitationResponse)
                 .toList();
     }
@@ -205,15 +159,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
-        ensureSharedWorkspace(context, "Workspace invitations are not available for personal workspaces");
+                httpServletRequest);
         WorkspaceInvitationService.CreatedInvitation invitation = workspaceInvitationService.createInvitation(
                 context,
                 request == null ? null : request.email(),
@@ -252,15 +202,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
-        ensureSharedWorkspace(context, "Workspace invitations are not available for personal workspaces");
+                httpServletRequest);
         workspaceInvitationService.revokeInvitation(context, invitationId);
     }
 
@@ -270,14 +216,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
+        WorkspaceAccessContext context = authorizeMembersRead(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_READ);
+                httpServletRequest);
         return workspaceLifecycleService.listServiceAccounts(context).stream()
                 .map(this::toServiceAccountResponse)
                 .toList();
@@ -291,14 +234,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
+                httpServletRequest);
         ServiceAccountRecord serviceAccount = workspaceLifecycleService.createServiceAccount(
                 context,
                 request == null ? null : request.name(),
@@ -314,14 +254,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
+                httpServletRequest);
         return toServiceAccountResponse(workspaceLifecycleService.disableServiceAccount(context, serviceAccountId));
     }
 
@@ -333,14 +270,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
+                httpServletRequest);
         return toMemberResponse(workspaceLifecycleService.addMember(
                 context,
                 request == null ? 0L : request.ownerId(),
@@ -358,14 +292,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
+                httpServletRequest);
         return toMemberResponse(workspaceLifecycleService.updateMemberRole(
                 context,
                 ownerId,
@@ -383,14 +314,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
+                httpServletRequest);
         workspaceLifecycleService.removeMember(
                 context,
                 ownerId,
@@ -407,14 +335,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
+                httpServletRequest);
         return toMemberResponse(workspaceLifecycleService.suspendMember(
                 context,
                 ownerId,
@@ -428,14 +353,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
+                httpServletRequest);
         return toMemberResponse(workspaceLifecycleService.resumeMember(context, ownerId));
     }
 
@@ -447,14 +369,11 @@ public class WorkspacesController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest httpServletRequest) {
-        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = authorizeMembersWrite(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
-                httpServletRequest.getMethod(),
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                ApiKeyScope.MEMBERS_WRITE);
+                httpServletRequest);
         workspaceLifecycleService.transferOwnership(
                 context,
                 request == null ? 0L : request.fromOwnerId(),
@@ -483,22 +402,6 @@ public class WorkspacesController {
                 request == null ? null : request.reason());
     }
 
-    private void ensureSharedWorkspace(WorkspaceAccessContext context) {
-        ensureSharedWorkspace(context, "Personal workspaces cannot add members");
-    }
-
-    private void ensureSharedWorkspace(WorkspaceAccessContext context, String message) {
-        if (context.personalWorkspace()) {
-            throw new InvalidWorkspaceRoleChangeException(message);
-        }
-    }
-
-    private void validateWorkspaceSlug(String slug) {
-        if (slug == null || !WORKSPACE_SLUG_PATTERN.matcher(slug.trim()).matches()) {
-            throw new IllegalArgumentException("Workspace slug must match lowercase letters, numbers, hyphen and be 3 to 60 chars");
-        }
-    }
-
     private WorkspaceRole parseRole(String role) {
         if (role == null || role.isBlank()) {
             throw new IllegalArgumentException("role is required");
@@ -506,13 +409,47 @@ public class WorkspacesController {
         return WorkspaceRole.valueOf(role.trim().toUpperCase(Locale.ROOT));
     }
 
+    private WorkspaceAccessContext authorizeMembersRead(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            HttpServletRequest httpServletRequest) {
+        return ownerAccessService.authorizeRead(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_READ);
+    }
+
+    private WorkspaceAccessContext authorizeMembersWrite(
+            String apiKey,
+            String authorizationHeader,
+            String workspaceSlug,
+            HttpServletRequest httpServletRequest) {
+        return ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+    }
+
     private WorkspaceResponse toWorkspaceResponse(WorkspaceRecord record) {
+        return toWorkspaceResponse(record, record.callerRole());
+    }
+
+    private WorkspaceResponse toWorkspaceResponse(WorkspaceRecord record, WorkspaceRole role) {
         return new WorkspaceResponse(
                 record.id(),
                 record.slug(),
                 record.displayName(),
                 record.personalWorkspace(),
-                record.callerRole() == null ? null : record.callerRole().name().toLowerCase(Locale.ROOT));
+                role == null ? null : role.name().toLowerCase(Locale.ROOT));
     }
 
     private WorkspaceMemberResponse toMemberResponse(WorkspaceMemberRecord record) {

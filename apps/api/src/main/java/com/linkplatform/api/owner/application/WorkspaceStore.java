@@ -14,13 +14,9 @@ public interface WorkspaceStore {
 
     Optional<WorkspaceRecord> findPersonalWorkspaceByOwnerId(long ownerId);
 
-    default Optional<Long> findOwnerIdByEmail(String email) {
-        return Optional.empty();
-    }
+    Optional<Long> findOwnerIdByEmail(String email);
 
-    default Optional<String> findOwnerEmailById(long ownerId) {
-        return Optional.empty();
-    }
+    Optional<String> findOwnerEmailById(long ownerId);
 
     List<WorkspaceRecord> findActiveWorkspacesForOwner(long ownerId);
 

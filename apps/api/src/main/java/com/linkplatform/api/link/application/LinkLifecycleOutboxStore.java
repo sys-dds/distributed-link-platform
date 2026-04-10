@@ -10,7 +10,7 @@ public interface LinkLifecycleOutboxStore {
     long countUnpublished();
 
     default long countEligible() {
-        return countEligible(OffsetDateTime.now(java.time.Clock.systemUTC()));
+        throw new UnsupportedOperationException("countEligible() requires store-specific clock handling");
     }
 
     default long countEligible(OffsetDateTime now) {
@@ -76,7 +76,7 @@ public interface LinkLifecycleOutboxStore {
     }
 
     default int requeueAllParked(int limit) {
-        return requeueAllParked(limit, OffsetDateTime.now(java.time.Clock.systemUTC()));
+        return 0;
     }
 
     default int requeueAllParked(int limit, OffsetDateTime nextAttemptAt) {

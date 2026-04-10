@@ -10,5 +10,9 @@ public interface OwnerStore {
         return Optional.empty();
     }
 
+    default Optional<AuthenticatedOwner> findByOwnerKeyIgnoreCase(String ownerKey) {
+        return Optional.empty();
+    }
+
     void lockById(long ownerId);
 }

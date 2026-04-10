@@ -55,14 +55,15 @@ public class AnalyticsPipelineController {
             AnalyticsOutboxRelay analyticsOutboxRelay,
             OwnerAccessService ownerAccessService,
             SecurityEventStore securityEventStore,
-            OperatorActionLogStore operatorActionLogStore) {
+            OperatorActionLogStore operatorActionLogStore,
+            Clock clock) {
         this.analyticsOutboxStore = analyticsOutboxStore;
         this.pipelineControlStore = pipelineControlStore;
         this.analyticsOutboxRelay = analyticsOutboxRelay;
         this.ownerAccessService = ownerAccessService;
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @GetMapping

@@ -50,6 +50,14 @@ class ServiceAccountLifecycleIntegrationTest {
                 .getContentAsString();
 
         long serviceAccountId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(created).path("id").asLong();
+        String serviceAccountOwnerKey = jdbcTemplate.queryForObject(
+                "SELECT owner_key FROM owners WHERE id = ?",
+                String.class,
+                serviceAccountId);
+        org.assertj.core.api.Assertions.assertThat(serviceAccountOwnerKey).isEqualTo("svc-%d-relay-bot".formatted(
+                jdbcTemplate.queryForObject(
+                        "SELECT id FROM workspaces WHERE slug = 'team-service'",
+                        Long.class)));
 
         mockMvc.perform(get("/api/v1/workspaces/{workspaceSlug}/service-accounts", "team-service")
                         .header("X-API-Key", adminKey))

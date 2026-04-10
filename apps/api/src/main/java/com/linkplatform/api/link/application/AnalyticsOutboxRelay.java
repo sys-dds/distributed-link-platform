@@ -47,7 +47,8 @@ public class AnalyticsOutboxRelay {
             @Value("${link-platform.analytics.outbox-relay-lease-duration}") String leaseDuration,
             @Value("${link-platform.analytics.outbox-relay-retry-base-delay}") String retryBaseDelay,
             @Value("${link-platform.analytics.outbox-relay-retry-max-delay}") String retryMaxDelay,
-            @Value("${link-platform.analytics.outbox-relay-max-attempts}") int maxAttempts) {
+            @Value("${link-platform.analytics.outbox-relay-max-attempts}") int maxAttempts,
+            Clock clock) {
         this(
                 analyticsOutboxStore,
                 pipelineControlStore,
@@ -59,7 +60,7 @@ public class AnalyticsOutboxRelay {
                 Duration.parse(retryBaseDelay),
                 Duration.parse(retryMaxDelay),
                 maxAttempts,
-                Clock.systemUTC(),
+                clock,
                 UUID.randomUUID().toString());
     }
 

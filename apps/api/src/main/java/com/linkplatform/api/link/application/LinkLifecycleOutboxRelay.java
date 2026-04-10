@@ -47,7 +47,8 @@ public class LinkLifecycleOutboxRelay {
             @Value("${link-platform.lifecycle.outbox-relay-lease-duration}") String leaseDuration,
             @Value("${link-platform.lifecycle.outbox-relay-retry-base-delay}") String retryBaseDelay,
             @Value("${link-platform.lifecycle.outbox-relay-retry-max-delay}") String retryMaxDelay,
-            @Value("${link-platform.lifecycle.outbox-relay-max-attempts}") int maxAttempts) {
+            @Value("${link-platform.lifecycle.outbox-relay-max-attempts}") int maxAttempts,
+            Clock clock) {
         this(
                 linkLifecycleOutboxStore,
                 pipelineControlStore,
@@ -59,7 +60,7 @@ public class LinkLifecycleOutboxRelay {
                 Duration.parse(retryBaseDelay),
                 Duration.parse(retryMaxDelay),
                 maxAttempts,
-                Clock.systemUTC(),
+                clock,
                 UUID.randomUUID().toString());
     }
 

@@ -56,14 +56,6 @@ public class ProjectionJobService {
         this.chunkSize = chunkSize;
     }
 
-    public ProjectionJob createJob(ProjectionJobType jobType) {
-        return createJob(jobType, null, null, null, null, null, null, null);
-    }
-
-    public ProjectionJob createJob(ProjectionJobType jobType, Long ownerId, String slug) {
-        return createJob(jobType, ownerId, null, slug, null, null, null, null);
-    }
-
     public ProjectionJob createJob(
             ProjectionJobType jobType,
             Long ownerId,

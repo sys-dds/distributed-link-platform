@@ -16,13 +16,16 @@ import org.springframework.test.context.ActiveProfiles;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class ProjectionJobProgressFieldsIntegrationTest {
 
+    private static final long WORKSPACE_ID = 1L;
+    private static final long OWNER_ID = 1L;
+
     @Autowired
     private ProjectionJobStore store;
 
     @Test
     void persistsStartedChunkProcessedFailedAndErrorFieldsWithStableSemantics() {
         OffsetDateTime requestedAt = OffsetDateTime.parse("2026-04-06T10:00:00Z");
-        ProjectionJob job = store.createJob(ProjectionJobType.LINK_CATALOG_REBUILD, requestedAt);
+        ProjectionJob job = createJob(ProjectionJobType.LINK_CATALOG_REBUILD, requestedAt);
         assertThat(job.startedAt()).isNull();
         assertThat(job.lastChunkAt()).isNull();
         assertThat(job.processedItems()).isEqualTo(0L);
@@ -41,7 +44,7 @@ class ProjectionJobProgressFieldsIntegrationTest {
         String errorMsg = "Database connection timeout";
         store.markFailed(job.id(), failTime, 1L, errorMsg);
 
-        ProjectionJob failedDbJob = store.findById(job.id()).orElseThrow();
+        ProjectionJob failedDbJob = findJob(job.id());
         assertThat(failedDbJob.startedAt()).isEqualTo(failTime);
         assertThat(failedDbJob.lastChunkAt()).isNull();
         assertThat(failedDbJob.lastError()).isEqualTo(errorMsg);
@@ -58,7 +61,7 @@ class ProjectionJobProgressFieldsIntegrationTest {
 
         OffsetDateTime progressTime = OffsetDateTime.parse("2026-04-06T10:15:00Z");
         store.markProgress(job.id(), progressTime, 100L, 1L);
-        ProjectionJob progressDbJob = store.findById(job.id()).orElseThrow();
+        ProjectionJob progressDbJob = findJob(job.id());
         assertThat(progressDbJob.startedAt()).isEqualTo(failTime);
         assertThat(progressDbJob.lastError()).isNull();
         assertThat(progressDbJob.errorSummary()).isNull();
@@ -67,7 +70,7 @@ class ProjectionJobProgressFieldsIntegrationTest {
 
         OffsetDateTime completeTime = OffsetDateTime.parse("2026-04-06T10:20:00Z");
         store.markCompleted(job.id(), completeTime, 50L, 2L);
-        ProjectionJob completeDbJob = store.findById(job.id()).orElseThrow();
+        ProjectionJob completeDbJob = findJob(job.id());
         assertThat(completeDbJob.startedAt()).isEqualTo(failTime);
         assertThat(completeDbJob.lastError()).isNull();
         assertThat(completeDbJob.errorSummary()).isNull();
@@ -81,24 +84,32 @@ class ProjectionJobProgressFieldsIntegrationTest {
     void genericFailurePathsLeaveFailedItemsAtZeroWhenExactItemCountIsUnknown() {
         OffsetDateTime requestedAt = OffsetDateTime.parse("2026-04-06T12:00:00Z");
 
-        ProjectionJob explicitUnknownCountJob = store.createJob(ProjectionJobType.LINK_CATALOG_REBUILD, requestedAt);
+        ProjectionJob explicitUnknownCountJob = createJob(ProjectionJobType.LINK_CATALOG_REBUILD, requestedAt);
         OffsetDateTime explicitFailedAt = OffsetDateTime.parse("2026-04-06T12:05:00Z");
         store.markFailed(explicitUnknownCountJob.id(), explicitFailedAt, 0L, "chunk crashed");
 
-        ProjectionJob explicitUnknownCount = store.findById(explicitUnknownCountJob.id()).orElseThrow();
+        ProjectionJob explicitUnknownCount = findJob(explicitUnknownCountJob.id());
         assertThat(explicitUnknownCount.failedItems()).isEqualTo(0L);
         assertThat(explicitUnknownCount.lastError()).isEqualTo("chunk crashed");
         assertThat(explicitUnknownCount.errorSummary()).isEqualTo("chunk crashed");
 
-        ProjectionJob defaultUnknownCountJob = store.createJob(
+        ProjectionJob defaultUnknownCountJob = createJob(
                 ProjectionJobType.LINK_CATALOG_REBUILD,
                 requestedAt.plusMinutes(1));
         OffsetDateTime defaultFailedAt = OffsetDateTime.parse("2026-04-06T12:06:00Z");
         store.markFailed(defaultUnknownCountJob.id(), defaultFailedAt, "runtime crashed");
 
-        ProjectionJob defaultUnknownCount = store.findById(defaultUnknownCountJob.id()).orElseThrow();
+        ProjectionJob defaultUnknownCount = findJob(defaultUnknownCountJob.id());
         assertThat(defaultUnknownCount.failedItems()).isEqualTo(0L);
         assertThat(defaultUnknownCount.lastError()).isEqualTo("runtime crashed");
         assertThat(defaultUnknownCount.errorSummary()).isEqualTo("runtime crashed");
+    }
+
+    private ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
+        return store.createJob(jobType, requestedAt, null, WORKSPACE_ID, null, null, null, null, null);
+    }
+
+    private ProjectionJob findJob(long jobId) {
+        return store.findByIdVisibleToWorkspace(jobId, WORKSPACE_ID, OWNER_ID, false).orElseThrow();
     }
 }

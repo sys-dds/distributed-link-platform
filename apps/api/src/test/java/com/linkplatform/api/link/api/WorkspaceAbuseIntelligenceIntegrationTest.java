@@ -162,8 +162,12 @@ class WorkspaceAbuseIntelligenceIntegrationTest {
         OffsetDateTime ruleCreatedAt = jdbcTemplate.queryForObject(
                 "SELECT created_at FROM workspace_host_rules WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-abuse-trends') AND host = 'trend.example'",
                 OffsetDateTime.class);
+        Integer hostRuleCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM workspace_host_rules WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-abuse-trends')",
+                Integer.class);
         org.assertj.core.api.Assertions.assertThat(updatedAt).isNotNull();
         org.assertj.core.api.Assertions.assertThat(ruleCreatedAt).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(hostRuleCount).isEqualTo(1);
         org.assertj.core.api.Assertions.assertThat(updatedAt).isBeforeOrEqualTo(OffsetDateTime.now(Clock.systemUTC()));
         org.assertj.core.api.Assertions.assertThat(ruleCreatedAt).isBeforeOrEqualTo(OffsetDateTime.now(Clock.systemUTC()));
     }

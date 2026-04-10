@@ -2,6 +2,7 @@ package com.linkplatform.api.runtime;
 
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Clock;
 import javax.sql.DataSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,14 +21,16 @@ public class QueryReadConfiguration {
             LinkPlatformQueryProperties queryProperties,
             LinkPlatformRuntimeProperties runtimeProperties,
             MeterRegistry meterRegistry,
-            SecurityEventStore securityEventStore) {
+            SecurityEventStore securityEventStore,
+            Clock clock) {
         runtimeProperties.getMode();
         return new QueryRoutingDataSourceHolder(new QueryRoutingDataSource(
                 dataSource,
                 dedicatedQueryDataSource(queryProperties),
                 queryProperties.isDedicatedConfigured(),
                 meterRegistry,
-                securityEventStore));
+                securityEventStore,
+                clock));
     }
 
     @Bean(name = "queryDataSourceHealthIndicator")

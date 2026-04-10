@@ -30,25 +30,28 @@ public class ApiKeyLifecycleService {
             OwnerApiKeyStore ownerApiKeyStore,
             SecurityEventStore securityEventStore,
             WorkspacePermissionService workspacePermissionService,
-            WorkspaceEntitlementService workspaceEntitlementService) {
+            WorkspaceEntitlementService workspaceEntitlementService,
+            Clock clock) {
         this.ownerApiKeyStore = ownerApiKeyStore;
         this.securityEventStore = securityEventStore;
         this.workspacePermissionService = workspacePermissionService;
         this.workspaceEntitlementService = workspaceEntitlementService;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     public ApiKeyLifecycleService(
             OwnerApiKeyStore ownerApiKeyStore,
             SecurityEventStore securityEventStore,
-            WorkspacePermissionService workspacePermissionService) {
-        this(ownerApiKeyStore, securityEventStore, workspacePermissionService, null);
+            WorkspacePermissionService workspacePermissionService,
+            Clock clock) {
+        this(ownerApiKeyStore, securityEventStore, workspacePermissionService, null, clock);
     }
 
     public ApiKeyLifecycleService(
             OwnerApiKeyStore ownerApiKeyStore,
-            SecurityEventStore securityEventStore) {
-        this(ownerApiKeyStore, securityEventStore, new WorkspacePermissionService(), null);
+            SecurityEventStore securityEventStore,
+            Clock clock) {
+        this(ownerApiKeyStore, securityEventStore, new WorkspacePermissionService(), null, clock);
     }
 
     @Transactional

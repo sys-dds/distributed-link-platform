@@ -6,14 +6,6 @@ import java.util.Optional;
 
 public interface ProjectionJobStore {
 
-    default ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt) {
-        return createJob(jobType, requestedAt, null, null, null, null, null, null, null);
-    }
-
-    default ProjectionJob createJob(ProjectionJobType jobType, OffsetDateTime requestedAt, Long ownerId, String slug) {
-        return createJob(jobType, requestedAt, ownerId, null, slug, null, null, null, null);
-    }
-
     ProjectionJob createJob(
             ProjectionJobType jobType,
             OffsetDateTime requestedAt,
@@ -29,36 +21,13 @@ public interface ProjectionJobStore {
 
     List<ProjectionJob> findRecentVisibleToWorkspace(int limit, long workspaceId, long ownerId, boolean personalWorkspace);
 
-    @Deprecated(forRemoval = false)
-    List<ProjectionJob> findRecent(int limit);
-
-    @Deprecated(forRemoval = false)
-    Optional<ProjectionJob> findById(long id);
-
     Optional<ProjectionJob> claimNext(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil);
 
-    @Deprecated(forRemoval = false)
-    Optional<ProjectionJob> claimNextQueued(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil);
-
     void markProgress(long id, OffsetDateTime occurredAt, long processedCountIncrement, Long checkpointId);
-
-    default void markProgress(long id, long processedCountIncrement, Long checkpointId) {
-        markProgress(id, OffsetDateTime.now(java.time.Clock.systemUTC()), processedCountIncrement, checkpointId);
-    }
 
     void markCompleted(long id, OffsetDateTime completedAt, long processedCountIncrement, Long checkpointId);
 
     void markFailed(long id, OffsetDateTime completedAt, long failedItemsIncrement, String errorSummary);
-
-    default void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
-        markFailed(id, completedAt, 0L, errorSummary);
-    }
-
-    @Deprecated(forRemoval = false)
-    long countQueued();
-
-    @Deprecated(forRemoval = false)
-    long countActive();
 
     long countQueued(long workspaceId);
 

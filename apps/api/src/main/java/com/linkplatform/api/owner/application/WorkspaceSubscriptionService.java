@@ -2,6 +2,7 @@ package com.linkplatform.api.owner.application;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +22,7 @@ public class WorkspaceSubscriptionService {
         this.workspacePlanStore = workspacePlanStore;
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Transactional
@@ -125,7 +126,8 @@ public class WorkspaceSubscriptionService {
             throw new IllegalArgumentException("graceUntil is only allowed when subscriptionStatus is GRACE");
         }
         if ((scheduledPlanCode == null) != (scheduledPlanEffectiveAt == null)) {
-            throw new IllegalArgumentException("scheduledPlanCode and scheduledPlanEffectiveAt must be provided together");
+            throw new IllegalArgumentException(
+                    "scheduledPlanCode and scheduledPlanEffectiveAt must be provided together");
         }
     }
 }

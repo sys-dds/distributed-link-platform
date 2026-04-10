@@ -2,6 +2,7 @@ package com.linkplatform.api.owner.application;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Objects;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -18,13 +19,14 @@ public class WorkspaceImportRunner {
             Clock clock) {
         this.workspaceImportStore = workspaceImportStore;
         this.workspaceImportService = workspaceImportService;
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Scheduled(fixedDelayString = "${link-platform.imports.runner-delay-ms:10000}")
     public void runQueuedImports() {
         OffsetDateTime claimedAt = OffsetDateTime.now(clock);
-        workspaceImportStore.claimNextQueued(claimedAt)
+        workspaceImportStore
+                .claimNextQueued(claimedAt)
                 .ifPresent(workspaceImportService::processQueuedImport);
     }
 }

@@ -63,7 +63,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             OwnerStore ownerStore,
             SecurityEventStore securityEventStore,
             LinkReadCache linkReadCache,
-            String publicBaseUrl) {
+            String publicBaseUrl,
+            Clock clock) {
         this(
                 linkStore,
                 analyticsOutboxStore,
@@ -74,7 +75,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                 new LinkTargetPolicyService(),
                 null,
                 linkReadCache,
-                publicBaseUrl);
+                publicBaseUrl,
+                clock);
     }
 
     public DefaultLinkApplicationService(
@@ -87,7 +89,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             LinkTargetPolicyService linkTargetPolicyService,
             LinkAbuseReviewService linkAbuseReviewService,
             LinkReadCache linkReadCache,
-            String publicBaseUrl) {
+            String publicBaseUrl,
+            Clock clock) {
         this.linkStore = linkStore;
         this.analyticsOutboxStore = analyticsOutboxStore;
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
@@ -100,7 +103,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         this.linkAbuseReviewService = linkAbuseReviewService;
         this.linkReadCache = linkReadCache;
         this.publicBaseUri = URI.create(publicBaseUrl);
-            this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Autowired
@@ -116,7 +119,8 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             LinkTargetPolicyService linkTargetPolicyService,
             LinkAbuseReviewService linkAbuseReviewService,
             LinkReadCache linkReadCache,
-            @Value("${link-platform.public-base-url}") String publicBaseUrl) {
+            @Value("${link-platform.public-base-url}") String publicBaseUrl,
+            Clock clock) {
         this.linkStore = linkStore;
         this.analyticsOutboxStore = analyticsOutboxStore;
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
@@ -129,7 +133,7 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         this.linkAbuseReviewService = linkAbuseReviewService;
         this.linkReadCache = linkReadCache;
         this.publicBaseUri = URI.create(publicBaseUrl);
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Override

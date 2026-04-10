@@ -97,7 +97,13 @@ class WorkspaceImportRestoreIntegrationTest {
                 "SELECT completed_at FROM workspace_import_jobs WHERE id = ?",
                 OffsetDateTime.class,
                 importId);
+        OffsetDateTime createdAt = jdbcTemplate.queryForObject(
+                "SELECT created_at FROM workspace_import_jobs WHERE id = ?",
+                OffsetDateTime.class,
+                importId);
+        org.assertj.core.api.Assertions.assertThat(createdAt).isNotNull();
         org.assertj.core.api.Assertions.assertThat(completedAt).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(completedAt).isAfterOrEqualTo(createdAt);
     }
 
     @Test

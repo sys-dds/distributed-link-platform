@@ -18,11 +18,12 @@ public class WebhookEventPublisher {
     public WebhookEventPublisher(
             WebhookSubscriptionsStore webhookSubscriptionsStore,
             WebhookDeliveryStore webhookDeliveryStore,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            Clock clock) {
         this.webhookSubscriptionsStore = webhookSubscriptionsStore;
         this.webhookDeliveryStore = webhookDeliveryStore;
         this.objectMapper = objectMapper;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @Transactional

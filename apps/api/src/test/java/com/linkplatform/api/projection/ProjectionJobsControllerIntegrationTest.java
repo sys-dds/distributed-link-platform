@@ -1,7 +1,6 @@
 package com.linkplatform.api.projection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -42,9 +41,6 @@ class ProjectionJobsControllerIntegrationTest {
 
     @Autowired
     private ProjectionJobRunner projectionJobRunner;
-
-    @Autowired
-    private ProjectionJobStore projectionJobStore;
 
     @Test
     void projectionJobsPersistScopeAndScopedAndUnscopedRunsWork() throws Exception {
@@ -147,6 +143,11 @@ class ProjectionJobsControllerIntegrationTest {
                 .getContentAsString());
 
         assertThat(failedJob.path("errorSummary").asText()).isEqualTo(failedJob.path("lastError").asText());
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT status FROM projection_jobs WHERE id = ?",
+                        String.class,
+                        jobId))
+                .isEqualTo("FAILED");
     }
 
     @Test
@@ -211,6 +212,7 @@ class ProjectionJobsControllerIntegrationTest {
                         resultSet.getString("operator_note")),
                 jobId);
 
+        assertThat(persisted.status()).isEqualTo(ProjectionJobStatus.COMPLETED);
         JsonNode controllerJob = jsonMapper.readTree(mockMvc.perform(get("/api/v1/projection-jobs/{id}", jobId)
                         .header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
@@ -230,19 +232,25 @@ class ProjectionJobsControllerIntegrationTest {
     }
 
     @Test
-    void legacyGlobalProjectionStoreMethodsStayExplicitAndNonDefault() throws Exception {
-        assertFalse(ProjectionJobStore.class.getMethod("findRecent", int.class).isDefault());
-        assertFalse(ProjectionJobStore.class.getMethod("findById", long.class).isDefault());
-        assertFalse(ProjectionJobStore.class.getMethod("countQueued").isDefault());
-        assertFalse(ProjectionJobStore.class.getMethod("countActive").isDefault());
-        assertFalse(ProjectionJobStore.class.getMethod("claimNextQueued", String.class, OffsetDateTime.class, OffsetDateTime.class).isDefault());
-        assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findRecent(10));
-        assertThrows(UnsupportedOperationException.class, () -> projectionJobStore.findById(99L));
-        assertThrows(UnsupportedOperationException.class, projectionJobStore::countQueued);
-        assertThrows(UnsupportedOperationException.class, projectionJobStore::countActive);
+    void legacyGlobalProjectionStoreMethodsAreRemoved() {
+        assertThrows(NoSuchMethodException.class, () -> ProjectionJobStore.class.getMethod("findRecent", int.class));
+        assertThrows(NoSuchMethodException.class, () -> ProjectionJobStore.class.getMethod("findById", long.class));
+        assertThrows(NoSuchMethodException.class, () -> ProjectionJobStore.class.getMethod("countQueued"));
+        assertThrows(NoSuchMethodException.class, () -> ProjectionJobStore.class.getMethod("countActive"));
         assertThrows(
-                UnsupportedOperationException.class,
-                () -> projectionJobStore.claimNextQueued("worker", OffsetDateTime.now(), OffsetDateTime.now().plusSeconds(30)));
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod(
+                        "claimNextQueued",
+                        String.class,
+                        OffsetDateTime.class,
+                        OffsetDateTime.class));
+        assertThrows(
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod(
+                        "markFailed",
+                        long.class,
+                        OffsetDateTime.class,
+                        String.class));
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {

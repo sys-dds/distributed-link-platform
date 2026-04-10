@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(LinkPlatformRuntimeProperties.class)
 public class LinkPlatformRuntimeConfiguration {
 
-    @Bean
+    @Bean(name = "systemClock")
     Clock systemClock() {
         return Clock.systemUTC();
     }
@@ -47,7 +47,7 @@ public class LinkPlatformRuntimeConfiguration {
     }
 
     @Bean
-    RedirectRuntimeState redirectRuntimeState(io.micrometer.core.instrument.MeterRegistry meterRegistry) {
-        return new RedirectRuntimeState(meterRegistry);
+    RedirectRuntimeState redirectRuntimeState(io.micrometer.core.instrument.MeterRegistry meterRegistry, Clock clock) {
+        return new RedirectRuntimeState(meterRegistry, clock);
     }
 }

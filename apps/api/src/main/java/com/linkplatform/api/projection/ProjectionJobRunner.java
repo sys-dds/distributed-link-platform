@@ -42,14 +42,15 @@ public class ProjectionJobRunner {
             ProjectionJobService projectionJobService,
             MeterRegistry meterRegistry,
             WebhookEventPublisher webhookEventPublisher,
-            @Value("${link-platform.projection-jobs.lease-duration}") String leaseDuration) {
+            @Value("${link-platform.projection-jobs.lease-duration}") String leaseDuration,
+            Clock clock) {
         this(
                 projectionJobStore,
                 projectionJobService,
                 meterRegistry,
                 webhookEventPublisher,
                 Duration.parse(leaseDuration),
-                Clock.systemUTC(),
+                clock,
                 UUID.randomUUID().toString());
     }
 
@@ -126,10 +127,6 @@ public class ProjectionJobRunner {
 
     private void markJobFailed(ProjectionJob job, RuntimeException exception) {
         OffsetDateTime failedAt = OffsetDateTime.now(clock);
-        projectionJobStore.markFailed(
-                job.id(),
-                failedAt,
-                0L,
-                compactErrorSummary(exception));
+        projectionJobStore.markFailed(job.id(), failedAt, 0L, compactErrorSummary(exception));
     }
 }

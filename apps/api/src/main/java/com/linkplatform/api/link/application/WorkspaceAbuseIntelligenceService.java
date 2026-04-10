@@ -9,6 +9,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +35,7 @@ public class WorkspaceAbuseIntelligenceService {
         this.workspacePermissionService = workspacePermissionService;
         this.linkAbuseStore = linkAbuseStore;
         this.securityEventStore = securityEventStore;
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Transactional(readOnly = true)
@@ -83,7 +84,11 @@ public class WorkspaceAbuseIntelligenceService {
     }
 
     @Transactional
-    public WorkspaceHostRuleRecord createHostRule(WorkspaceAccessContext context, String host, String ruleType, String note) {
+    public WorkspaceHostRuleRecord createHostRule(
+            WorkspaceAccessContext context,
+            String host,
+            String ruleType,
+            String note) {
         workspacePermissionService.requireOpsWrite(context);
         String normalizedHost = normalizeHost(host);
         String normalizedRuleType = normalizeRuleType(ruleType);
@@ -173,7 +178,8 @@ public class WorkspaceAbuseIntelligenceService {
             return false;
         }
         WorkspaceAbusePolicyRecord policy = policyForWorkspace(workspaceId);
-        return workspaceAbusePolicyStore.findHostSignalCount(workspaceId, normalizedHost) >= policy.repeatedHostQuarantineThreshold();
+        return workspaceAbusePolicyStore.findHostSignalCount(workspaceId, normalizedHost)
+                >= policy.repeatedHostQuarantineThreshold();
     }
 
     @Transactional(readOnly = true)

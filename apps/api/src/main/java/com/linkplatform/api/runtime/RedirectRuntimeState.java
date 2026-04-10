@@ -25,7 +25,7 @@ public class RedirectRuntimeState {
     private volatile OffsetDateTime lastDegradedAt;
     private volatile String lastDecision = "startup";
 
-    public RedirectRuntimeState(MeterRegistry meterRegistry) {
+    public RedirectRuntimeState(MeterRegistry meterRegistry, Clock clock) {
         this.cacheHitCounter = Counter.builder("link.redirect.cache.hit")
                 .description("Number of redirect cache hits")
                 .register(meterRegistry);
@@ -56,7 +56,7 @@ public class RedirectRuntimeState {
         this.unavailableCounter = Counter.builder("link.redirect.unavailable")
                 .description("Number of redirect requests that could not be served or failed over")
                 .register(meterRegistry);
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     public void recordCacheHit() {

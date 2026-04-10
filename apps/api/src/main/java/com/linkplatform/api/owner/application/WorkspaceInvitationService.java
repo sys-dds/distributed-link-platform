@@ -7,7 +7,9 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Base64;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,12 +34,19 @@ public class WorkspaceInvitationService {
         this.workspaceInvitationStore = workspaceInvitationStore;
         this.workspaceStore = workspaceStore;
         this.securityEventStore = securityEventStore;
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.expiryDays = expiryDays;
     }
 
     @Transactional
+    public List<WorkspaceInvitationRecord> listInvitations(WorkspaceAccessContext context) {
+        requireSharedWorkspace(context);
+        return workspaceInvitationStore.findByWorkspaceId(context.workspaceId());
+    }
+
+    @Transactional
     public CreatedInvitation createInvitation(WorkspaceAccessContext context, String email, WorkspaceRole role) {
+        requireSharedWorkspace(context);
         requireActiveWorkspace(context.workspaceId());
         String normalizedEmail = normalizeEmail(email);
         long existingOwnerId = requireExistingOwnerIdByEmail(normalizedEmail);
@@ -71,7 +80,12 @@ public class WorkspaceInvitationService {
             workspaceInvitationStore.markExpired(invitation.id());
             throw new IllegalArgumentException("Workspace invitation has expired");
         }
-        workspaceStore.addMember(invitation.workspaceId(), acceptedByOwnerId, invitation.role(), now, invitation.createdByOwnerId());
+        workspaceStore.addMember(
+                invitation.workspaceId(),
+                acceptedByOwnerId,
+                invitation.role(),
+                now,
+                invitation.createdByOwnerId());
         workspaceInvitationStore.markAccepted(invitation.id(), now, acceptedByOwnerId);
         recordInvitationAccepted(invitation, acceptedByOwnerId, now);
         return workspaceInvitationStore.findById(invitation.id()).orElseThrow();
@@ -93,6 +107,7 @@ public class WorkspaceInvitationService {
 
     @Transactional
     public WorkspaceInvitationRecord revokeInvitation(WorkspaceAccessContext context, long invitationId) {
+        requireSharedWorkspace(context);
         requireActiveWorkspace(context.workspaceId());
         WorkspaceInvitationRecord invitation = workspaceInvitationStore.findById(invitationId)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace invitation not found"));
@@ -169,6 +184,13 @@ public class WorkspaceInvitationService {
     private void requireActiveWorkspace(long workspaceId) {
         if (workspaceStore.isWorkspaceSuspended(workspaceId)) {
             throw new WorkspaceAccessDeniedException("Workspace is suspended");
+        }
+    }
+
+    private void requireSharedWorkspace(WorkspaceAccessContext context) {
+        if (context.personalWorkspace()) {
+            throw new InvalidWorkspaceRoleChangeException(
+                    "Workspace invitations are not available for personal workspaces");
         }
     }
 

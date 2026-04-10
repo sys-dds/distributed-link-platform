@@ -55,14 +55,15 @@ public class LifecyclePipelineController {
             LinkLifecycleOutboxRelay linkLifecycleOutboxRelay,
             OwnerAccessService ownerAccessService,
             SecurityEventStore securityEventStore,
-            OperatorActionLogStore operatorActionLogStore) {
+            OperatorActionLogStore operatorActionLogStore,
+            Clock clock) {
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
         this.pipelineControlStore = pipelineControlStore;
         this.linkLifecycleOutboxRelay = linkLifecycleOutboxRelay;
         this.ownerAccessService = ownerAccessService;
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
-        this.clock = Clock.systemUTC();
+        this.clock = clock;
     }
 
     @GetMapping

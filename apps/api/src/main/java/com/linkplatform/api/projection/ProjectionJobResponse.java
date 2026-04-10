@@ -29,6 +29,9 @@ public record ProjectionJobResponse(
         Long requestedByOwnerId,
         String operatorNote) {
 
+    private static final Long DRIFT_COUNT_UNAVAILABLE = null;
+    private static final Long REPAIR_COUNT_UNAVAILABLE = null;
+
     public static ProjectionJobResponse from(ProjectionJob job, WorkspaceAccessContext context) {
         String resolvedWorkspaceSlug = normalizeWorkspaceSlug(context.workspaceSlug());
         return new ProjectionJobResponse(
@@ -43,8 +46,8 @@ public record ProjectionJobResponse(
                 job.processedItems(),
                 job.failedItems(),
                 job.checkpointId(),
-                null,
-                null,
+                DRIFT_COUNT_UNAVAILABLE,
+                REPAIR_COUNT_UNAVAILABLE,
                 job.lastError(),
                 job.lastError(),
                 job.claimedBy(),
