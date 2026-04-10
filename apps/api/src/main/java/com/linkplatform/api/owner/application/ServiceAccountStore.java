@@ -6,6 +6,8 @@ import java.util.Optional;
 
 public interface ServiceAccountStore {
 
+    long createServiceAccountOwner(String ownerKey, String displayName, OffsetDateTime createdAt);
+
     ServiceAccountRecord create(
             long serviceAccountId,
             long workspaceId,

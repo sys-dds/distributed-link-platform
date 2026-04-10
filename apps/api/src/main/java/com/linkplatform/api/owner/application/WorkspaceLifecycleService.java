@@ -5,19 +5,20 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import org.springframework.jdbc.core.JdbcTemplate;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class WorkspaceLifecycleService {
 
+    private static final Pattern WORKSPACE_SLUG_PATTERN = Pattern.compile("^[a-z0-9-]{3,60}$");
+
     private final WorkspaceStore workspaceStore;
     private final OwnerStore ownerStore;
     private final ServiceAccountStore serviceAccountStore;
     private final WorkspaceEntitlementService workspaceEntitlementService;
     private final SecurityEventStore securityEventStore;
-    private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
 
     public WorkspaceLifecycleService(
@@ -26,15 +27,45 @@ public class WorkspaceLifecycleService {
             ServiceAccountStore serviceAccountStore,
             WorkspaceEntitlementService workspaceEntitlementService,
             SecurityEventStore securityEventStore,
-            JdbcTemplate jdbcTemplate,
             Clock clock) {
         this.workspaceStore = workspaceStore;
         this.ownerStore = ownerStore;
         this.serviceAccountStore = serviceAccountStore;
         this.workspaceEntitlementService = workspaceEntitlementService;
         this.securityEventStore = securityEventStore;
-        this.jdbcTemplate = jdbcTemplate;
         this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    @Transactional
+    public WorkspaceRecord createWorkspace(
+            WorkspaceAccessContext context,
+            String slug,
+            String displayName,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress) {
+        String normalizedSlug = normalizeWorkspaceSlug(slug);
+        String normalizedDisplayName = normalizeWorkspaceDisplayName(displayName);
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        WorkspaceRecord workspace = workspaceStore.createWorkspace(
+                normalizedSlug,
+                normalizedDisplayName,
+                false,
+                now,
+                context.ownerId());
+        workspaceStore.addMember(workspace.id(), context.ownerId(), WorkspaceRole.OWNER, now, null);
+        workspaceEntitlementService.updatePlan(workspace.id(), WorkspacePlanCode.FREE, now);
+        securityEventStore.record(
+                SecurityEventType.WORKSPACE_CREATED,
+                context.ownerId(),
+                workspace.id(),
+                context.apiKeyHash(),
+                requestMethod,
+                requestPath,
+                remoteAddress,
+                "Workspace created",
+                now);
+        return workspace;
     }
 
     @Transactional(readOnly = true)
@@ -57,11 +88,8 @@ public class WorkspaceLifecycleService {
                 .ifPresent(existing -> {
                     throw new IllegalArgumentException("Service account slug already exists");
                 });
-        long ownerId = nextOwnerId();
         OffsetDateTime now = OffsetDateTime.now(clock);
-        jdbcTemplate.update(
-                "INSERT INTO owners (id, owner_key, display_name, plan, created_at) VALUES (?, ?, ?, 'FREE', ?)",
-                ownerId,
+        long ownerId = serviceAccountStore.createServiceAccountOwner(
                 "svc-" + context.workspaceId() + "-" + normalizedSlug,
                 normalizedName,
                 now);
@@ -337,6 +365,21 @@ public class WorkspaceLifecycleService {
         return trimmed.length() <= 255 ? trimmed : trimmed.substring(0, 255);
     }
 
+    private String normalizeWorkspaceSlug(String slug) {
+        if (slug == null || !WORKSPACE_SLUG_PATTERN.matcher(slug.trim()).matches()) {
+            throw new IllegalArgumentException(
+                    "Workspace slug must match lowercase letters, numbers, hyphen and be 3 to 60 chars");
+        }
+        return slug.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeWorkspaceDisplayName(String displayName) {
+        if (displayName == null || displayName.isBlank()) {
+            throw new IllegalArgumentException("displayName is required");
+        }
+        return displayName.trim();
+    }
+
     private String normalizeName(String name) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Service account name is required");
@@ -355,14 +398,6 @@ public class WorkspaceLifecycleService {
                     "Service account slug must match lowercase letters, numbers, hyphen and be 3 to 60 chars");
         }
         return normalized;
-    }
-
-    private long nextOwnerId() {
-        Long ownerId = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) + 1 FROM owners", Long.class);
-        if (ownerId == null) {
-            throw new IllegalStateException("Unable to allocate service account owner id");
-        }
-        return ownerId;
     }
 
     private void recordMemberSuspended(WorkspaceAccessContext context, long ownerId, OffsetDateTime now) {

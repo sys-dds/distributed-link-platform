@@ -18,6 +18,21 @@ public class JdbcServiceAccountStore implements ServiceAccountStore {
     }
 
     @Override
+    public long createServiceAccountOwner(String ownerKey, String displayName, OffsetDateTime createdAt) {
+        Long ownerId = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) + 1 FROM owners", Long.class);
+        if (ownerId == null) {
+            throw new IllegalStateException("Unable to allocate service account owner id");
+        }
+        jdbcTemplate.update(
+                "INSERT INTO owners (id, owner_key, display_name, plan, created_at) VALUES (?, ?, ?, 'FREE', ?)",
+                ownerId,
+                ownerKey,
+                displayName,
+                createdAt);
+        return ownerId;
+    }
+
+    @Override
     public ServiceAccountRecord create(
             long serviceAccountId,
             long workspaceId,

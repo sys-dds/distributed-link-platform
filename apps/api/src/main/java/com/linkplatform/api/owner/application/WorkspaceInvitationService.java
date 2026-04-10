@@ -7,6 +7,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Base64;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,7 +39,14 @@ public class WorkspaceInvitationService {
     }
 
     @Transactional
+    public List<WorkspaceInvitationRecord> listInvitations(WorkspaceAccessContext context) {
+        requireSharedWorkspace(context);
+        return workspaceInvitationStore.findByWorkspaceId(context.workspaceId());
+    }
+
+    @Transactional
     public CreatedInvitation createInvitation(WorkspaceAccessContext context, String email, WorkspaceRole role) {
+        requireSharedWorkspace(context);
         requireActiveWorkspace(context.workspaceId());
         String normalizedEmail = normalizeEmail(email);
         long existingOwnerId = requireExistingOwnerIdByEmail(normalizedEmail);
@@ -99,6 +107,7 @@ public class WorkspaceInvitationService {
 
     @Transactional
     public WorkspaceInvitationRecord revokeInvitation(WorkspaceAccessContext context, long invitationId) {
+        requireSharedWorkspace(context);
         requireActiveWorkspace(context.workspaceId());
         WorkspaceInvitationRecord invitation = workspaceInvitationStore.findById(invitationId)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace invitation not found"));
@@ -175,6 +184,13 @@ public class WorkspaceInvitationService {
     private void requireActiveWorkspace(long workspaceId) {
         if (workspaceStore.isWorkspaceSuspended(workspaceId)) {
             throw new WorkspaceAccessDeniedException("Workspace is suspended");
+        }
+    }
+
+    private void requireSharedWorkspace(WorkspaceAccessContext context) {
+        if (context.personalWorkspace()) {
+            throw new InvalidWorkspaceRoleChangeException(
+                    "Workspace invitations are not available for personal workspaces");
         }
     }
 
