@@ -296,6 +296,9 @@ public class WorkspaceLifecycleService {
 
     @Transactional
     public void transferOwnership(WorkspaceAccessContext context, long fromOwnerId, long toOwnerId) {
+        if (context.ownerKey() == null || context.ownerKey().startsWith("svc-")) {
+            throw new WorkspaceAccessDeniedException("Ownership transfer requires a HUMAN owner");
+        }
         requireActiveWorkspace(context.workspaceId());
         WorkspaceMemberRecord from = requireActiveHumanMembership(context.workspaceId(), fromOwnerId);
         WorkspaceMemberRecord to = requireActiveHumanMembership(context.workspaceId(), toOwnerId);

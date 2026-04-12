@@ -172,6 +172,18 @@ public class JdbcWebhookSubscriptionsStore implements WebhookSubscriptionsStore 
         return count == null ? 0L : count;
     }
 
+    public long countGlobalFailingSubscriptions() {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM webhook_subscriptions
+                WHERE consecutive_failures > 0
+                   OR disabled_at IS NOT NULL
+                """,
+                Long.class);
+        return count == null ? 0L : count;
+    }
+
     @Override
     public List<WebhookSubscriptionRecord> findEnabledByWorkspaceIdAndEventType(long workspaceId, WebhookEventType eventType) {
         return findByWorkspaceId(workspaceId).stream()

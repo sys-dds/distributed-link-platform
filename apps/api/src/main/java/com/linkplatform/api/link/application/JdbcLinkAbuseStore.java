@@ -216,6 +216,18 @@ public class JdbcLinkAbuseStore implements LinkAbuseStore {
         return count == null ? 0L : count;
     }
 
+    public long countGlobalCasesByStatus(LinkAbuseCaseStatus status) {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM link_abuse_cases
+                WHERE status = ?
+                """,
+                Long.class,
+                status.name());
+        return count == null ? 0L : count;
+    }
+
     @Override
     public long countQuarantinedLinks(long workspaceId) {
         Long count = jdbcTemplate.queryForObject(

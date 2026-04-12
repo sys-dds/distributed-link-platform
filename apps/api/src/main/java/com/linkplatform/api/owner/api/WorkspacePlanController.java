@@ -7,6 +7,7 @@ import com.linkplatform.api.owner.application.SecurityEventType;
 import com.linkplatform.api.owner.application.OperatorActionLogStore;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.owner.application.WorkspaceEntitlementService;
+import com.linkplatform.api.owner.application.WorkspaceEnterprisePolicyService;
 import com.linkplatform.api.owner.application.WorkspacePlanCode;
 import com.linkplatform.api.owner.application.WorkspacePlanStore;
 import com.linkplatform.api.owner.application.WorkspaceSubscriptionService;
@@ -37,6 +38,7 @@ public class WorkspacePlanController {
     private final WorkspaceSubscriptionService workspaceSubscriptionService;
     private final WorkspaceRetentionService workspaceRetentionService;
     private final WorkspaceRetentionPurgeRunner workspaceRetentionPurgeRunner;
+    private final WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService;
     private final WorkspaceStore workspaceStore;
     private final SecurityEventStore securityEventStore;
     private final OperatorActionLogStore operatorActionLogStore;
@@ -49,6 +51,7 @@ public class WorkspacePlanController {
             WorkspaceSubscriptionService workspaceSubscriptionService,
             WorkspaceRetentionService workspaceRetentionService,
             WorkspaceRetentionPurgeRunner workspaceRetentionPurgeRunner,
+            WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService,
             WorkspaceStore workspaceStore,
             SecurityEventStore securityEventStore,
             OperatorActionLogStore operatorActionLogStore,
@@ -59,6 +62,7 @@ public class WorkspacePlanController {
         this.workspaceSubscriptionService = workspaceSubscriptionService;
         this.workspaceRetentionService = workspaceRetentionService;
         this.workspaceRetentionPurgeRunner = workspaceRetentionPurgeRunner;
+        this.workspaceEnterprisePolicyService = workspaceEnterprisePolicyService;
         this.workspaceStore = workspaceStore;
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
@@ -92,6 +96,13 @@ public class WorkspacePlanController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest request) {
         WorkspaceAccessContext context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, request);
+        workspaceEnterprisePolicyService.requirePrivilegedActionApproval(
+                context,
+                "workspace_subscription_update",
+                true,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr());
         var workspace = workspaceStore.findBySlug(workspaceSlug)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceSlug));
         var plan = workspaceSubscriptionService.updateSubscription(
@@ -167,6 +178,67 @@ public class WorkspacePlanController {
         return toRetentionResponse(updated);
     }
 
+    @GetMapping("/api/v1/workspaces/current/enterprise-policy")
+    public WorkspaceEnterprisePolicyResponse currentEnterprisePolicy(
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = authorizeMembersRead(apiKey, authorizationHeader, workspaceSlug, request);
+        return WorkspaceEnterprisePolicyResponse.from(workspaceEnterprisePolicyService.currentPolicy(context));
+    }
+
+    @PatchMapping("/api/v1/workspaces/current/enterprise-policy")
+    public WorkspaceEnterprisePolicyResponse updateEnterprisePolicy(
+            @RequestBody(required = false) UpdateWorkspaceEnterprisePolicyRequest requestBody,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        return WorkspaceEnterprisePolicyResponse.from(workspaceEnterprisePolicyService.updatePolicy(
+                context,
+                requestBody,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr()));
+    }
+
+    @PostMapping("/api/v1/workspaces/current/privileged-actions/{actionType}/approve")
+    public void approvePrivilegedAction(
+            @PathVariable String actionType,
+            @RequestBody ApprovePrivilegedActionRequest requestBody,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey,
+                authorizationHeader,
+                workspaceSlug,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr(),
+                ApiKeyScope.MEMBERS_WRITE);
+        if (requestBody == null) {
+            throw new IllegalArgumentException("initiatorOwnerId is required");
+        }
+        workspaceEnterprisePolicyService.approvePrivilegedAction(
+                context,
+                actionType,
+                requestBody.initiatorOwnerId(),
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr());
+    }
+
     @PatchMapping("/api/v1/ops/workspaces/{workspaceSlug}/plan")
     public WorkspacePlanResponse updatePlan(
             @PathVariable String workspaceSlug,
@@ -175,6 +247,13 @@ public class WorkspacePlanController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             HttpServletRequest request) {
         WorkspaceAccessContext context = authorizeOpsWrite(apiKey, authorizationHeader, workspaceSlug, request);
+        workspaceEnterprisePolicyService.requirePrivilegedActionApproval(
+                context,
+                "workspace_plan_update",
+                true,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr());
         var workspace = workspaceStore.findBySlug(workspaceSlug).orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceSlug));
         var plan = workspaceEntitlementService.updatePlan(workspace.id(), WorkspacePlanCode.fromValue(requestBody.planCode()), OffsetDateTime.now(clock));
         securityEventStore.record(

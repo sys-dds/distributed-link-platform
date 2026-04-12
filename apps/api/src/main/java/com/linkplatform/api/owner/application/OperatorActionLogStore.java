@@ -26,5 +26,17 @@ public interface OperatorActionLogStore {
             String note,
             OffsetDateTime createdAt);
 
+    default void recordWorkspaceRecoveryDrill(
+            long workspaceId,
+            long ownerId,
+            String note,
+            OffsetDateTime createdAt) {
+        record(workspaceId, ownerId, "PIPELINE", "workspace_recovery_drill_request", null, null, null, note, createdAt);
+    }
+
     List<OperatorActionLogRecord> findRecent(Long workspaceId, OperatorActionLogQuery query);
+
+    default boolean supportsGlobalGovernanceViews() {
+        return true;
+    }
 }

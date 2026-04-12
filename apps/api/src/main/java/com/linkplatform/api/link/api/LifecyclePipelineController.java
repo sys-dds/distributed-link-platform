@@ -11,6 +11,8 @@ import com.linkplatform.api.owner.application.OperatorActionLogStore;
 import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.SecurityEventStore;
 import com.linkplatform.api.owner.application.SecurityEventType;
+import com.linkplatform.api.owner.application.WorkspaceAccessContext;
+import com.linkplatform.api.owner.application.WorkspaceEnterprisePolicyService;
 import com.linkplatform.api.runtime.ConditionalOnRuntimeModes;
 import com.linkplatform.api.runtime.RuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,6 +49,7 @@ public class LifecyclePipelineController {
     private final OwnerAccessService ownerAccessService;
     private final SecurityEventStore securityEventStore;
     private final OperatorActionLogStore operatorActionLogStore;
+    private final WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService;
     private final Clock clock;
 
     public LifecyclePipelineController(
@@ -56,6 +59,7 @@ public class LifecyclePipelineController {
             OwnerAccessService ownerAccessService,
             SecurityEventStore securityEventStore,
             OperatorActionLogStore operatorActionLogStore,
+            WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService,
             Clock clock) {
         this.linkLifecycleOutboxStore = linkLifecycleOutboxStore;
         this.pipelineControlStore = pipelineControlStore;
@@ -63,6 +67,7 @@ public class LifecyclePipelineController {
         this.ownerAccessService = ownerAccessService;
         this.securityEventStore = securityEventStore;
         this.operatorActionLogStore = operatorActionLogStore;
+        this.workspaceEnterprisePolicyService = workspaceEnterprisePolicyService;
         this.clock = clock;
     }
 
@@ -111,7 +116,7 @@ public class LifecyclePipelineController {
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
-        ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
@@ -119,6 +124,7 @@ public class LifecyclePipelineController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
+        requireOpsApproval(context, "lifecycle_pipeline_requeue", httpServletRequest);
         if (!linkLifecycleOutboxStore.requeueParked(id, OffsetDateTime.now(clock))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Parked lifecycle outbox row not found: " + id);
         }
@@ -133,7 +139,7 @@ public class LifecyclePipelineController {
             @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest httpServletRequest) {
-        ownerAccessService.authorizeMutation(
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey,
                 authorizationHeader,
                 workspaceSlug,
@@ -141,6 +147,7 @@ public class LifecyclePipelineController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
+        requireOpsApproval(context, "lifecycle_pipeline_requeue_batch", httpServletRequest);
         List<Long> ids = validateBatchRequest(request);
         linkLifecycleOutboxStore.requeueParkedBatch(ids, OffsetDateTime.now(clock));
         pipelineControlStore.recordRequeue(PIPELINE_NAME, OffsetDateTime.now(clock));
@@ -162,6 +169,7 @@ public class LifecyclePipelineController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
+        requireOpsApproval(owner, "lifecycle_pipeline_pause", httpServletRequest);
         OffsetDateTime now = OffsetDateTime.now(clock);
         String reason = request == null ? null : request.reason();
         httpServletRequest.setAttribute("operatorOperation", "lifecycle_pipeline_pause");
@@ -203,6 +211,7 @@ public class LifecyclePipelineController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
+        requireOpsApproval(owner, "lifecycle_pipeline_resume", httpServletRequest);
         OffsetDateTime now = OffsetDateTime.now(clock);
         httpServletRequest.setAttribute("operatorOperation", "lifecycle_pipeline_resume");
         pipelineControlStore.resume(PIPELINE_NAME, now);
@@ -242,6 +251,7 @@ public class LifecyclePipelineController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
+        requireOpsApproval(owner, "lifecycle_pipeline_force_tick", httpServletRequest);
         OffsetDateTime now = OffsetDateTime.now(clock);
         httpServletRequest.setAttribute("operatorOperation", "lifecycle_pipeline_force_tick");
         pipelineControlStore.recordForceTick(PIPELINE_NAME, now);
@@ -289,6 +299,7 @@ public class LifecyclePipelineController {
                 httpServletRequest.getRequestURI(),
                 httpServletRequest.getRemoteAddr(),
                 ApiKeyScope.OPS_WRITE);
+        requireOpsApproval(owner, "lifecycle_pipeline_drain", httpServletRequest);
         OffsetDateTime now = OffsetDateTime.now(clock);
         int requestedLimit = limit == null ? DEFAULT_REQUEUE_LIMIT : limit;
         int appliedLimit = resolveRequeueLimit(limit);
@@ -371,6 +382,19 @@ public class LifecyclePipelineController {
                 control.lastRelaySuccessAt(),
                 control.lastRelayFailureAt(),
                 control.lastRelayFailureReason());
+    }
+
+    private void requireOpsApproval(
+            WorkspaceAccessContext context,
+            String actionType,
+            HttpServletRequest httpServletRequest) {
+        workspaceEnterprisePolicyService.requirePrivilegedActionApproval(
+                context,
+                actionType,
+                false,
+                httpServletRequest.getMethod(),
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr());
     }
 
     private Double ageSeconds(OffsetDateTime timestamp, OffsetDateTime now) {

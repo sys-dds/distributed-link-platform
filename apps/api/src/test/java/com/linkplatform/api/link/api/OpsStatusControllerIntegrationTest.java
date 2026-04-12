@@ -78,14 +78,14 @@ class OpsStatusControllerIntegrationTest {
                 INSERT INTO link_abuse_cases (workspace_id, slug, status, source, signal_count, risk_score, summary, created_at, updated_at, reviewed_at)
                 VALUES (?, 'a-open', 'OPEN', 'MANUAL_OPERATOR', 1, 10, 'open', ?, ?, NULL),
                        (?, 'a-quarantined', 'QUARANTINED', 'REDIRECT_RATE_LIMIT', 2, 80, 'quarantined', ?, ?, ?),
-                       (?, 'a-released', 'RELEASED', 'MANUAL_OPERATOR', 1, 20, 'released', ?, ?, ?),
-                       (?, 'a-dismissed', 'DISMISSED', 'MANUAL_OPERATOR', 1, 20, 'dismissed', ?, ?, ?),
+                       (?, 'a-released', 'RELEASED', 'MANUAL_OPERATOR', 1, 20, 'released', ?, ?, CURRENT_TIMESTAMP),
+                       (?, 'a-dismissed', 'DISMISSED', 'MANUAL_OPERATOR', 1, 20, 'dismissed', ?, ?, CURRENT_TIMESTAMP),
                        (?, 'other-open', 'OPEN', 'MANUAL_OPERATOR', 1, 10, 'other', ?, ?, NULL)
                 """,
                 workspaceId, OffsetDateTime.parse("2026-04-07T07:00:00Z"), OffsetDateTime.parse("2026-04-07T07:00:00Z"),
                 workspaceId, OffsetDateTime.parse("2026-04-07T07:10:00Z"), OffsetDateTime.parse("2026-04-07T07:11:00Z"), OffsetDateTime.parse("2026-04-07T07:11:00Z"),
-                workspaceId, OffsetDateTime.parse("2026-04-07T08:00:00Z"), OffsetDateTime.parse("2026-04-07T08:05:00Z"), OffsetDateTime.parse("2026-04-07T08:05:00Z"),
-                workspaceId, OffsetDateTime.parse("2026-04-07T08:10:00Z"), OffsetDateTime.parse("2026-04-07T08:15:00Z"), OffsetDateTime.parse("2026-04-07T08:15:00Z"),
+                workspaceId, OffsetDateTime.parse("2026-04-07T08:00:00Z"), OffsetDateTime.parse("2026-04-07T08:05:00Z"),
+                workspaceId, OffsetDateTime.parse("2026-04-07T08:10:00Z"), OffsetDateTime.parse("2026-04-07T08:15:00Z"),
                 otherWorkspaceId, OffsetDateTime.parse("2026-04-07T09:00:00Z"), OffsetDateTime.parse("2026-04-07T09:00:00Z"));
 
         mockMvc.perform(get("/api/v1/ops/status")
@@ -111,7 +111,8 @@ class OpsStatusControllerIntegrationTest {
                 .andExpect(jsonPath("$.abuse.openCount").value(1))
                 .andExpect(jsonPath("$.abuse.quarantinedCount").value(1))
                 .andExpect(jsonPath("$.abuse.releasedTodayCount").value(1))
-                .andExpect(jsonPath("$.abuse.dismissedTodayCount").value(1));
+                .andExpect(jsonPath("$.abuse.dismissedTodayCount").value(1))
+                .andExpect(jsonPath("$.governance.totalWorkspaces").isNumber());
     }
 
     private void createWorkspace(String slug) {
@@ -122,7 +123,7 @@ class OpsStatusControllerIntegrationTest {
                 OffsetDateTime.now());
         Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, slug);
         jdbcTemplate.update(
-                "INSERT INTO workspace_memberships (workspace_id, owner_id, role, joined_at, added_by_owner_id) VALUES (?, 1, 'OWNER', ?, 1)",
+                "INSERT INTO workspace_members (workspace_id, owner_id, role, joined_at, added_by_owner_id) VALUES (?, 1, 'OWNER', ?, 1)",
                 workspaceId,
                 OffsetDateTime.now());
     }

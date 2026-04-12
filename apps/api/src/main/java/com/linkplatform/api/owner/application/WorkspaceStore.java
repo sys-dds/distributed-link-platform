@@ -14,9 +14,13 @@ public interface WorkspaceStore {
 
     Optional<WorkspaceRecord> findPersonalWorkspaceByOwnerId(long ownerId);
 
-    Optional<Long> findOwnerIdByEmail(String email);
+    default Optional<Long> findOwnerIdByEmail(String email) {
+        throw new UnsupportedOperationException("Owner email lookup is not implemented");
+    }
 
-    Optional<String> findOwnerEmailById(long ownerId);
+    default Optional<String> findOwnerEmailById(long ownerId) {
+        throw new UnsupportedOperationException("Owner email lookup is not implemented");
+    }
 
     List<WorkspaceRecord> findActiveWorkspacesForOwner(long ownerId);
 

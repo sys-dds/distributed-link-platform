@@ -58,7 +58,10 @@ public class OwnerApiKeysController {
                 request == null ? null : request.label(),
                 request == null ? null : request.expiresAt(),
                 request == null ? null : request.scopes(),
-                context.ownerKey());
+                context.ownerKey(),
+                servletRequest.getMethod(),
+                servletRequest.getRequestURI(),
+                servletRequest.getRemoteAddr());
         return new CreatedApiKeyResponse(toResponse(created.record()), created.plaintextKey());
     }
 
@@ -102,7 +105,10 @@ public class OwnerApiKeysController {
                 keyId,
                 request == null ? null : request.expiresAt(),
                 request == null ? null : request.scopes(),
-                context.ownerKey());
+                context.ownerKey(),
+                servletRequest.getMethod(),
+                servletRequest.getRequestURI(),
+                servletRequest.getRemoteAddr());
         return new CreatedApiKeyResponse(toResponse(rotated.record()), rotated.plaintextKey());
     }
 

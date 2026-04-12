@@ -57,6 +57,11 @@ public class ProjectionJobService {
     }
 
     public ProjectionJob createJob(
+            ProjectionJobType jobType) {
+        throw new UnsupportedOperationException("Projection jobs must be created with explicit workspace scope");
+    }
+
+    public ProjectionJob createJob(
             ProjectionJobType jobType,
             Long ownerId,
             Long workspaceId,

@@ -149,6 +149,11 @@ public class JdbcOwnerApiKeyStore implements OwnerApiKeyStore {
     }
 
     @Override
+    public boolean isServiceAccountKeyActor(String actor) {
+        return OwnerApiKeyStore.super.isServiceAccountKeyActor(actor);
+    }
+
+    @Override
     public void lockWorkspace(long workspaceId) {
         jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE id = ? FOR UPDATE", Long.class, workspaceId);
     }

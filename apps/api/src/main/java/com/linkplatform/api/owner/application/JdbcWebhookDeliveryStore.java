@@ -276,6 +276,11 @@ public class JdbcWebhookDeliveryStore implements WebhookDeliveryStore {
                 subscriptionId);
     }
 
+    @Override
+    public int currentEventVersion() {
+        return WebhookDeliveryStore.super.currentEventVersion();
+    }
+
     private String selectSql() {
         return """
                 SELECT d.id, d.subscription_id, d.workspace_id, w.slug AS workspace_slug,

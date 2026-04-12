@@ -192,6 +192,13 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case WORKSPACE_IMPORT_REQUESTED -> "Workspace import requested";
             case WORKSPACE_IMPORT_COMPLETED -> "Workspace import completed";
             case WORKSPACE_IMPORT_FAILED -> "Workspace import failed";
+            case WORKSPACE_RECOVERY_DRILL_REQUESTED -> "Workspace recovery drill requested";
+            case WORKSPACE_RECOVERY_DRILL_COMPLETED -> "Workspace recovery drill completed";
+            case WORKSPACE_RECOVERY_DRILL_FAILED -> "Workspace recovery drill failed";
+            case WORKSPACE_ENTERPRISE_POLICY_UPDATED -> "Workspace enterprise policy updated";
+            case PRIVILEGED_ACTION_APPROVAL_REQUESTED -> "Privileged action approval requested";
+            case PRIVILEGED_ACTION_APPROVED -> "Privileged action approved";
+            case API_KEY_EXPIRY_POLICY_VIOLATION -> "API key expiry policy violation";
             case WORKSPACE_RETENTION_PURGE_RUN -> "Workspace retention purge run";
             case ANALYTICS_PIPELINE_PAUSED -> "Analytics pipeline paused";
             case ANALYTICS_PIPELINE_RESUMED -> "Analytics pipeline resumed";
@@ -204,6 +211,8 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case CLICK_ROLLUP_DRIFT_DETECTED -> "Click rollup drift detected";
             case CLICK_ROLLUP_REPAIRED -> "Click rollup repaired";
             case QUERY_DATASOURCE_FALLBACK -> "Query datasource fallback activated";
+            case QUERY_REPLICA_FALLBACK_TRIGGERED -> "Query replica fallback triggered";
+            case QUERY_REPLICA_STALE -> "Query replica stale";
             case RUNTIME_CONFIGURATION_REJECTED -> "Runtime configuration rejected";
             case REDIRECT_LOOKUP_FAILED -> "Redirect lookup failed";
             case REDIRECT_FAILOVER_ACTIVATED -> "Redirect failover activated";

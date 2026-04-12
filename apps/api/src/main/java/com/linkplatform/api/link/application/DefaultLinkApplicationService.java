@@ -63,6 +63,27 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             OwnerStore ownerStore,
             SecurityEventStore securityEventStore,
             LinkReadCache linkReadCache,
+            String publicBaseUrl) {
+        this(
+                linkStore,
+                analyticsOutboxStore,
+                linkLifecycleOutboxStore,
+                linkMutationIdempotencyStore,
+                ownerStore,
+                securityEventStore,
+                linkReadCache,
+                publicBaseUrl,
+                Clock.systemUTC());
+    }
+
+    public DefaultLinkApplicationService(
+            LinkStore linkStore,
+            AnalyticsOutboxStore analyticsOutboxStore,
+            LinkLifecycleOutboxStore linkLifecycleOutboxStore,
+            LinkMutationIdempotencyStore linkMutationIdempotencyStore,
+            OwnerStore ownerStore,
+            SecurityEventStore securityEventStore,
+            LinkReadCache linkReadCache,
             String publicBaseUrl,
             Clock clock) {
         this(
@@ -670,10 +691,11 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
             String granularity) {
         LinkSlug linkSlug = new LinkSlug(slug);
         String normalizedGranularity = range.validateGranularity(granularity);
+        OffsetDateTime asOf = now();
         linkStore.findTrafficSummaryTotals(
                         linkSlug.value(),
-                        now().minusHours(24),
-                        now().toLocalDate().minusDays(6),
+                        asOf.minusHours(24),
+                        asOf.toLocalDate().minusDays(6),
                         context.workspaceId())
                 .orElseThrow(() -> new LinkNotFoundException(linkSlug.value()));
 

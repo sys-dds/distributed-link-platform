@@ -16,4 +16,8 @@ public interface WorkspacePlanStore {
             WorkspacePlanCode scheduledPlanCode,
             OffsetDateTime scheduledPlanEffectiveAt,
             OffsetDateTime updatedAt);
+
+    default long countOverQuotaWorkspaces() {
+        throw new UnsupportedOperationException("Global over-quota workspace count is not implemented");
+    }
 }

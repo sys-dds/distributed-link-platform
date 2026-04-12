@@ -5,6 +5,7 @@ import com.linkplatform.api.owner.application.OwnerAccessService;
 import com.linkplatform.api.owner.application.WorkspaceAccessContext;
 import com.linkplatform.api.owner.application.WorkspaceExportService;
 import com.linkplatform.api.owner.application.WorkspaceImportService;
+import com.linkplatform.api.owner.application.WorkspaceRecoveryDrillService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,14 +24,17 @@ public class WorkspaceExportsController {
     private final OwnerAccessService ownerAccessService;
     private final WorkspaceExportService workspaceExportService;
     private final WorkspaceImportService workspaceImportService;
+    private final WorkspaceRecoveryDrillService workspaceRecoveryDrillService;
 
     public WorkspaceExportsController(
             OwnerAccessService ownerAccessService,
             WorkspaceExportService workspaceExportService,
-            WorkspaceImportService workspaceImportService) {
+            WorkspaceImportService workspaceImportService,
+            WorkspaceRecoveryDrillService workspaceRecoveryDrillService) {
         this.ownerAccessService = ownerAccessService;
         this.workspaceExportService = workspaceExportService;
         this.workspaceImportService = workspaceImportService;
+        this.workspaceRecoveryDrillService = workspaceRecoveryDrillService;
     }
 
     @GetMapping("/exports")
@@ -139,5 +143,49 @@ public class WorkspaceExportsController {
         WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
                 apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.EXPORTS_WRITE);
         return WorkspaceImportResponse.from(workspaceImportService.applyImport(context, importId));
+    }
+
+    @GetMapping("/recovery-drills")
+    public WorkspaceRecoveryDrillPageResponse listRecoveryDrills(
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
+                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.EXPORTS_READ);
+        return new WorkspaceRecoveryDrillPageResponse(
+                workspaceRecoveryDrillService.list(context).stream().map(WorkspaceRecoveryDrillResponse::from).toList());
+    }
+
+    @PostMapping("/recovery-drills")
+    @ResponseStatus(HttpStatus.CREATED)
+    public WorkspaceRecoveryDrillResponse createRecoveryDrill(
+            @RequestBody CreateWorkspaceRecoveryDrillRequest requestBody,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeMutation(
+                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.EXPORTS_WRITE);
+        if (requestBody == null) {
+            throw new IllegalArgumentException("Recovery drill request is required");
+        }
+        return WorkspaceRecoveryDrillResponse.from(workspaceRecoveryDrillService.request(
+                context,
+                requestBody.sourceExportId(),
+                requestBody.targetMode(),
+                requestBody.dryRun()));
+    }
+
+    @GetMapping("/recovery-drills/{drillId}")
+    public WorkspaceRecoveryDrillResponse getRecoveryDrill(
+            @PathVariable long drillId,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
+            HttpServletRequest request) {
+        WorkspaceAccessContext context = ownerAccessService.authorizeRead(
+                apiKey, authorizationHeader, workspaceSlug, request.getMethod(), request.getRequestURI(), request.getRemoteAddr(), ApiKeyScope.EXPORTS_READ);
+        return WorkspaceRecoveryDrillResponse.from(workspaceRecoveryDrillService.get(context, drillId));
     }
 }

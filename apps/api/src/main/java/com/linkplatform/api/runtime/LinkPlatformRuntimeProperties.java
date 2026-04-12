@@ -5,6 +5,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "link-platform.runtime")
 public class LinkPlatformRuntimeProperties {
 
+    public static final String QUERY_REPLICA_ENABLED_PROPERTY = "link-platform.query-replica.enabled";
+    public static final String QUERY_REPLICA_MAX_LAG_SECONDS_PROPERTY = "link-platform.query-replica.max-lag-seconds";
+    public static final String QUERY_REPLICA_FALLBACK_LOG_ENABLED_PROPERTY =
+            "link-platform.query-replica.fallback-log-enabled";
+
     private RuntimeMode mode = RuntimeMode.ALL;
     private final Redirect redirect = new Redirect();
     private final Abuse abuse = new Abuse();
@@ -185,6 +190,7 @@ public class LinkPlatformRuntimeProperties {
             this.reviewPageSizeMax = reviewPageSizeMax;
         }
     }
+
 
     public static class Webhooks {
 

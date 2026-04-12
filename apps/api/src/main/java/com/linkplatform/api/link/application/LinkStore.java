@@ -323,6 +323,10 @@ public interface LinkStore {
         return List.of();
     }
 
+    default boolean analyticsReadsUseQueryDataSource() {
+        return false;
+    }
+
     default List<TopLinkTraffic> findTopLinks(
             LinkTrafficWindow window,
             OffsetDateTime now,

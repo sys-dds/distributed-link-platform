@@ -1139,6 +1139,11 @@ public class PostgresLinkStore implements LinkStore {
     }
 
     @Override
+    public boolean analyticsReadsUseQueryDataSource() {
+        return true;
+    }
+
+    @Override
     public List<TrendingLink> findTrendingLinks(LinkTrafficWindow window, OffsetDateTime now, int limit, long ownerId) {
         return switch (window) {
             case LAST_24_HOURS -> findTrendingLinksLast24Hours(now, limit, ownerId, null, null, now);

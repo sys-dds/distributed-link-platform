@@ -23,6 +23,7 @@ public class ApiKeyLifecycleService {
     private final SecurityEventStore securityEventStore;
     private final WorkspacePermissionService workspacePermissionService;
     private final WorkspaceEntitlementService workspaceEntitlementService;
+    private final WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService;
     private final Clock clock;
 
     @Autowired
@@ -31,12 +32,21 @@ public class ApiKeyLifecycleService {
             SecurityEventStore securityEventStore,
             WorkspacePermissionService workspacePermissionService,
             WorkspaceEntitlementService workspaceEntitlementService,
+            WorkspaceEnterprisePolicyService workspaceEnterprisePolicyService,
             Clock clock) {
         this.ownerApiKeyStore = ownerApiKeyStore;
         this.securityEventStore = securityEventStore;
         this.workspacePermissionService = workspacePermissionService;
         this.workspaceEntitlementService = workspaceEntitlementService;
+        this.workspaceEnterprisePolicyService = workspaceEnterprisePolicyService;
         this.clock = clock;
+    }
+
+    public ApiKeyLifecycleService(
+            OwnerApiKeyStore ownerApiKeyStore,
+            SecurityEventStore securityEventStore,
+            WorkspacePermissionService workspacePermissionService) {
+        this(ownerApiKeyStore, securityEventStore, workspacePermissionService, null, null, Clock.systemUTC());
     }
 
     public ApiKeyLifecycleService(
@@ -44,14 +54,14 @@ public class ApiKeyLifecycleService {
             SecurityEventStore securityEventStore,
             WorkspacePermissionService workspacePermissionService,
             Clock clock) {
-        this(ownerApiKeyStore, securityEventStore, workspacePermissionService, null, clock);
+        this(ownerApiKeyStore, securityEventStore, workspacePermissionService, null, null, clock);
     }
 
     public ApiKeyLifecycleService(
             OwnerApiKeyStore ownerApiKeyStore,
             SecurityEventStore securityEventStore,
             Clock clock) {
-        this(ownerApiKeyStore, securityEventStore, new WorkspacePermissionService(), null, clock);
+        this(ownerApiKeyStore, securityEventStore, new WorkspacePermissionService(), null, null, clock);
     }
 
     @Transactional
@@ -61,11 +71,26 @@ public class ApiKeyLifecycleService {
             OffsetDateTime expiresAt,
             List<String> requestedScopes,
             String createdBy) {
+        return createKey(context, label, expiresAt, requestedScopes, createdBy, "POST", "/api/v1/owner/api-keys", null);
+    }
+
+    @Transactional
+    public CreatedApiKey createKey(
+            WorkspaceAccessContext context,
+            String label,
+            OffsetDateTime expiresAt,
+            List<String> requestedScopes,
+            String createdBy,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress) {
         OffsetDateTime now = OffsetDateTime.now(clock);
         ownerApiKeyStore.lockWorkspace(context.workspaceId());
         enforceActiveKeyLimit(context, now);
         GeneratedApiKey generatedApiKey = generateApiKey();
         Set<ApiKeyScope> scopes = workspacePermissionService.validateRequestedScopes(context.role(), requestedScopes);
+        String actor = actor(context, createdBy);
+        enforceEnterpriseExpiryPolicy(context, expiresAt, actor, requestMethod, requestPath, remoteAddress);
         OwnerApiKeyRecord record = ownerApiKeyStore.create(
                 context.ownerId(),
                 context.workspaceId(),
@@ -75,7 +100,7 @@ public class ApiKeyLifecycleService {
                 scopes,
                 now,
                 expiresAt,
-                createdBy == null || createdBy.isBlank() ? context.ownerKey() : createdBy.trim());
+                actor);
         securityEventStore.record(
                 SecurityEventType.API_KEY_CREATED,
                 context.ownerId(),
@@ -130,6 +155,19 @@ public class ApiKeyLifecycleService {
             OffsetDateTime expiresAt,
             List<String> requestedScopes,
             String rotatedBy) {
+        return rotate(context, keyId, expiresAt, requestedScopes, rotatedBy, "POST", "/api/v1/owner/api-keys/" + keyId + "/rotate", null);
+    }
+
+    @Transactional
+    public CreatedApiKey rotate(
+            WorkspaceAccessContext context,
+            long keyId,
+            OffsetDateTime expiresAt,
+            List<String> requestedScopes,
+            String rotatedBy,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress) {
         OffsetDateTime now = OffsetDateTime.now(clock);
         ownerApiKeyStore.lockWorkspace(context.workspaceId());
         OwnerApiKeyRecord existing = ownerApiKeyStore.findById(context.workspaceId(), keyId)
@@ -137,7 +175,9 @@ public class ApiKeyLifecycleService {
         GeneratedApiKey generatedApiKey = generateApiKey();
         Set<ApiKeyScope> scopes = workspacePermissionService.validateRequestedScopes(context.role(), requestedScopes);
         enforceActiveKeyLimit(context, now);
-        ownerApiKeyStore.expire(context.workspaceId(), keyId, now, actor(context, rotatedBy));
+        String actor = actor(context, rotatedBy);
+        enforceEnterpriseExpiryPolicy(context, expiresAt, actor, requestMethod, requestPath, remoteAddress);
+        ownerApiKeyStore.expire(context.workspaceId(), keyId, now, actor);
         OwnerApiKeyRecord created = ownerApiKeyStore.create(
                 context.ownerId(),
                 context.workspaceId(),
@@ -147,7 +187,7 @@ public class ApiKeyLifecycleService {
                 scopes,
                 now,
                 expiresAt,
-                actor(context, rotatedBy));
+                actor);
         securityEventStore.record(
                 SecurityEventType.API_KEY_ROTATED,
                 context.ownerId(),
@@ -203,6 +243,25 @@ public class ApiKeyLifecycleService {
         if (currentUsage >= activeKeyLimit) {
             throw WorkspaceQuotaExceededException.apiKeys(currentUsage, activeKeyLimit);
         }
+    }
+
+    private void enforceEnterpriseExpiryPolicy(
+            WorkspaceAccessContext context,
+            OffsetDateTime expiresAt,
+            String actor,
+            String requestMethod,
+            String requestPath,
+            String remoteAddress) {
+        if (workspaceEnterprisePolicyService == null) {
+            return;
+        }
+        workspaceEnterprisePolicyService.enforceApiKeyExpiryPolicy(
+                context,
+                expiresAt,
+                ownerApiKeyStore.isServiceAccountKeyActor(actor),
+                requestMethod,
+                requestPath,
+                remoteAddress);
     }
 
     private void recordApiKeysSnapshot(long workspaceId, long recordId, OffsetDateTime now, String source) {

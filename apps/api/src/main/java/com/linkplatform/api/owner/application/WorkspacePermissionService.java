@@ -88,6 +88,12 @@ public class WorkspacePermissionService {
         }
     }
 
+    public void requireHumanOwnerKey(String ownerKey, String message) {
+        if (ownerKey == null || ownerKey.startsWith("svc-")) {
+            throw new WorkspaceAccessDeniedException(message);
+        }
+    }
+
     public Set<ApiKeyScope> validateRequestedScopes(WorkspaceRole role, List<String> requestedScopes) {
         Set<ApiKeyScope> parsed = EnumSet.noneOf(ApiKeyScope.class);
         if (requestedScopes != null) {

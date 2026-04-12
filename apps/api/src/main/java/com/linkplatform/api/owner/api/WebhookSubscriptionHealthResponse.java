@@ -13,7 +13,8 @@ public record WebhookSubscriptionHealthResponse(
         OffsetDateTime disabledAt,
         String disabledReason,
         OffsetDateTime lastTestFiredAt,
-        Long lastTestDeliveryId) {
+        Long lastTestDeliveryId,
+        int eventVersion) {
 
     static WebhookSubscriptionHealthResponse from(WebhookSubscriptionRecord record) {
         return new WebhookSubscriptionHealthResponse(
@@ -26,6 +27,7 @@ public record WebhookSubscriptionHealthResponse(
                 record.disabledAt(),
                 record.disabledReason(),
                 record.lastTestFiredAt(),
-                record.lastTestDeliveryId());
+                record.lastTestDeliveryId(),
+                record.eventVersion());
     }
 }

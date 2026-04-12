@@ -24,11 +24,16 @@ public class QueryRoutingDataSource extends AbstractDataSource {
     private final DataSource primaryDataSource;
     private final DataSource dedicatedQueryDataSource;
     private final boolean dedicatedConfigured;
+    private final boolean queryReplicaEnabled;
+    private final boolean fallbackLogEnabled;
+    private final QueryReplicaRuntimeStore queryReplicaRuntimeStore;
+    private final QueryReplicaLagPolicy queryReplicaLagPolicy;
     private final Counter fallbackCounter;
     private final SecurityEventStore securityEventStore;
     private final Clock clock;
     private volatile OffsetDateTime lastFallbackAt;
     private volatile String lastFallbackReason;
+    private volatile Long lastLagSeconds;
     private volatile OffsetDateTime lastFallbackAuditAt;
     private volatile String lastFallbackAuditReason;
 
@@ -36,12 +41,20 @@ public class QueryRoutingDataSource extends AbstractDataSource {
             DataSource primaryDataSource,
             DataSource dedicatedQueryDataSource,
             boolean dedicatedConfigured,
+            boolean queryReplicaEnabled,
+            boolean fallbackLogEnabled,
+            QueryReplicaRuntimeStore queryReplicaRuntimeStore,
+            QueryReplicaLagPolicy queryReplicaLagPolicy,
             MeterRegistry meterRegistry,
             SecurityEventStore securityEventStore,
             Clock clock) {
         this.primaryDataSource = primaryDataSource;
         this.dedicatedQueryDataSource = dedicatedQueryDataSource;
         this.dedicatedConfigured = dedicatedConfigured;
+        this.queryReplicaEnabled = queryReplicaEnabled;
+        this.fallbackLogEnabled = fallbackLogEnabled;
+        this.queryReplicaRuntimeStore = queryReplicaRuntimeStore;
+        this.queryReplicaLagPolicy = queryReplicaLagPolicy;
         this.securityEventStore = securityEventStore;
         this.fallbackCounter = Counter.builder("link.query.datasource.fallback")
                 .description("Number of query datasource fallbacks to the primary datasource")
@@ -81,6 +94,14 @@ public class QueryRoutingDataSource extends AbstractDataSource {
         return lastFallbackReason;
     }
 
+    public Long getLastLagSeconds() {
+        return lastLagSeconds;
+    }
+
+    public boolean isQueryReplicaEnabled() {
+        return queryReplicaEnabled;
+    }
+
     public boolean isDedicatedAvailable() {
         if (dedicatedQueryDataSource == null) {
             return false;
@@ -100,7 +121,11 @@ public class QueryRoutingDataSource extends AbstractDataSource {
         if (!dedicatedConfigured || dedicatedQueryDataSource == null) {
             return "primary";
         }
-        return isDedicatedAvailable() ? "dedicated" : "primary-fallback";
+        if (!queryReplicaEnabled) {
+            return "primary";
+        }
+        QueryReplicaLagPolicy.ReplicaDecision decision = replicaDecision();
+        return decision.useReplica() && isDedicatedAvailable() ? "replica" : "primary-fallback";
     }
 
     @Override
@@ -137,29 +162,54 @@ public class QueryRoutingDataSource extends AbstractDataSource {
     }
 
     private Connection getConnectionInternal(String username, String password) throws SQLException {
-        if (dedicatedQueryDataSource == null) {
+        if (dedicatedQueryDataSource == null || !queryReplicaEnabled) {
+            return primaryConnection(username, password);
+        }
+        QueryReplicaLagPolicy.ReplicaDecision decision = replicaDecision();
+        lastLagSeconds = decision.lagSeconds();
+        if (!decision.useReplica()) {
+            recordFallback(decision.fallbackReason(), SecurityEventType.QUERY_REPLICA_STALE);
             return primaryConnection(username, password);
         }
         try {
             return dedicatedConnection(username, password);
         } catch (SQLException exception) {
-            fallbackCounter.increment();
-            lastFallbackAt = OffsetDateTime.now(clock);
-            lastFallbackReason = compactReason(exception);
-            log.warn("link_query_datasource_fallback reason={}", lastFallbackReason);
-            recordFallbackAuditEvent();
+            recordFallback(compactReason(exception), SecurityEventType.QUERY_REPLICA_FALLBACK_TRIGGERED);
             return primaryConnection(username, password);
         }
     }
 
-    private void recordFallbackAuditEvent() {
+    private QueryReplicaLagPolicy.ReplicaDecision replicaDecision() {
+        return queryReplicaLagPolicy.evaluate(queryReplicaRuntimeStore.findByName("primary-query-replica"));
+    }
+
+    private void recordFallback(String reason, SecurityEventType eventType) {
+        fallbackCounter.increment();
+        lastFallbackAt = OffsetDateTime.now(clock);
+        lastFallbackReason = reason;
+        log.warn("link_query_replica_fallback reason={}", lastFallbackReason);
+        try {
+            queryReplicaRuntimeStore.recordFallback(
+                    "primary-query-replica",
+                    lastFallbackReason,
+                    null,
+                    null,
+                    lastFallbackAt,
+                    fallbackLogEnabled);
+        } catch (RuntimeException exception) {
+            log.warn("link_query_replica_fallback_state_failed reason={}", exception.getClass().getSimpleName());
+        }
+        recordFallbackAuditEvent(eventType);
+    }
+
+    private void recordFallbackAuditEvent(SecurityEventType eventType) {
         OffsetDateTime occurredAt = OffsetDateTime.now(clock);
         if (!shouldAuditFallback(occurredAt)) {
             return;
         }
         try {
             securityEventStore.record(
-                    SecurityEventType.QUERY_DATASOURCE_FALLBACK,
+                    eventType,
                     null,
                     null,
                     null,

@@ -29,6 +29,10 @@ public interface ProjectionJobStore {
 
     void markFailed(long id, OffsetDateTime completedAt, long failedItemsIncrement, String errorSummary);
 
+    default void markFailed(long id, OffsetDateTime completedAt, String errorSummary) {
+        throw new UnsupportedOperationException("Projection job failure updates must include failed item count");
+    }
+
     long countQueued(long workspaceId);
 
     long countActive(long workspaceId);

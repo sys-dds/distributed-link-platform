@@ -22,6 +22,10 @@ public interface WorkspaceImportStore {
 
     Optional<WorkspaceImportRecord> claimNextQueued(OffsetDateTime now);
 
+    default boolean supportsRecoveryDrillSummaries() {
+        return true;
+    }
+
     void markReadyToApply(long importId, JsonNode summaryJson, OffsetDateTime completedAt);
 
     void markCompleted(long importId, JsonNode summaryJson, OffsetDateTime completedAt);
