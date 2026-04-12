@@ -23,8 +23,7 @@ public class WorkspaceRecoveryDrillRunner {
 
     @Scheduled(fixedDelayString = "${link-platform.recovery-drills.runner-delay-ms:10000}")
     public void runQueuedRecoveryDrills() {
-        recoveryDrillStore
-                .claimNextQueued(OffsetDateTime.now(clock))
-                .ifPresent(recoveryDrillService::processQueuedDrill);
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        recoveryDrillStore.claimNextQueued(now).ifPresent(recoveryDrillService::processQueuedDrill);
     }
 }

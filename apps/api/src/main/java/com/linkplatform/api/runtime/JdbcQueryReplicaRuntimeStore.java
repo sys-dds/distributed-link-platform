@@ -40,6 +40,35 @@ public class JdbcQueryReplicaRuntimeStore implements QueryReplicaRuntimeStore {
     }
 
     @Override
+    public void recordProbe(
+            String replicaName,
+            boolean enabled,
+            QueryReplicaProbeResult probeResult,
+            OffsetDateTime refreshedAt) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO query_replica_runtime_state (
+                    replica_name,
+                    enabled,
+                    last_heartbeat_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT (replica_name) DO UPDATE
+                SET enabled = EXCLUDED.enabled,
+                    last_heartbeat_at = CASE
+                        WHEN ? THEN EXCLUDED.last_heartbeat_at
+                        ELSE query_replica_runtime_state.last_heartbeat_at
+                    END,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                replicaName,
+                enabled,
+                probeResult.successful() ? refreshedAt : null,
+                refreshedAt,
+                probeResult.successful());
+    }
+
+    @Override
     public void recordFallback(
             String replicaName,
             String fallbackReason,

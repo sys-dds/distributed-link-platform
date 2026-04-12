@@ -62,6 +62,15 @@ class WorkspaceAbuseIntelligenceIntegrationTest {
                 "SELECT COUNT(*) FROM link_abuse_cases WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-abuse-intel') AND slug = 'allow-punycode'",
                 Integer.class);
         org.assertj.core.api.Assertions.assertThat(allowCases).isEqualTo(1);
+        String allowStatus = jdbcTemplate.queryForObject(
+                """
+                SELECT abuse_status
+                FROM links
+                WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-abuse-intel')
+                  AND slug = 'allow-punycode'
+                """,
+                String.class);
+        org.assertj.core.api.Assertions.assertThat(allowStatus).isNotEqualTo("QUARANTINED");
 
         mockMvc.perform(post("/api/v1/workspaces/current/abuse/host-rules")
                         .header("X-API-Key", opsKey)
@@ -80,6 +89,16 @@ class WorkspaceAbuseIntelligenceIntegrationTest {
                                 {"slug":"deny-host","originalUrl":"https://denied.example/path"}
                                 """))
                 .andExpect(status().isCreated());
+        Integer denyRules = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM workspace_host_rules
+                WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-abuse-intel')
+                  AND host = 'denied.example'
+                  AND rule_type = 'DENY'
+                """,
+                Integer.class);
+        org.assertj.core.api.Assertions.assertThat(denyRules).isEqualTo(1);
 
         mockMvc.perform(patch("/api/v1/workspaces/current/abuse/policy")
                         .header("X-API-Key", opsKey)
@@ -106,6 +125,12 @@ class WorkspaceAbuseIntelligenceIntegrationTest {
                                 {"slug":"public-ip-safe","originalUrl":"https://8.8.8.8/safe"}
                                 """))
                 .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/workspaces/current/abuse/trends")
+                        .header("X-API-Key", opsKey)
+                        .header("X-Workspace-Slug", "team-abuse-intel"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalOpenAbuseCases").isNumber());
     }
 
     @Test

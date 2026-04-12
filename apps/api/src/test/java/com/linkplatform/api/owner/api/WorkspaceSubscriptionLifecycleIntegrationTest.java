@@ -39,6 +39,15 @@ class WorkspaceSubscriptionLifecycleIntegrationTest {
         String memberKey = bootstrapWorkspaceApiKey("team-subscription", 1L, "team-subscription-member", "[\"members:read\",\"members:write\"]");
         String linkKey = bootstrapWorkspaceApiKey("team-subscription", 1L, "team-subscription-links", "[\"links:read\",\"links:write\"]");
 
+        String initialSubscriptionStatus = jdbcTemplate.queryForObject(
+                """
+                SELECT subscription_status
+                FROM workspace_plans
+                WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-subscription')
+                """,
+                String.class);
+        org.assertj.core.api.Assertions.assertThat(initialSubscriptionStatus).isEqualTo("ACTIVE");
+
         mockMvc.perform(patch("/api/v1/ops/workspaces/{workspaceSlug}/plan", "team-subscription")
                         .header("X-API-Key", opsKey)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -70,6 +79,14 @@ class WorkspaceSubscriptionLifecycleIntegrationTest {
                 "SELECT COUNT(*) FROM operator_action_log WHERE action_type = 'workspace_subscription_update' AND workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-subscription')",
                 Integer.class);
         org.assertj.core.api.Assertions.assertThat(subscriptionAuditEvents).isEqualTo(1);
+        String scheduledPlan = jdbcTemplate.queryForObject(
+                """
+                SELECT scheduled_plan_code
+                FROM workspace_plans
+                WHERE workspace_id = (SELECT id FROM workspaces WHERE slug = 'team-subscription')
+                """,
+                String.class);
+        org.assertj.core.api.Assertions.assertThat(scheduledPlan).isEqualTo("FREE");
 
         mockMvc.perform(get("/api/v1/workspaces/{workspaceSlug}/members", "team-subscription")
                         .header("X-API-Key", memberKey)

@@ -5,7 +5,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -39,6 +41,8 @@ class QueryReplicaFallbackIntegrationTest {
     @Test
     void staleReplicaFallsBackToPrimaryAndRecordsRuntimeState() throws Exception {
         Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = 'free-owner'", Long.class);
+        OffsetDateTime staleVisibleEventAt = OffsetDateTime.parse("2026-04-08T08:00:00Z");
+        OffsetDateTime staleUpdatedAt = OffsetDateTime.parse("2026-04-08T08:02:00Z");
         jdbcTemplate.update(
                 """
                 UPDATE query_replica_runtime_state
@@ -48,8 +52,8 @@ class QueryReplicaFallbackIntegrationTest {
                     updated_at = ?
                 WHERE replica_name = 'primary-query-replica'
                 """,
-                OffsetDateTime.parse("2026-04-08T08:00:00Z"),
-                OffsetDateTime.parse("2026-04-08T08:02:00Z"));
+                staleVisibleEventAt,
+                staleUpdatedAt);
         jdbcTemplate.update(
                 """
                 INSERT INTO links (slug, original_url, created_at, hostname, version, owner_id, workspace_id, lifecycle_state, abuse_status)
@@ -78,5 +82,42 @@ class QueryReplicaFallbackIntegrationTest {
                 "SELECT COUNT(*) FROM query_replica_fallback_log WHERE replica_name = 'primary-query-replica'",
                 Integer.class);
         assertThat(logCount).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    void lagPolicyUsesFreshHeartbeatWithoutInventingLagAndRejectsStaleHeartbeat() {
+        Clock clock = Clock.systemUTC();
+        QueryReplicaLagPolicy policy = new QueryReplicaLagPolicy(30, clock);
+        QueryReplicaRuntimeState healthyUnknownLag = new QueryReplicaRuntimeState(
+                "primary-query-replica",
+                true,
+                OffsetDateTime.now(clock).minusSeconds(5),
+                null,
+                null,
+                null,
+                null,
+                OffsetDateTime.now(clock));
+
+        QueryReplicaLagPolicy.ReplicaDecision healthyDecision = policy.evaluate(Optional.of(healthyUnknownLag));
+
+        assertThat(healthyDecision.useReplica()).isTrue();
+        assertThat(healthyDecision.lagSeconds()).isNull();
+        assertThat(healthyDecision.heartbeatAgeSeconds()).isBetween(0L, 30L);
+
+        QueryReplicaRuntimeState staleHeartbeat = new QueryReplicaRuntimeState(
+                "primary-query-replica",
+                true,
+                OffsetDateTime.now(clock).minusSeconds(90),
+                null,
+                null,
+                null,
+                null,
+                OffsetDateTime.now(clock));
+
+        QueryReplicaLagPolicy.ReplicaDecision staleDecision = policy.evaluate(Optional.of(staleHeartbeat));
+
+        assertThat(staleDecision.useReplica()).isFalse();
+        assertThat(staleDecision.fallbackReason()).isEqualTo("replica heartbeat stale");
+        assertThat(staleDecision.lagSeconds()).isNull();
     }
 }

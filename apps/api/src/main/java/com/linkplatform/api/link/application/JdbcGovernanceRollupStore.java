@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class JdbcGovernanceRollupStore implements GovernanceRollupStore {
 
+    // Option B for TICKET-064: these reads intentionally compute live SQL and do not consume governance_daily_rollups.
     private final JdbcTemplate jdbcTemplate;
     private final WorkspacePlanStore workspacePlanStore;
     private final JdbcWebhookSubscriptionsStore webhookSubscriptionsStore;

@@ -9,6 +9,7 @@ public class LinkPlatformRuntimeProperties {
     public static final String QUERY_REPLICA_MAX_LAG_SECONDS_PROPERTY = "link-platform.query-replica.max-lag-seconds";
     public static final String QUERY_REPLICA_FALLBACK_LOG_ENABLED_PROPERTY =
             "link-platform.query-replica.fallback-log-enabled";
+    public static final String QUERY_REPLICA_REFRESH_DELAY_MS_PROPERTY = "link-platform.query-replica.refresh-delay-ms";
 
     private RuntimeMode mode = RuntimeMode.ALL;
     private final Redirect redirect = new Redirect();

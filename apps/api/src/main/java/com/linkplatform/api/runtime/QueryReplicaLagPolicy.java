@@ -20,37 +20,54 @@ public class QueryReplicaLagPolicy {
 
     public ReplicaDecision evaluate(Optional<QueryReplicaRuntimeState> state) {
         if (state.isEmpty()) {
-            return ReplicaDecision.fallback("replica runtime state missing", null);
+            return ReplicaDecision.fallback("replica runtime state missing", null, null);
         }
         QueryReplicaRuntimeState current = state.get();
         if (!current.enabled()) {
-            return ReplicaDecision.fallback("replica disabled", current.lagSeconds());
+            return ReplicaDecision.fallback("replica disabled", current.lagSeconds(), heartbeatAgeSeconds(current).orElse(null));
         }
+
+        Long heartbeatAgeSeconds = heartbeatAgeSeconds(current).orElse(null);
+        if (heartbeatAgeSeconds == null) {
+            return ReplicaDecision.fallback("replica heartbeat missing", current.lagSeconds(), null);
+        }
+        if (heartbeatAgeSeconds > maxLagSeconds) {
+            return ReplicaDecision.fallback("replica heartbeat stale", current.lagSeconds(), heartbeatAgeSeconds);
+        }
+
+        // lag_seconds is measured or operator-fed replica lag from the runtime table.
+        // Heartbeat freshness proves the query datasource can answer, but it is not replication lag.
         Long lagSeconds = current.lagSeconds();
-        if (lagSeconds == null && current.lastReplicaVisibleEventAt() != null) {
-            lagSeconds = Math.max(0L, Duration.between(current.lastReplicaVisibleEventAt(), OffsetDateTime.now(clock)).toSeconds());
+        if (lagSeconds != null && lagSeconds > maxLagSeconds) {
+            return ReplicaDecision.fallback("replica stale", lagSeconds, heartbeatAgeSeconds);
         }
-        if (lagSeconds == null) {
-            return ReplicaDecision.fallback("replica lag unknown", null);
-        }
-        if (lagSeconds > maxLagSeconds) {
-            return ReplicaDecision.fallback("replica stale", lagSeconds);
-        }
-        return ReplicaDecision.replica(lagSeconds);
+        return ReplicaDecision.replica(lagSeconds, heartbeatAgeSeconds);
     }
 
     public long maxLagSeconds() {
         return maxLagSeconds;
     }
 
-    public record ReplicaDecision(boolean useReplica, String fallbackReason, Long lagSeconds) {
+    public Optional<Long> heartbeatAgeSeconds(QueryReplicaRuntimeState state) {
+        if (state.lastHeartbeatAt() == null) {
+            return Optional.empty();
+        }
+        long ageSeconds = Duration.between(state.lastHeartbeatAt(), OffsetDateTime.now(clock)).toSeconds();
+        return Optional.of(Math.max(0L, ageSeconds));
+    }
 
-        static ReplicaDecision replica(Long lagSeconds) {
-            return new ReplicaDecision(true, null, lagSeconds);
+    public record ReplicaDecision(
+            boolean useReplica,
+            String fallbackReason,
+            Long lagSeconds,
+            Long heartbeatAgeSeconds) {
+
+        static ReplicaDecision replica(Long lagSeconds, Long heartbeatAgeSeconds) {
+            return new ReplicaDecision(true, null, lagSeconds, heartbeatAgeSeconds);
         }
 
-        static ReplicaDecision fallback(String fallbackReason, Long lagSeconds) {
-            return new ReplicaDecision(false, fallbackReason, lagSeconds);
+        static ReplicaDecision fallback(String fallbackReason, Long lagSeconds, Long heartbeatAgeSeconds) {
+            return new ReplicaDecision(false, fallbackReason, lagSeconds, heartbeatAgeSeconds);
         }
     }
 }

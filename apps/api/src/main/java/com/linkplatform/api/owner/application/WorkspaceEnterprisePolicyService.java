@@ -2,28 +2,31 @@ package com.linkplatform.api.owner.application;
 
 import com.linkplatform.api.owner.api.UpdateWorkspaceEnterprisePolicyRequest;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Locale;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class WorkspaceEnterprisePolicyService {
 
+    private static final Duration APPROVAL_TTL = Duration.ofMinutes(30);
+
     private final WorkspaceEnterprisePolicyStore workspaceEnterprisePolicyStore;
+    private final PrivilegedActionApprovalStore privilegedActionApprovalStore;
     private final WorkspacePermissionService workspacePermissionService;
     private final SecurityEventStore securityEventStore;
     private final Clock clock;
-    private final Set<ApprovalKey> approvals = ConcurrentHashMap.newKeySet();
 
     public WorkspaceEnterprisePolicyService(
             WorkspaceEnterprisePolicyStore workspaceEnterprisePolicyStore,
+            PrivilegedActionApprovalStore privilegedActionApprovalStore,
             WorkspacePermissionService workspacePermissionService,
             SecurityEventStore securityEventStore,
             Clock clock) {
         this.workspaceEnterprisePolicyStore = workspaceEnterprisePolicyStore;
+        this.privilegedActionApprovalStore = privilegedActionApprovalStore;
         this.workspacePermissionService = workspacePermissionService;
         this.securityEventStore = securityEventStore;
         this.clock = clock;
@@ -116,7 +119,7 @@ public class WorkspaceEnterprisePolicyService {
         throw new WorkspaceAccessDeniedException("API key expiry does not satisfy workspace enterprise policy");
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public void requirePrivilegedActionApproval(
             WorkspaceAccessContext context,
             String actionType,
@@ -132,11 +135,15 @@ public class WorkspaceEnterprisePolicyService {
             return;
         }
         requireHumanOwnerContext(context, "Privileged actions require a HUMAN owner");
-        ApprovalKey key = new ApprovalKey(context.workspaceId(), normalizeActionType(actionType), context.ownerId());
-        if (approvals.remove(key)) {
+        String normalizedActionType = normalizeActionType(actionType);
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (privilegedActionApprovalStore.consumeApproved(
+                context.workspaceId(),
+                normalizedActionType,
+                context.ownerId(),
+                now).isPresent()) {
             return;
         }
-        OffsetDateTime now = OffsetDateTime.now(clock);
         securityEventStore.record(
                 SecurityEventType.PRIVILEGED_ACTION_APPROVAL_REQUESTED,
                 context.ownerId(),
@@ -145,7 +152,7 @@ public class WorkspaceEnterprisePolicyService {
                 requestMethod,
                 requestPath,
                 remoteAddress,
-                "Privileged action approval requested: " + key.actionType(),
+                "Privileged action approval requested: " + normalizedActionType,
                 now);
         throw new WorkspaceAccessDeniedException("Privileged action requires approval");
     }
@@ -163,11 +170,15 @@ public class WorkspaceEnterprisePolicyService {
         if (approver.ownerId() == initiatorOwnerId) {
             throw new WorkspaceAccessDeniedException("Privileged action approval requires a different HUMAN owner");
         }
-        approvals.add(new ApprovalKey(
-                approver.workspaceId(),
-                normalizeActionType(actionType),
-                initiatorOwnerId));
+        String normalizedActionType = normalizeActionType(actionType);
         OffsetDateTime now = OffsetDateTime.now(clock);
+        privilegedActionApprovalStore.createApproved(
+                approver.workspaceId(),
+                normalizedActionType,
+                initiatorOwnerId,
+                approver.ownerId(),
+                now,
+                now.plus(APPROVAL_TTL));
         securityEventStore.record(
                 SecurityEventType.PRIVILEGED_ACTION_APPROVED,
                 approver.ownerId(),
@@ -176,7 +187,7 @@ public class WorkspaceEnterprisePolicyService {
                 requestMethod,
                 requestPath,
                 remoteAddress,
-                "Privileged action approved: " + normalizeActionType(actionType),
+                "Privileged action approved: " + normalizedActionType,
                 now);
     }
 
@@ -211,8 +222,5 @@ public class WorkspaceEnterprisePolicyService {
             throw new IllegalArgumentException("actionType is required");
         }
         return actionType.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private record ApprovalKey(long workspaceId, String actionType, long initiatorOwnerId) {
     }
 }

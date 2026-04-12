@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 
 public interface WorkspaceEnterprisePolicyStore {
 
+    // Enterprise policy settings remain separate from durable privileged-action approvals.
     WorkspaceEnterprisePolicyRecord findOrCreateDefault(long workspaceId, long ownerId, OffsetDateTime now);
 
     WorkspaceEnterprisePolicyRecord update(

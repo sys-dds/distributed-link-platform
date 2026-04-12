@@ -42,6 +42,7 @@ public class GlobalGovernanceController {
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
         authorizeOpsRead(apiKey, authorizationHeader, workspaceSlug, request);
+        // The summary is a live SQL snapshot; it does not depend on governance_daily_rollups yet.
         return GlobalGovernanceSummaryResponse.from(governanceRollupStore.summary(OffsetDateTime.now(clock)));
     }
 
@@ -53,7 +54,8 @@ public class GlobalGovernanceController {
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
         authorizeOpsRead(apiKey, authorizationHeader, workspaceSlug, request);
-        return GlobalWebhookRiskResponse.from(governanceRollupStore.webhookRisk(resolveLimit(limit)));
+        int resolvedLimit = resolveLimit(limit);
+        return GlobalWebhookRiskResponse.from(governanceRollupStore.webhookRisk(resolvedLimit));
     }
 
     @GetMapping("/abuse/risk")
@@ -64,7 +66,8 @@ public class GlobalGovernanceController {
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
         authorizeOpsRead(apiKey, authorizationHeader, workspaceSlug, request);
-        return GlobalAbuseRiskResponse.from(governanceRollupStore.abuseRisk(resolveLimit(limit)));
+        int resolvedLimit = resolveLimit(limit);
+        return GlobalAbuseRiskResponse.from(governanceRollupStore.abuseRisk(resolvedLimit));
     }
 
     @GetMapping("/over-quota")
@@ -75,7 +78,8 @@ public class GlobalGovernanceController {
             @RequestHeader(value = "X-Workspace-Slug", required = false) String workspaceSlug,
             HttpServletRequest request) {
         authorizeOpsRead(apiKey, authorizationHeader, workspaceSlug, request);
-        return OverQuotaWorkspaceResponse.from(governanceRollupStore.overQuota(resolveLimit(limit)));
+        int resolvedLimit = resolveLimit(limit);
+        return OverQuotaWorkspaceResponse.from(governanceRollupStore.overQuota(resolvedLimit));
     }
 
     private void authorizeOpsRead(
