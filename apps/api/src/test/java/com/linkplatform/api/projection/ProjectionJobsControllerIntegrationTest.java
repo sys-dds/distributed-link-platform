@@ -87,6 +87,11 @@ class ProjectionJobsControllerIntegrationTest {
 
         projectionJobRunner.runPendingJobs();
 
+        Integer convergedCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM link_catalog_projection WHERE owner_id = 1 AND slug = 'alpha'",
+                Integer.class);
+        assertEquals(1, convergedCount);
+
         mockMvc.perform(get("/api/v1/projection-jobs").header("X-API-Key", FREE_API_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].jobType").value("LINK_CATALOG_REBUILD"))
