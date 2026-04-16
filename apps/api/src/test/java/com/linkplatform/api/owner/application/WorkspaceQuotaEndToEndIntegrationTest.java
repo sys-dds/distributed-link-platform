@@ -171,6 +171,40 @@ class WorkspaceQuotaEndToEndIntegrationTest {
     }
 
     @Test
+    void activeLinkQuotaRejectionDoesNotCreateDurableLinkOrUsageSnapshot() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now();
+        WorkspaceRecord workspace = workspaceStore.createWorkspace("quota-reject-drift", "quota-reject-drift", false, now, 1L);
+        workspaceStore.addMember(workspace.id(), 1L, WorkspaceRole.OWNER, now, 1L);
+        workspacePlanStore.upsertPlan(workspace.id(), WorkspacePlanCode.FREE, now);
+        String quotaKey = bootstrapWorkspaceApiKey(workspace.id(), "quota-reject-drift-key", "[\"links:write\"]");
+        jdbcTemplate.update("UPDATE workspace_plans SET active_links_limit = 0 WHERE workspace_id = ?", workspace.id());
+
+        mockMvc.perform(post("/api/v1/links")
+                        .header("X-API-Key", quotaKey)
+                        .header("X-Workspace-Slug", workspace.slug())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"slug":"quota-reject-drift-link","originalUrl":"https://example.com/quota-reject-drift-link"}
+                                """))
+                .andExpect(status().isConflict());
+
+        assertEquals(0L, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM links WHERE workspace_id = ? AND slug = 'quota-reject-drift-link'",
+                Long.class,
+                workspace.id()));
+        assertEquals(0L, jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM workspace_usage_ledger
+                WHERE workspace_id = ?
+                  AND metric_code = 'ACTIVE_LINKS'
+                  AND source_ref = 'quota-reject-drift-link'
+                """,
+                Long.class,
+                workspace.id()));
+    }
+
+    @Test
     void quotaExceededProblemDetailsStayStructurallyConsistentAcrossHttpFlows() throws Exception {
         OffsetDateTime now = OffsetDateTime.now();
         WorkspaceRecord workspace = workspaceStore.createWorkspace("quota-http", "quota-http", false, now, 1L);

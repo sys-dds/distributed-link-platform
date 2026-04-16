@@ -19,6 +19,11 @@ public class JdbcWorkspaceUsageStore implements WorkspaceUsageStore {
     }
 
     @Override
+    public void lockWorkspaceForQuota(long workspaceId) {
+        jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE id = ? FOR UPDATE", Long.class, workspaceId);
+    }
+
+    @Override
     public WorkspaceUsageLedgerEntry recordSnapshot(
             long workspaceId,
             WorkspaceUsageMetric metric,

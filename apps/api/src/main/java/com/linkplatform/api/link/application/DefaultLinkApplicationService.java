@@ -172,15 +172,33 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
         List<String> normalizedTags = normalizeTags(command.tags());
         String hostname = extractHostname(link.originalUrl().value());
         String requestHash = fingerprintCreate(command.slug(), command.originalUrl(), command.expiresAt(), normalizedTitle, normalizedTags);
+        lockIdempotencyKeyIfPresent(context, idempotencyKey);
         LinkMutationResult replayed = findReplayIfPresent(context, idempotencyKey, CREATE_OPERATION, requestHash);
         if (replayed != null) {
             return replayed;
         }
 
         ownerStore.lockById(context.ownerId());
+        replayed = findReplayIfPresent(context, idempotencyKey, CREATE_OPERATION, requestHash);
+        if (replayed != null) {
+            return replayed;
+        }
         enforceCreateQuota(context, now);
 
         if (!linkStore.save(link, command.expiresAt(), normalizedTitle, normalizedTags, hostname, 1L, context.workspaceId())) {
+            replayed = findReplayIfPresent(context, idempotencyKey, CREATE_OPERATION, requestHash);
+            if (replayed != null) {
+                return replayed;
+            }
+            LinkDetails existingDetails = linkStore.findStoredDetailsBySlug(link.slug().value(), context.workspaceId()).orElse(null);
+            if (existingDetails != null && matchesCreateRequest(existingDetails, link, command.expiresAt(), normalizedTitle, normalizedTags)) {
+                LinkMutationResult result = LinkMutationResult.fromDetails(existingDetails);
+                saveIdempotentResult(context, idempotencyKey, CREATE_OPERATION, requestHash, result, now);
+                return result;
+            }
+            if (existingDetails == null) {
+                enforceCreateQuota(context, now);
+            }
             throw new DuplicateLinkSlugException(link.slug().value());
         }
         if (targetRiskAssessment.review()) {
@@ -1254,12 +1272,16 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
     }
 
     private void enforceCreateQuota(WorkspaceAccessContext context, OffsetDateTime occurredAt) {
-        long currentUsage = linkStore.countActiveLinksByOwner(context.workspaceId());
         try {
             if (workspaceEntitlementService != null) {
+                workspaceEntitlementService.lockWorkspaceForQuota(context.workspaceId());
+                long currentUsage = linkStore.countActiveLinksByOwner(context.workspaceId());
                 workspaceEntitlementService.enforceActiveLinksQuota(context.workspaceId(), currentUsage);
-            } else if (currentUsage >= context.plan().activeLinkLimit()) {
-                throw WorkspaceQuotaExceededException.activeLinks(currentUsage, context.plan().activeLinkLimit());
+            } else {
+                long currentUsage = linkStore.countActiveLinksByOwner(context.workspaceId());
+                if (currentUsage >= context.plan().activeLinkLimit()) {
+                    throw WorkspaceQuotaExceededException.activeLinks(currentUsage, context.plan().activeLinkLimit());
+                }
             }
         } catch (WorkspaceQuotaExceededException exception) {
             securityEventStore.record(
@@ -1274,6 +1296,26 @@ public class DefaultLinkApplicationService implements LinkApplicationService {
                     occurredAt);
             throw exception;
         }
+    }
+
+    private boolean matchesCreateRequest(
+            LinkDetails storedDetails,
+            Link link,
+            OffsetDateTime expiresAt,
+            String title,
+            List<String> tags) {
+        return storedDetails.slug().equals(link.slug().value())
+                && storedDetails.originalUrl().equals(link.originalUrl().value())
+                && java.util.Objects.equals(storedDetails.expiresAt(), expiresAt)
+                && java.util.Objects.equals(storedDetails.title(), title)
+                && storedDetails.tags().equals(tags);
+    }
+
+    private void lockIdempotencyKeyIfPresent(WorkspaceAccessContext context, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return;
+        }
+        linkMutationIdempotencyStore.lockKey(context.ownerId(), workspaceScopedIdempotencyKey(context, idempotencyKey));
     }
 
     private void recordActiveLinksSnapshot(long workspaceId, String slug, OffsetDateTime occurredAt, String source) {

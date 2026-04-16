@@ -5,6 +5,8 @@ import java.util.List;
 
 public interface WorkspaceUsageStore {
 
+    void lockWorkspaceForQuota(long workspaceId);
+
     WorkspaceUsageLedgerEntry recordSnapshot(
             long workspaceId,
             WorkspaceUsageMetric metric,

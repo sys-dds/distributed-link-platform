@@ -71,7 +71,13 @@ public class WorkspaceEntitlementService {
     }
 
     @Transactional
+    public void lockWorkspaceForQuota(long workspaceId) {
+        workspaceUsageStore.lockWorkspaceForQuota(workspaceId);
+    }
+
+    @Transactional
     public void enforceMembersQuota(long workspaceId) {
+        workspaceUsageStore.lockWorkspaceForQuota(workspaceId);
         WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         long current = currentMembersCount(workspaceId);
         if (current >= plan.membersLimit()) {
@@ -81,6 +87,7 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void enforceApiKeysQuota(long workspaceId, OffsetDateTime now) {
+        workspaceUsageStore.lockWorkspaceForQuota(workspaceId);
         WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         long current = currentActiveApiKeysCount(workspaceId, now);
         if (current >= plan.apiKeysLimit()) {
@@ -90,6 +97,7 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void enforceActiveLinksQuota(long workspaceId, long currentActiveLinks) {
+        workspaceUsageStore.lockWorkspaceForQuota(workspaceId);
         WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         if (currentActiveLinks >= plan.activeLinksLimit()) {
             throw WorkspaceQuotaExceededException.activeLinks(currentActiveLinks, plan.activeLinksLimit());
@@ -98,6 +106,7 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void enforceWebhooksQuota(long workspaceId, long currentWebhooks) {
+        workspaceUsageStore.lockWorkspaceForQuota(workspaceId);
         WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         if (currentWebhooks >= plan.webhooksLimit()) {
             throw WorkspaceQuotaExceededException.webhooks(currentWebhooks, plan.webhooksLimit());
@@ -111,6 +120,7 @@ public class WorkspaceEntitlementService {
 
     @Transactional
     public void enforceMonthlyWebhookDeliveryQuota(long workspaceId, long additionalAttempts) {
+        workspaceUsageStore.lockWorkspaceForQuota(workspaceId);
         WorkspacePlanRecord plan = effectiveGrowthPlan(workspaceId);
         OffsetDateTime windowStart = currentMonthWindowStart();
         OffsetDateTime windowEnd = nextMonthWindowStart(windowStart);
