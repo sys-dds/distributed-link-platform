@@ -1,3 +1,30 @@
+# Important Commands
+
+```powershell
+# Start local platform infrastructure
+docker compose -f infra/docker-compose/docker-compose.platform.yml up -d --build
+
+# Stop local platform infrastructure
+docker compose -f infra/docker-compose/docker-compose.platform.yml down -v
+
+# Compile backend
+cd apps/api
+.\mvnw.cmd -DskipTests compile
+
+# Run backend tests
+cd apps/api
+.\mvnw.cmd test
+
+# Run a targeted backend test class
+cd apps/api
+.\mvnw.cmd "-Dtest=ProjectionJobsControllerIntegrationTest" test
+
+# Validate Docker Compose config
+docker compose -f infra/docker-compose/docker-compose.platform.yml config
+```
+
+---
+
 # Distributed Link Platform
 
 > From URL shortener to distributed link infrastructure.
