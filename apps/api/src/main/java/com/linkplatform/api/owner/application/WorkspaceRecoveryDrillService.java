@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -98,22 +100,9 @@ public class WorkspaceRecoveryDrillService {
     @Transactional
     public void processQueuedDrill(WorkspaceRecoveryDrillRecord record) {
         try {
-            WorkspaceAccessContext context = new WorkspaceAccessContext(
-                    new AuthenticatedOwner(record.requestedByOwnerId(), "system", "System", OwnerPlan.FREE),
-                    record.workspaceId(),
-                    null,
-                    null,
-                    false,
-                    WorkspaceRole.OWNER,
-                    java.util.Set.of(ApiKeyScope.EXPORTS_READ, ApiKeyScope.EXPORTS_WRITE),
-                    null);
+            WorkspaceAccessContext context = recoveryDrillContext(record);
             JsonNode payload = workspaceExportService.resolveRecoveryDrillPayload(context, record.sourceExportId());
-            JsonNode summary = switch (record.targetMode()) {
-                case "SHADOW_VALIDATE" -> shadowValidate(payload);
-                case "EMPTY_WORKSPACE_RESTORE" -> emptyWorkspaceRestore(record.workspaceId(), payload);
-                case "CONFLICT_ANALYSIS" -> conflictAnalysis(record.workspaceId(), payload);
-                default -> throw new IllegalArgumentException("Unsupported recovery drill mode: " + record.targetMode());
-            };
+            JsonNode summary = drillSummary(record, payload);
             OffsetDateTime now = OffsetDateTime.now(clock);
             recoveryDrillStore.markCompleted(record.id(), summary, now);
             securityEventStore.record(
@@ -140,6 +129,27 @@ public class WorkspaceRecoveryDrillService {
                     "Workspace recovery drill failed",
                     now);
         }
+    }
+
+    private WorkspaceAccessContext recoveryDrillContext(WorkspaceRecoveryDrillRecord record) {
+        return new WorkspaceAccessContext(
+                new AuthenticatedOwner(record.requestedByOwnerId(), "system", "System", OwnerPlan.FREE),
+                record.workspaceId(),
+                null,
+                null,
+                false,
+                WorkspaceRole.OWNER,
+                Set.of(ApiKeyScope.EXPORTS_READ, ApiKeyScope.EXPORTS_WRITE),
+                null);
+    }
+
+    private JsonNode drillSummary(WorkspaceRecoveryDrillRecord record, JsonNode payload) {
+        return switch (record.targetMode()) {
+            case "SHADOW_VALIDATE" -> shadowValidate(payload);
+            case "EMPTY_WORKSPACE_RESTORE" -> emptyWorkspaceRestore(record.workspaceId(), payload);
+            case "CONFLICT_ANALYSIS" -> conflictAnalysis(record.workspaceId(), payload);
+            default -> throw new IllegalArgumentException("Unsupported recovery drill mode: " + record.targetMode());
+        };
     }
 
     private JsonNode shadowValidate(JsonNode payload) {
@@ -228,7 +238,7 @@ public class WorkspaceRecoveryDrillService {
         if (targetMode == null || targetMode.isBlank()) {
             throw new IllegalArgumentException("targetMode is required");
         }
-        String normalized = targetMode.trim().toUpperCase(java.util.Locale.ROOT);
+        String normalized = targetMode.trim().toUpperCase(Locale.ROOT);
         return switch (normalized) {
             case "SHADOW_VALIDATE", "EMPTY_WORKSPACE_RESTORE", "CONFLICT_ANALYSIS" -> normalized;
             default -> throw new IllegalArgumentException("Unsupported recovery drill mode: " + targetMode);

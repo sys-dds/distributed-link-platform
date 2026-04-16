@@ -5,6 +5,7 @@ import java.util.List;
 
 public interface GovernanceRollupStore {
 
+    // Current governance endpoints are live-SQL-backed; governance_daily_rollups is reserved for a future rebuild path.
     GovernanceSummaryRecord summary(OffsetDateTime generatedAt);
 
     List<WebhookRiskRecord> webhookRisk(int limit);

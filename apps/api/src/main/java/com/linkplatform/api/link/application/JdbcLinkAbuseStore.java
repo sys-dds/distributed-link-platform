@@ -236,7 +236,6 @@ public class JdbcLinkAbuseStore implements LinkAbuseStore {
                 FROM links
                 WHERE workspace_id = ?
                   AND abuse_status = 'QUARANTINED'
-                  AND deleted_at IS NULL
                 """,
                 Long.class,
                 workspaceId);

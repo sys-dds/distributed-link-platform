@@ -76,7 +76,7 @@ class WebhookPlatformMaturityIntegrationTest {
     @Test
     void verifyTestFireHealthAndEventVersionWorkThroughRealPlatformPaths() throws Exception {
         String apiKey = bootstrapPersonalWorkspaceApiKey("webhook-platform-key");
-        String callbackUrl = "http://" + WEBHOOK_SINK.getHost() + ":" + WEBHOOK_SINK.getMappedPort(8080) + "/webhook";
+        String callbackUrl = webhookSinkUrl();
 
         String created = mockMvc.perform(post("/api/v1/workspaces/current/webhooks")
                         .header("X-API-Key", apiKey)
@@ -116,6 +116,8 @@ class WebhookPlatformMaturityIntegrationTest {
                         .header("X-API-Key", apiKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.consecutiveFailures").value(0))
                 .andExpect(jsonPath("$.eventVersion").value(1))
                 .andExpect(jsonPath("$.lastTestDeliveryId").value(deliveryId))
                 .andExpect(jsonPath("$.lastTestFiredAt").isNotEmpty());
@@ -129,8 +131,14 @@ class WebhookPlatformMaturityIntegrationTest {
         assertThat(sinkLogs.toLowerCase()).contains("x-linkplatform-event-version");
     }
 
+    private String webhookSinkUrl() {
+        return "http://" + WEBHOOK_SINK.getHost() + ":" + WEBHOOK_SINK.getMappedPort(8080) + "/webhook";
+    }
+
     private String bootstrapPersonalWorkspaceApiKey(String plaintextKey) {
-        Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = 'free-owner'", Long.class);
+        Long workspaceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM workspaces WHERE slug = 'free-owner'",
+                Long.class);
         jdbcTemplate.update(
                 """
                 INSERT INTO owner_api_keys (owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by)

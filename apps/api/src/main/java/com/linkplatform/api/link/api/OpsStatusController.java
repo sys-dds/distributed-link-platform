@@ -133,6 +133,7 @@ public class OpsStatusController {
         map.put("dedicatedQueryConfigured", snapshot.dedicatedQueryConfigured());
         map.put("replicaEnabled", snapshot.replicaEnabled());
         map.put("lagSeconds", snapshot.lagSeconds());
+        map.put("heartbeatAgeSeconds", snapshot.heartbeatAgeSeconds());
         map.put("fallbackActive", snapshot.fallbackActive());
         map.put("lastFallbackAt", snapshot.lastFallbackAt());
         map.put("lastFallbackReason", snapshot.lastFallbackReason());

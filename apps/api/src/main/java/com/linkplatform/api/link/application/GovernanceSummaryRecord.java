@@ -11,5 +11,6 @@ public record GovernanceSummaryRecord(
         long totalQuarantinedLinks,
         long totalFailingWebhookSubscriptions,
         long totalOverQuotaWorkspaces,
+        // Timestamp of the live SQL snapshot, not a governance_daily_rollups bucket timestamp.
         OffsetDateTime generatedAt) {
 }

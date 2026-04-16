@@ -13,13 +13,14 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
     private final String publicBaseUrl;
     private final boolean queryReplicaEnabled;
     private final long queryReplicaMaxLagSeconds;
+    private final long queryReplicaRefreshDelayMs;
 
     public LinkPlatformStartupValidator(
             LinkPlatformQueryProperties queryProperties,
             LinkPlatformRuntimeProperties runtimeProperties,
             boolean cacheEnabled,
             String publicBaseUrl) {
-        this(queryProperties, runtimeProperties, cacheEnabled, publicBaseUrl, false, 30L);
+        this(queryProperties, runtimeProperties, cacheEnabled, publicBaseUrl, false, 30L, 10_000L);
     }
 
     @Autowired
@@ -29,13 +30,15 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
             @org.springframework.beans.factory.annotation.Value("${link-platform.cache.enabled:true}") boolean cacheEnabled,
             @org.springframework.beans.factory.annotation.Value("${link-platform.public-base-url}") String publicBaseUrl,
             @org.springframework.beans.factory.annotation.Value("${link-platform.query-replica.enabled:false}") boolean queryReplicaEnabled,
-            @org.springframework.beans.factory.annotation.Value("${link-platform.query-replica.max-lag-seconds:30}") long queryReplicaMaxLagSeconds) {
+            @org.springframework.beans.factory.annotation.Value("${link-platform.query-replica.max-lag-seconds:30}") long queryReplicaMaxLagSeconds,
+            @org.springframework.beans.factory.annotation.Value("${link-platform.query-replica.refresh-delay-ms:10000}") long queryReplicaRefreshDelayMs) {
         this.queryProperties = queryProperties;
         this.runtimeProperties = runtimeProperties;
         this.cacheEnabled = cacheEnabled;
         this.publicBaseUrl = publicBaseUrl;
         this.queryReplicaEnabled = queryReplicaEnabled;
         this.queryReplicaMaxLagSeconds = queryReplicaMaxLagSeconds;
+        this.queryReplicaRefreshDelayMs = queryReplicaRefreshDelayMs;
     }
 
     @Override
@@ -104,6 +107,9 @@ public class LinkPlatformStartupValidator implements SmartInitializingSingleton 
         }
         if (queryReplicaMaxLagSeconds <= 0) {
             throw new IllegalStateException("link-platform.query-replica.max-lag-seconds must be greater than 0");
+        }
+        if (queryReplicaRefreshDelayMs <= 0) {
+            throw new IllegalStateException("link-platform.query-replica.refresh-delay-ms must be greater than 0");
         }
         if (queryReplicaEnabled && !queryProperties.isDedicatedConfigured()) {
             throw new IllegalStateException(

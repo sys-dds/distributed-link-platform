@@ -20,6 +20,7 @@ import org.springframework.jdbc.datasource.AbstractDataSource;
 public class QueryRoutingDataSource extends AbstractDataSource {
 
     private static final org.slf4j.Logger log = LoggerFactory.getLogger(QueryRoutingDataSource.class);
+    private static final String PRIMARY_QUERY_REPLICA = "primary-query-replica";
 
     private final DataSource primaryDataSource;
     private final DataSource dedicatedQueryDataSource;
@@ -34,6 +35,7 @@ public class QueryRoutingDataSource extends AbstractDataSource {
     private volatile OffsetDateTime lastFallbackAt;
     private volatile String lastFallbackReason;
     private volatile Long lastLagSeconds;
+    private volatile Long lastHeartbeatAgeSeconds;
     private volatile OffsetDateTime lastFallbackAuditAt;
     private volatile String lastFallbackAuditReason;
 
@@ -95,7 +97,21 @@ public class QueryRoutingDataSource extends AbstractDataSource {
     }
 
     public Long getLastLagSeconds() {
-        return lastLagSeconds;
+        if (lastLagSeconds != null) {
+            return lastLagSeconds;
+        }
+        return queryReplicaRuntimeStore.findByName(PRIMARY_QUERY_REPLICA)
+                .map(QueryReplicaRuntimeState::lagSeconds)
+                .orElse(null);
+    }
+
+    public Long getLastHeartbeatAgeSeconds() {
+        if (lastHeartbeatAgeSeconds != null) {
+            return lastHeartbeatAgeSeconds;
+        }
+        return queryReplicaRuntimeStore.findByName(PRIMARY_QUERY_REPLICA)
+                .flatMap(queryReplicaLagPolicy::heartbeatAgeSeconds)
+                .orElse(null);
     }
 
     public boolean isQueryReplicaEnabled() {
@@ -103,13 +119,17 @@ public class QueryRoutingDataSource extends AbstractDataSource {
     }
 
     public boolean isDedicatedAvailable() {
-        if (dedicatedQueryDataSource == null) {
-            return false;
+        return probeDedicatedQueryDataSource().successful();
+    }
+
+    public QueryReplicaProbeResult probeDedicatedQueryDataSource() {
+        if (!dedicatedConfigured || dedicatedQueryDataSource == null) {
+            return QueryReplicaProbeResult.notConfigured();
         }
         try (Connection ignored = dedicatedQueryDataSource.getConnection()) {
-            return true;
+            return QueryReplicaProbeResult.success();
         } catch (SQLException exception) {
-            return false;
+            return QueryReplicaProbeResult.failure(compactReason(exception));
         }
     }
 
@@ -167,6 +187,7 @@ public class QueryRoutingDataSource extends AbstractDataSource {
         }
         QueryReplicaLagPolicy.ReplicaDecision decision = replicaDecision();
         lastLagSeconds = decision.lagSeconds();
+        lastHeartbeatAgeSeconds = decision.heartbeatAgeSeconds();
         if (!decision.useReplica()) {
             recordFallback(decision.fallbackReason(), SecurityEventType.QUERY_REPLICA_STALE);
             return primaryConnection(username, password);
@@ -180,7 +201,7 @@ public class QueryRoutingDataSource extends AbstractDataSource {
     }
 
     private QueryReplicaLagPolicy.ReplicaDecision replicaDecision() {
-        return queryReplicaLagPolicy.evaluate(queryReplicaRuntimeStore.findByName("primary-query-replica"));
+        return queryReplicaLagPolicy.evaluate(queryReplicaRuntimeStore.findByName(PRIMARY_QUERY_REPLICA));
     }
 
     private void recordFallback(String reason, SecurityEventType eventType) {
@@ -190,7 +211,7 @@ public class QueryRoutingDataSource extends AbstractDataSource {
         log.warn("link_query_replica_fallback reason={}", lastFallbackReason);
         try {
             queryReplicaRuntimeStore.recordFallback(
-                    "primary-query-replica",
+                    PRIMARY_QUERY_REPLICA,
                     lastFallbackReason,
                     null,
                     null,

@@ -34,10 +34,20 @@ class WorkspaceEnterprisePolicyIntegrationTest {
     @Test
     void expiryPolicyDualControlAndServiceAccountApprovalRestrictionWork() throws Exception {
         createWorkspace("enterprise-policy");
-        Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = 'enterprise-policy'", Long.class);
+        Long workspaceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM workspaces WHERE slug = 'enterprise-policy'",
+                Long.class);
         addHumanMember(workspaceId, 2);
-        String initiatorKey = bootstrapWorkspaceApiKey(workspaceId, 1, "enterprise-policy-initiator", "[\"members:read\",\"members:write\",\"api_keys:write\",\"ops:write\"]");
-        String approverKey = bootstrapWorkspaceApiKey(workspaceId, 2, "enterprise-policy-approver", "[\"members:read\",\"members:write\"]");
+        String initiatorKey = bootstrapWorkspaceApiKey(
+                workspaceId,
+                1,
+                "enterprise-policy-initiator",
+                "[\"members:read\",\"members:write\",\"api_keys:write\",\"ops:write\"]");
+        String approverKey = bootstrapWorkspaceApiKey(
+                workspaceId,
+                2,
+                "enterprise-policy-approver",
+                "[\"members:read\",\"members:write\"]");
         String serviceKey = bootstrapServiceAccountKey(workspaceId, "enterprise-policy-service", "[\"members:write\"]");
 
         mockMvc.perform(patch("/api/v1/workspaces/current/enterprise-policy")
@@ -97,6 +107,59 @@ class WorkspaceEnterprisePolicyIntegrationTest {
                         .content("{\"planCode\":\"PRO\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.planCode").value("PRO"));
+
+        Integer consumedApprovals = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM privileged_action_approvals
+                WHERE workspace_id = ?
+                  AND action_type = 'WORKSPACE_PLAN_UPDATE'
+                  AND status = 'CONSUMED'
+                """,
+                Integer.class,
+                workspaceId);
+        org.assertj.core.api.Assertions.assertThat(consumedApprovals).isEqualTo(1);
+
+        mockMvc.perform(patch("/api/v1/ops/workspaces/enterprise-policy/plan")
+                        .header("X-API-Key", initiatorKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"planCode\":\"FREE\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/workspaces/current/privileged-actions/workspace_plan_update/approve")
+                        .header("X-API-Key", approverKey)
+                        .header("X-Workspace-Slug", "enterprise-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"initiatorOwnerId\":1}"))
+                .andExpect(status().isOk());
+        jdbcTemplate.update(
+                """
+                UPDATE privileged_action_approvals
+                SET expires_at = ?
+                WHERE workspace_id = ?
+                  AND action_type = 'WORKSPACE_PLAN_UPDATE'
+                  AND status = 'APPROVED'
+                """,
+                OffsetDateTime.now().minusMinutes(1),
+                workspaceId);
+
+        mockMvc.perform(patch("/api/v1/ops/workspaces/enterprise-policy/plan")
+                        .header("X-API-Key", initiatorKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"planCode\":\"FREE\"}"))
+                .andExpect(status().isForbidden());
+
+        Integer expiredApprovals = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM privileged_action_approvals
+                WHERE workspace_id = ?
+                  AND action_type = 'WORKSPACE_PLAN_UPDATE'
+                  AND status = 'EXPIRED'
+                """,
+                Integer.class,
+                workspaceId);
+        org.assertj.core.api.Assertions.assertThat(expiredApprovals).isEqualTo(1);
     }
 
     private void createWorkspace(String slug) throws Exception {

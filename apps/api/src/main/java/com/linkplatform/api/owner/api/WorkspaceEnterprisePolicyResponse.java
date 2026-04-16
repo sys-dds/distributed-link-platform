@@ -14,10 +14,12 @@ public record WorkspaceEnterprisePolicyResponse(
         long updatedByOwnerId) {
 
     public static WorkspaceEnterprisePolicyResponse from(WorkspaceEnterprisePolicyRecord record) {
+        boolean requireApiKeyExpiry = record.requireApiKeyExpiry();
+        boolean requireServiceAccountKeyExpiry = record.requireServiceAccountKeyExpiry();
         return new WorkspaceEnterprisePolicyResponse(
-                record.requireApiKeyExpiry(),
+                requireApiKeyExpiry,
                 record.maxApiKeyTtlDays(),
-                record.requireServiceAccountKeyExpiry(),
+                requireServiceAccountKeyExpiry,
                 record.maxServiceAccountKeyTtlDays(),
                 record.requireDualControlForOps(),
                 record.requireDualControlForPlanChanges(),

@@ -19,17 +19,21 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
     protected void doHealthCheck(Health.Builder builder) {
         boolean required = runtimeProperties.getMode() == RuntimeMode.ALL
                 || runtimeProperties.getMode() == RuntimeMode.CONTROL_PLANE_API;
+        Long lagSeconds = queryRoutingDataSource.getLastLagSeconds();
+        Long heartbeatAgeSeconds = queryRoutingDataSource.getLastHeartbeatAgeSeconds();
         builder.up()
                 .withDetail("required", required)
                 .withDetail("replicaEnabled", queryRoutingDataSource.isQueryReplicaEnabled())
-                .withDetail("lagSeconds", queryRoutingDataSource.getLastLagSeconds())
                 .withDetail("dedicatedConfigured", queryRoutingDataSource.isDedicatedConfigured())
                 .withDetail("usingPrimaryByDefault", queryRoutingDataSource.isUsingPrimaryByDefault())
                 .withDetail("fallbackPolicy", "primary-on-dedicated-query-failure")
                 .withDetail("route", queryRoutingDataSource.currentRoute())
                 .withDetail("fallbackActive", queryRoutingDataSource.isFallbackActive())
-                .withDetail("lastFallbackAt", queryRoutingDataSource.getLastFallbackAt())
                 .withDetail("redirectRateLimitEnabled", runtimeProperties.getRedirect().getRateLimit().isEnabled());
+        withNullableDetail(builder, "lagSeconds", lagSeconds);
+        withNullableDetail(builder, "heartbeatAgeSeconds", heartbeatAgeSeconds);
+        withNullableDetail(builder, "lastFallbackAt", queryRoutingDataSource.getLastFallbackAt());
+        withNullableDetail(builder, "lastFallbackReason", queryRoutingDataSource.getLastFallbackReason());
         if (!required) {
             builder.withDetail("reason", "query reads are not served in this runtime mode");
             return;
@@ -39,9 +43,11 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
         }
         boolean dedicatedAvailable = queryRoutingDataSource.isDedicatedAvailable();
         builder.withDetail("dedicatedAvailable", dedicatedAvailable);
-        if (queryRoutingDataSource.getLastFallbackReason() != null) {
-            builder.withDetail("lastFallbackReason", queryRoutingDataSource.getLastFallbackReason());
-            builder.withDetail("lastFallbackAt", queryRoutingDataSource.getLastFallbackAt());
+    }
+
+    private void withNullableDetail(Health.Builder builder, String name, Object value) {
+        if (value != null) {
+            builder.withDetail(name, value);
         }
     }
 
@@ -50,6 +56,7 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
                 queryRoutingDataSource.isDedicatedConfigured(),
                 queryRoutingDataSource.isQueryReplicaEnabled(),
                 queryRoutingDataSource.getLastLagSeconds(),
+                queryRoutingDataSource.getLastHeartbeatAgeSeconds(),
                 queryRoutingDataSource.isFallbackActive(),
                 queryRoutingDataSource.getLastFallbackAt(),
                 queryRoutingDataSource.getLastFallbackReason());
@@ -59,6 +66,7 @@ public class QueryDataSourceHealthIndicator extends AbstractHealthIndicator {
             boolean dedicatedQueryConfigured,
             boolean replicaEnabled,
             Long lagSeconds,
+            Long heartbeatAgeSeconds,
             boolean fallbackActive,
             java.time.OffsetDateTime lastFallbackAt,
             String lastFallbackReason) {

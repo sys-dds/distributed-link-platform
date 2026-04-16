@@ -90,6 +90,39 @@ class WorkspaceRecoveryDrillIntegrationTest {
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.summary.mutatedData").value(false))
                 .andExpect(jsonPath("$.summary.estimatedRestoreCounts.links").value(1));
+
+        long conflictDrillId = createRecoveryDrill(apiKey, exportId, "CONFLICT_ANALYSIS");
+        workspaceRecoveryDrillRunner.runQueuedRecoveryDrills();
+        mockMvc.perform(get("/api/v1/workspaces/current/recovery-drills/{drillId}", conflictDrillId)
+                        .header("X-API-Key", apiKey)
+                        .header("X-Workspace-Slug", "recovery-drill"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.summary.counts.update").value(1));
+
+        long emptyRestoreDrillId = createRecoveryDrill(apiKey, exportId, "EMPTY_WORKSPACE_RESTORE");
+        workspaceRecoveryDrillRunner.runQueuedRecoveryDrills();
+        mockMvc.perform(get("/api/v1/workspaces/current/recovery-drills/{drillId}", emptyRestoreDrillId)
+                        .header("X-API-Key", apiKey)
+                        .header("X-Workspace-Slug", "recovery-drill"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"));
+    }
+
+    private long createRecoveryDrill(String apiKey, long exportId, String targetMode) throws Exception {
+        String created = mockMvc.perform(post("/api/v1/workspaces/current/recovery-drills")
+                        .header("X-API-Key", apiKey)
+                        .header("X-Workspace-Slug", "recovery-drill")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sourceExportId":%d,"targetMode":"%s","dryRun":true}
+                                """.formatted(exportId, targetMode)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("QUEUED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(created).path("id").asLong();
     }
 
     private void createWorkspace(String slug) throws Exception {
@@ -101,7 +134,10 @@ class WorkspaceRecoveryDrillIntegrationTest {
     }
 
     private String bootstrapWorkspaceApiKey(String workspaceSlug, String plaintextKey) {
-        Long workspaceId = jdbcTemplate.queryForObject("SELECT id FROM workspaces WHERE slug = ?", Long.class, workspaceSlug);
+        Long workspaceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM workspaces WHERE slug = ?",
+                Long.class,
+                workspaceSlug);
         jdbcTemplate.update(
                 """
                 INSERT INTO owner_api_keys (owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by)

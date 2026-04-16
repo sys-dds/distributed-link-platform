@@ -88,6 +88,27 @@ class ServiceAccountLifecycleIntegrationTest {
     }
 
     @Test
+    void serviceAccountCannotApprovePrivilegedActions() throws Exception {
+        createWorkspace("team-service-approval");
+        Long workspaceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM workspaces WHERE slug = 'team-service-approval'",
+                Long.class);
+        String serviceKey = bootstrapServiceAccountKey(
+                workspaceId,
+                "team-service-approval-bot",
+                "[\"members:write\"]");
+
+        mockMvc.perform(post("/api/v1/workspaces/current/privileged-actions/workspace_plan_update/approve")
+                        .header("X-API-Key", serviceKey)
+                        .header("X-Workspace-Slug", "team-service-approval")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"initiatorOwnerId":1}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void suspendedMemberLosesAccessAndSuspendedWorkspaceBlocksMutations() throws Exception {
         createWorkspace("team-suspend");
         ensureOwnerWithPersonalWorkspace(30L, "member30@example.com", "member30-key");
@@ -219,6 +240,41 @@ class ServiceAccountLifecycleIntegrationTest {
         jdbcTemplate.update(
                 """
                 INSERT INTO owner_api_keys (owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, 'test-bootstrap')
+                """,
+                ownerId,
+                workspaceId,
+                plaintextKey,
+                sha256(plaintextKey),
+                plaintextKey,
+                plaintextKey,
+                scopesJson,
+                OffsetDateTime.now());
+        return plaintextKey;
+    }
+
+    private String bootstrapServiceAccountKey(long workspaceId, String plaintextKey, String scopesJson) {
+        jdbcTemplate.update(
+                "INSERT INTO owners (id, owner_key, display_name, plan, created_at) VALUES (91, ?, 'Service Bot', 'FREE', ?)",
+                "svc-" + workspaceId + "-approval-bot",
+                OffsetDateTime.now());
+        jdbcTemplate.update(
+                """
+                INSERT INTO workspace_members (
+                    workspace_id, owner_id, role, joined_at, added_by_owner_id, member_type
+                ) VALUES (?, 91, 'ADMIN', ?, 1, 'SERVICE_ACCOUNT')
+                """,
+                workspaceId,
+                OffsetDateTime.now());
+        return bootstrapWorkspaceApiKeyById(workspaceId, 91, plaintextKey, scopesJson);
+    }
+
+    private String bootstrapWorkspaceApiKeyById(long workspaceId, long ownerId, String plaintextKey, String scopesJson) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO owner_api_keys (
+                    owner_id, workspace_id, key_prefix, key_hash, key_label, label, scopes_json, created_at, created_by
+                )
                 VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, 'test-bootstrap')
                 """,
                 ownerId,

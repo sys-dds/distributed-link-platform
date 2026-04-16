@@ -106,7 +106,9 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        long revokedId = objectMapper.readTree(revoked).path("invitation").path("id").asLong();
+        JsonNode revokedJson = objectMapper.readTree(revoked);
+        long revokedId = revokedJson.path("invitation").path("id").asLong();
+        String revokedToken = revokedJson.path("invitationToken").asText();
 
         mockMvc.perform(delete(
                         "/api/v1/workspaces/{workspaceSlug}/invitations/{invitationId}",
@@ -114,6 +116,14 @@ class WorkspaceInvitationLifecycleIntegrationTest {
                         revokedId)
                         .header("X-API-Key", workspaceKey))
                 .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/v1/workspaces/{workspaceSlug}/invitations/accept", "team-invite")
+                        .header("X-API-Key", "revokee-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"token":"%s"}
+                                """.formatted(revokedToken)))
+                .andExpect(status().isBadRequest());
 
         Integer acceptedMembers = jdbcTemplate.queryForObject(
                 """

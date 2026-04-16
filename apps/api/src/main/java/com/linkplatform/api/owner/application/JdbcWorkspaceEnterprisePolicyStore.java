@@ -85,7 +85,16 @@ public class JdbcWorkspaceEnterprisePolicyStore implements WorkspaceEnterprisePo
     }
 
     private WorkspaceEnterprisePolicyRecord createDefault(long workspaceId, long ownerId, OffsetDateTime now) {
-        return update(workspaceId, false, null, false, null, false, false, now, ownerId);
+        return update(
+                workspaceId,
+                false,
+                null,
+                false,
+                null,
+                false,
+                false,
+                now,
+                ownerId);
     }
 
     private WorkspaceEnterprisePolicyRecord mapRecord(ResultSet resultSet) throws SQLException {

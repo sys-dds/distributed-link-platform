@@ -7,6 +7,12 @@ public interface QueryReplicaRuntimeStore {
 
     Optional<QueryReplicaRuntimeState> findByName(String replicaName);
 
+    void recordProbe(
+            String replicaName,
+            boolean enabled,
+            QueryReplicaProbeResult probeResult,
+            OffsetDateTime refreshedAt);
+
     void recordFallback(
             String replicaName,
             String fallbackReason,

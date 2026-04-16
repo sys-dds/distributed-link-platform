@@ -196,8 +196,10 @@ public class JdbcSecurityEventStore implements SecurityEventStore {
             case WORKSPACE_RECOVERY_DRILL_COMPLETED -> "Workspace recovery drill completed";
             case WORKSPACE_RECOVERY_DRILL_FAILED -> "Workspace recovery drill failed";
             case WORKSPACE_ENTERPRISE_POLICY_UPDATED -> "Workspace enterprise policy updated";
+
             case PRIVILEGED_ACTION_APPROVAL_REQUESTED -> "Privileged action approval requested";
             case PRIVILEGED_ACTION_APPROVED -> "Privileged action approved";
+
             case API_KEY_EXPIRY_POLICY_VIOLATION -> "API key expiry policy violation";
             case WORKSPACE_RETENTION_PURGE_RUN -> "Workspace retention purge run";
             case ANALYTICS_PIPELINE_PAUSED -> "Analytics pipeline paused";

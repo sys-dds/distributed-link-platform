@@ -36,32 +36,8 @@ class GlobalGovernanceControllerIntegrationTest {
         String opsKey = bootstrapWorkspaceApiKey(workspaceId, "governance-ops", "[\"ops:read\"]");
         String nonOpsKey = bootstrapWorkspaceApiKey(workspaceId, "governance-non-ops", "[\"links:read\"]");
 
-        jdbcTemplate.update(
-                """
-                INSERT INTO webhook_subscriptions (
-                    workspace_id, name, callback_url, signing_secret_hash, signing_secret_prefix,
-                    enabled, event_types_json, created_at, updated_at, consecutive_failures, last_failure_at
-                ) VALUES (?, 'risk hook', 'https://example.com/hook', 'hash', 'hash', TRUE, CAST('[\"link.created\"]' AS jsonb), ?, ?, 7, ?)
-                """,
-                workspaceId,
-                OffsetDateTime.now(),
-                OffsetDateTime.now(),
-                OffsetDateTime.parse("2026-04-08T08:00:00Z"));
-        jdbcTemplate.update(
-                """
-                INSERT INTO links (slug, original_url, created_at, hostname, version, owner_id, workspace_id, lifecycle_state, abuse_status)
-                VALUES ('governance-bad', 'https://bad.example/a', ?, 'bad.example', 1, 1, ?, 'ACTIVE', 'QUARANTINED')
-                """,
-                OffsetDateTime.now(),
-                workspaceId);
-        jdbcTemplate.update(
-                """
-                INSERT INTO link_abuse_cases (workspace_id, slug, status, source, signal_count, risk_score, summary, target_host, created_at, updated_at)
-                VALUES (?, 'governance-bad', 'OPEN', 'MANUAL_OPERATOR', 5, 90, 'bad host', 'bad.example', ?, ?)
-                """,
-                workspaceId,
-                OffsetDateTime.now(),
-                OffsetDateTime.now());
+        createFailingWebhook(workspaceId);
+        createOpenAbuseCase(workspaceId);
         jdbcTemplate.update(
                 "UPDATE workspace_plans SET active_links_limit = 0 WHERE workspace_id = ?",
                 otherWorkspaceId);
@@ -83,6 +59,7 @@ class GlobalGovernanceControllerIntegrationTest {
                         .header("X-Workspace-Slug", "governance-a"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalWorkspaces").isNumber())
+                .andExpect(jsonPath("$.generatedAt").isNotEmpty())
                 .andExpect(jsonPath("$.totalFailingWebhookSubscriptions").value(1))
                 .andExpect(jsonPath("$.totalOpenAbuseCases").value(1))
                 .andExpect(jsonPath("$.totalOverQuotaWorkspaces").value(1));
@@ -107,6 +84,40 @@ class GlobalGovernanceControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].workspaceSlug").value("governance-b"))
                 .andExpect(jsonPath("$.items[0].metric").value("ACTIVE_LINKS"));
+    }
+
+    private void createFailingWebhook(long workspaceId) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO webhook_subscriptions (
+                    workspace_id, name, callback_url, signing_secret_hash, signing_secret_prefix,
+                    enabled, event_types_json, created_at, updated_at, consecutive_failures, last_failure_at
+                ) VALUES (?, 'risk hook', 'https://example.com/hook', 'hash', 'hash', TRUE, CAST('[\"link.created\"]' AS jsonb), ?, ?, 7, ?)
+                """,
+                workspaceId,
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                OffsetDateTime.parse("2026-04-08T08:00:00Z"));
+    }
+
+    private void createOpenAbuseCase(long workspaceId) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO links (slug, original_url, created_at, hostname, version, owner_id, workspace_id, lifecycle_state, abuse_status)
+                VALUES ('governance-bad', 'https://bad.example/a', ?, 'bad.example', 1, 1, ?, 'ACTIVE', 'QUARANTINED')
+                """,
+                OffsetDateTime.now(),
+                workspaceId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO link_abuse_cases (
+                    workspace_id, slug, status, source, signal_count, risk_score,
+                    summary, target_host, created_at, updated_at
+                ) VALUES (?, 'governance-bad', 'OPEN', 'MANUAL_OPERATOR', 5, 90, 'bad host', 'bad.example', ?, ?)
+                """,
+                workspaceId,
+                OffsetDateTime.now(),
+                OffsetDateTime.now());
     }
 
     private long createWorkspace(String slug) {
