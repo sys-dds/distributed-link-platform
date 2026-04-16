@@ -97,7 +97,7 @@ class ProjectionJobProgressFieldsIntegrationTest {
                 ProjectionJobType.LINK_CATALOG_REBUILD,
                 requestedAt.plusMinutes(1));
         OffsetDateTime defaultFailedAt = OffsetDateTime.parse("2026-04-06T12:06:00Z");
-        store.markFailed(defaultUnknownCountJob.id(), defaultFailedAt, "runtime crashed");
+        store.markFailed(defaultUnknownCountJob.id(), defaultFailedAt, 0L, "runtime crashed");
 
         ProjectionJob defaultUnknownCount = findJob(defaultUnknownCountJob.id());
         assertThat(defaultUnknownCount.failedItems()).isEqualTo(0L);

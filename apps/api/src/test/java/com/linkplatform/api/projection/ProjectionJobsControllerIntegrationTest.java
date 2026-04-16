@@ -253,8 +253,12 @@ class ProjectionJobsControllerIntegrationTest {
                         OffsetDateTime.class,
                         OffsetDateTime.class));
         assertThrows(
-                UnsupportedOperationException.class,
-                () -> projectionJobStore.markFailed(1L, OffsetDateTime.now(), "failed"));
+                NoSuchMethodException.class,
+                () -> ProjectionJobStore.class.getMethod(
+                        "markFailed",
+                        long.class,
+                        OffsetDateTime.class,
+                        String.class));
     }
 
     private void insertLifecycleHistory(long ownerId, String eventId, String slug, OffsetDateTime occurredAt) {
