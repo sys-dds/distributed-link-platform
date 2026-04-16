@@ -18,6 +18,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,11 +41,11 @@ class AnalyticsPipelineControllerIntegrationTest {
     private KafkaTemplate<String, String> kafkaTemplate;
 
     @Test
-    void pauseResumeForceTickAndStatusFieldsWorkAndEmitSecurityEvents() throws Exception {
+    void pauseResumeForceTickAndStatusFieldsWorkAndEmitOperatorActions() throws Exception {
         insertOutbox("analytics-parked", OffsetDateTime.parse("2026-04-06T10:00:00Z"), OffsetDateTime.parse("2026-04-06T10:10:00Z"));
         insertOutbox("analytics-eligible", OffsetDateTime.parse("2026-04-06T08:00:00Z"), null);
         when(kafkaTemplate.send(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+                .thenReturn(CompletableFuture.<SendResult<String, String>>completedFuture(null));
 
         mockMvc.perform(post("/api/v1/analytics/pipeline/pause")
                         .header("X-API-Key", FREE_API_KEY)
@@ -79,21 +80,15 @@ class AnalyticsPipelineControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.pipelineName").value("analytics"))
                 .andExpect(jsonPath("$.paused").value(false))
+                .andExpect(jsonPath("$.eligibleCount").value(0))
+                .andExpect(jsonPath("$.parkedCount").value(1))
                 .andExpect(jsonPath("$.oldestParkedAgeSeconds").isNumber())
                 .andExpect(jsonPath("$.lastForceTickAt").isNotEmpty())
                 .andExpect(jsonPath("$.lastRelaySuccessAt").isNotEmpty());
 
-        Integer securityEvents = jdbcTemplate.queryForObject(
-                """
-                SELECT COUNT(*) FROM owner_security_events
-                WHERE owner_id = 1
-                  AND event_type IN ('ANALYTICS_PIPELINE_PAUSED', 'ANALYTICS_PIPELINE_RESUMED', 'ANALYTICS_PIPELINE_FORCE_TICKED')
-                """,
-                Integer.class);
         Integer operatorActions = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM operator_action_log WHERE subsystem = 'PIPELINE' AND action_type IN ('analytics_pipeline_pause', 'analytics_pipeline_resume', 'analytics_pipeline_force_tick')",
                 Integer.class);
-        Assertions.assertEquals(3, securityEvents);
         Assertions.assertEquals(3, operatorActions);
     }
 

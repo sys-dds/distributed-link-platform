@@ -123,7 +123,7 @@ class JdbcProjectionJobStoreTest {
                 null,
                 null,
                 null);
-        store.markFailed(created.id(), OffsetDateTime.parse("2026-04-04T10:05:00Z"), "boom");
+        store.markFailed(created.id(), OffsetDateTime.parse("2026-04-04T10:05:00Z"), 0L, "boom");
 
         assertEquals(1L, store.countQueued(WORKSPACE_ID));
 

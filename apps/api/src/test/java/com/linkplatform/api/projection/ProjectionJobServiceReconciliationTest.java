@@ -170,7 +170,6 @@ class ProjectionJobServiceReconciliationTest {
         @Override public void markProgress(long id, OffsetDateTime occurredAt, long processedCount, Long checkpointId) { }
         @Override public void markCompleted(long id, OffsetDateTime completedAt, long processedCount, Long checkpointId) { }
         @Override public void markFailed(long id, OffsetDateTime failedAt, long failedItemsIncrement, String errorSummary) { }
-        @Override public void markFailed(long id, OffsetDateTime failedAt, String errorSummary) { }
         @Override public long countQueued(long workspaceId) { return 0; }
         @Override public long countActive(long workspaceId) { return 0; }
         @Override public long countFailed(long workspaceId) { return 0; }

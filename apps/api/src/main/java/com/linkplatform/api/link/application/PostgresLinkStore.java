@@ -50,9 +50,26 @@ public class PostgresLinkStore implements LinkStore {
         try {
             return jdbcTemplate.update(
                 """
+                    WITH quota AS (
+                        SELECT active_links_limit
+                        FROM workspace_plans
+                        WHERE workspace_id = ?
+                        FOR UPDATE
+                    ),
+                    current_usage AS (
+                        SELECT COUNT(*) AS active_links
+                        FROM links
+                        WHERE workspace_id = ?
+                          AND lifecycle_state = 'ACTIVE'
+                          AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+                    )
                     INSERT INTO links (slug, original_url, expires_at, title, tags_json, hostname, version, owner_id, workspace_id, abuse_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE'
+                    FROM quota, current_usage
+                    WHERE current_usage.active_links < quota.active_links_limit
                     """,
+                    workspaceId,
+                    workspaceId,
                     link.slug().value(),
                     link.originalUrl().value(),
                     expiresAt,

@@ -69,9 +69,9 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
     @Override
     public List<AnalyticsOutboxRecord> claimBatch(String workerId, OffsetDateTime now, OffsetDateTime claimedUntil, int limit) {
         return transactionTemplate.execute(status -> {
-            List<Long> ids = jdbcTemplate.query(
+            List<ClaimCandidate> candidates = jdbcTemplate.query(
                     """
-                    SELECT id
+                    SELECT id, claimed_by, claimed_until
                     FROM analytics_outbox
                     WHERE published_at IS NULL
                       AND parked_at IS NULL
@@ -81,26 +81,39 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                     LIMIT ?
                     FOR UPDATE SKIP LOCKED
                     """,
-                    (resultSet, rowNum) -> resultSet.getLong("id"),
+                    (resultSet, rowNum) -> new ClaimCandidate(
+                            resultSet.getLong("id"),
+                            resultSet.getString("claimed_by"),
+                            resultSet.getObject("claimed_until", OffsetDateTime.class)),
                     now,
                     now,
                     limit);
-            if (ids.isEmpty()) {
+            if (candidates.isEmpty()) {
                 return List.of();
             }
 
+            List<Long> ids = candidates.stream().map(ClaimCandidate::id).toList();
             String placeholders = ids.stream().map(ignored -> "?").collect(Collectors.joining(", "));
 
             List<Object> updateParameters = new ArrayList<>();
             updateParameters.add(workerId);
             updateParameters.add(claimedUntil);
+            for (ClaimCandidate candidate : candidates) {
+                updateParameters.add(candidate.id());
+                updateParameters.add(reclaimSummary(workerId, candidate));
+            }
             updateParameters.addAll(ids);
             jdbcTemplate.update(
                     """
                     UPDATE analytics_outbox
-                    SET claimed_by = ?, claimed_until = ?
+                    SET claimed_by = ?,
+                        claimed_until = ?,
+                        last_error_summary = CASE id
+                            %s
+                            ELSE last_error_summary
+                        END
                     WHERE id IN (%s)
-                    """.formatted(placeholders),
+                    """.formatted(caseClauses(candidates.size()), placeholders),
                     updateParameters.toArray());
 
             return jdbcTemplate.query(
@@ -376,11 +389,30 @@ public class JdbcAnalyticsOutboxStore implements AnalyticsOutboxStore {
                 resultSet.getObject("parked_at", OffsetDateTime.class));
     }
 
+    private String caseClauses(int count) {
+        return java.util.stream.IntStream.range(0, count)
+                .mapToObj(ignored -> "WHEN ? THEN COALESCE(?, last_error_summary)")
+                .collect(Collectors.joining(" "));
+    }
+
+    private String reclaimSummary(String workerId, ClaimCandidate candidate) {
+        if (candidate.claimedBy() == null || candidate.claimedUntil() == null) {
+            return null;
+        }
+        String summary = "lease-expired: previous_claimed_by=" + candidate.claimedBy()
+                + ", previous_claimed_until=" + candidate.claimedUntil()
+                + ", reclaimed_by=" + workerId;
+        return summary.length() <= 255 ? summary : summary.substring(0, 255);
+    }
+
     private String serialize(RedirectClickAnalyticsEvent redirectClickAnalyticsEvent) {
         try {
             return objectMapper.writeValueAsString(redirectClickAnalyticsEvent);
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Analytics outbox payload could not be serialized", exception);
         }
+    }
+
+    private record ClaimCandidate(long id, String claimedBy, OffsetDateTime claimedUntil) {
     }
 }

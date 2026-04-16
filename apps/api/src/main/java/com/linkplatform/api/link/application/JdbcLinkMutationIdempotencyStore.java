@@ -22,6 +22,14 @@ public class JdbcLinkMutationIdempotencyStore implements LinkMutationIdempotency
     }
 
     @Override
+    public void lockKey(long ownerId, String idempotencyKey) {
+        jdbcTemplate.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                resultSet -> null,
+                ownerId + ":" + idempotencyKey);
+    }
+
+    @Override
     public Optional<LinkMutationIdempotencyRecord> findByKey(long ownerId, String idempotencyKey) {
         return jdbcTemplate.query(
                         """
@@ -59,6 +67,12 @@ public class JdbcLinkMutationIdempotencyStore implements LinkMutationIdempotency
                     serialize(result),
                     createdAt);
         } catch (DuplicateKeyException exception) {
+            Optional<LinkMutationIdempotencyRecord> existing = findByKey(ownerId, idempotencyKey);
+            if (existing.isPresent()
+                    && existing.get().operation().equals(operation)
+                    && existing.get().requestHash().equals(requestHash)) {
+                return;
+            }
             throw new LinkMutationConflictException("Idempotency key already recorded for a different mutation state");
         }
     }

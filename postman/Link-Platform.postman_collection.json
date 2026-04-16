@@ -3,154 +3,5012 @@
     "_postman_id": "cc1cbf00-f925-46ee-8eac-084dcf3f28f0",
     "name": "Link Platform",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Manual verification requests for the Link Platform foundation, PostgreSQL-backed create-link flow, and redirect-by-slug flow."
+    "description": "Complete backend endpoint collection generated from a broad Spring controller and Actuator scan. Uses environment variables for local API URL, workspace, auth, path ids, query params, and sample request bodies."
   },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    }
+  ],
   "item": [
     {
-      "name": "Health",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/actuator/health",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "actuator",
-            "health"
-          ]
+      "name": "Actuator",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          },
+          "response": []
         },
-        "description": "Infrastructure health check exposed by Spring Boot Actuator."
-      },
-      "response": []
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health/liveness",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "liveness"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health/readiness",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "readiness"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "metrics"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Metric Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics/{{metricName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "metrics",
+                "{{metricName}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     },
     {
-      "name": "Liveness",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/actuator/health/liveness",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "actuator",
-            "health",
-            "liveness"
-          ]
-        },
-        "description": "Process liveness probe exposed by Spring Boot Actuator."
-      },
-      "response": []
+      "name": "System",
+      "item": [
+        {
+          "name": "Ping",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system/ping",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system",
+                "ping"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     },
     {
-      "name": "Readiness",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/actuator/health/readiness",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "actuator",
-            "health",
-            "readiness"
-          ]
-        },
-        "description": "Readiness probe exposed by Spring Boot Actuator for current runtime dependencies."
-      },
-      "response": []
+      "name": "Redirect",
+      "item": [
+        {
+          "name": "Follow Short Link",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/{{slug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "{{slug}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     },
     {
-      "name": "Metrics",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/actuator/metrics",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "actuator",
-            "metrics"
-          ]
+      "name": "Links",
+      "item": [
+        {
+          "name": "Create Link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{slug}}\",\n  \"originalUrl\": \"{{originalUrl}}\",\n  \"expiresAt\": \"{{expiresAt}}\",\n  \"title\": \"{{linkTitle}}\",\n  \"tags\": [\n    \"launch\",\n    \"docs\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         },
-        "description": "Base Actuator metrics surface listing the available meter names."
-      },
-      "response": []
+        {
+          "name": "List Links",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links?limit={{limit}}&q={{searchQuery}}&search={{searchQuery}}&state={{state}}&abuse={{abuse}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                },
+                {
+                  "key": "q",
+                  "value": "{{searchQuery}}"
+                },
+                {
+                  "key": "search",
+                  "value": "{{searchQuery}}"
+                },
+                {
+                  "key": "state",
+                  "value": "{{state}}"
+                },
+                {
+                  "key": "abuse",
+                  "value": "{{abuse}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Link",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/{{slug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "{{slug}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Link",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{linkVersion}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/{{slug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "{{slug}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originalUrl\": \"{{updatedOriginalUrl}}\",\n  \"expiresAt\": \"{{expiresAt}}\",\n  \"title\": \"{{updatedLinkTitle}}\",\n  \"tags\": [\n    \"updated\",\n    \"docs\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Link",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{linkVersion}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/{{slug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "{{slug}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Link Lifecycle",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{linkVersion}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/{{slug}}/lifecycle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "{{slug}}",
+                "lifecycle"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state\": \"archived\",\n  \"reason\": \"manual lifecycle change\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Suggest Links",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/suggestions?q={{suggestQuery}}&search={{searchQuery}}&limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "suggestions"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{suggestQuery}}"
+                },
+                {
+                  "key": "search",
+                  "value": "{{searchQuery}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Discover Links",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/discovery?q={{searchQuery}}&search={{searchQuery}}&hostname={{hostname}}&tag={{tag}}&abuse={{abuse}}&lifecycle={{lifecycle}}&expiration={{expiration}}&sort={{sort}}&limit={{limit}}&cursor={{cursor}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "discovery"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{searchQuery}}"
+                },
+                {
+                  "key": "search",
+                  "value": "{{searchQuery}}"
+                },
+                {
+                  "key": "hostname",
+                  "value": "{{hostname}}"
+                },
+                {
+                  "key": "tag",
+                  "value": "{{tag}}"
+                },
+                {
+                  "key": "abuse",
+                  "value": "{{abuse}}"
+                },
+                {
+                  "key": "lifecycle",
+                  "value": "{{lifecycle}}"
+                },
+                {
+                  "key": "expiration",
+                  "value": "{{expiration}}"
+                },
+                {
+                  "key": "sort",
+                  "value": "{{sort}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     },
     {
-      "name": "System Ping",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/system/ping",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "system",
-            "ping"
-          ]
+      "name": "Link Analytics",
+      "item": [
+        {
+          "name": "Traffic Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/{{slug}}/traffic-summary?from={{fromDateTime}}&to={{toDateTime}}&comparePrevious={{comparePrevious}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "{{slug}}",
+                "traffic-summary"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{fromDateTime}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{toDateTime}}"
+                },
+                {
+                  "key": "comparePrevious",
+                  "value": "{{comparePrevious}}"
+                }
+              ]
+            }
+          },
+          "response": []
         },
-        "description": "Application-level ping endpoint for Link Platform."
-      },
-      "response": []
+        {
+          "name": "Traffic Series",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/{{slug}}/traffic-series?from={{fromDateTime}}&to={{toDateTime}}&granularity={{granularity}}&comparePrevious={{comparePrevious}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "{{slug}}",
+                "traffic-series"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{fromDateTime}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{toDateTime}}"
+                },
+                {
+                  "key": "granularity",
+                  "value": "{{granularity}}"
+                },
+                {
+                  "key": "comparePrevious",
+                  "value": "{{comparePrevious}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Top Links",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/traffic/top?window={{analyticsWindow}}&from={{fromDateTime}}&to={{toDateTime}}&tag={{tag}}&lifecycle={{lifecycle}}&limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "traffic",
+                "top"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "{{analyticsWindow}}"
+                },
+                {
+                  "key": "from",
+                  "value": "{{fromDateTime}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{toDateTime}}"
+                },
+                {
+                  "key": "tag",
+                  "value": "{{tag}}"
+                },
+                {
+                  "key": "lifecycle",
+                  "value": "{{lifecycle}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Recent Activity",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/activity?limit={{limit}}&tag={{tag}}&lifecycle={{lifecycle}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                },
+                {
+                  "key": "tag",
+                  "value": "{{tag}}"
+                },
+                {
+                  "key": "lifecycle",
+                  "value": "{{lifecycle}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Trending Links",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/traffic/trending?window={{analyticsWindow}}&from={{fromDateTime}}&to={{toDateTime}}&comparePrevious={{comparePrevious}}&limit={{limit}}&tag={{tag}}&lifecycle={{lifecycle}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "traffic",
+                "trending"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "{{analyticsWindow}}"
+                },
+                {
+                  "key": "from",
+                  "value": "{{fromDateTime}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{toDateTime}}"
+                },
+                {
+                  "key": "comparePrevious",
+                  "value": "{{comparePrevious}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                },
+                {
+                  "key": "tag",
+                  "value": "{{tag}}"
+                },
+                {
+                  "key": "lifecycle",
+                  "value": "{{lifecycle}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     },
     {
-      "name": "Create Link",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"slug\": \"{{createLinkSlug}}\",\n  \"originalUrl\": \"{{createLinkOriginalUrl}}\"\n}"
-        },
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/links",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "links"
-          ]
-        },
-        "description": "Creates a short link in the current application instance and persists it to PostgreSQL."
-      },
-      "response": []
+      "name": "Bulk Links",
+      "item": [
+        {
+          "name": "Run Bulk Link Action",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/links/bulk/actions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "links",
+                "bulk",
+                "actions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"update-tags\",\n  \"slugs\": [\n    \"{{slug}}\"\n  ],\n  \"tags\": [\n    \"bulk\",\n    \"updated\"\n  ],\n  \"reason\": \"bulk operation\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
     },
     {
-      "name": "Redirect Link",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/{{createLinkSlug}}",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "{{createLinkSlug}}"
-          ]
+      "name": "Analytics Pipeline",
+      "item": [
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/pipeline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "pipeline"
+              ]
+            }
+          },
+          "response": []
         },
-        "description": "Resolves a previously created slug from PostgreSQL-backed storage and returns a temporary redirect to the stored original URL."
-      },
-      "response": []
+        {
+          "name": "Parked Records",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/pipeline/parked?limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "pipeline",
+                "parked"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Requeue Parked Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/pipeline/parked/{{id}}/requeue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "pipeline",
+                "parked",
+                "{{id}}",
+                "requeue"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Requeue Parked Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/pipeline/parked/requeue-batch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "pipeline",
+                "parked",
+                "requeue-batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    1,\n    2\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pause",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/pipeline/pause",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "pipeline",
+                "pause"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"{{operatorReason}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resume",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/pipeline/resume",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "pipeline",
+                "resume"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Force Tick",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/pipeline/force-tick",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "pipeline",
+                "force-tick"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Drain Parked",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/pipeline/parked/drain?limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "pipeline",
+                "parked",
+                "drain"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Lifecycle Pipeline",
+      "item": [
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lifecycle/pipeline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lifecycle",
+                "pipeline"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Parked Records",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lifecycle/pipeline/parked?limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lifecycle",
+                "pipeline",
+                "parked"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Requeue Parked Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lifecycle/pipeline/parked/{{id}}/requeue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lifecycle",
+                "pipeline",
+                "parked",
+                "{{id}}",
+                "requeue"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Requeue Parked Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lifecycle/pipeline/parked/requeue-batch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lifecycle",
+                "pipeline",
+                "parked",
+                "requeue-batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    1,\n    2\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pause",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lifecycle/pipeline/pause",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lifecycle",
+                "pipeline",
+                "pause"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"{{operatorReason}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resume",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lifecycle/pipeline/resume",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lifecycle",
+                "pipeline",
+                "resume"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Force Tick",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lifecycle/pipeline/force-tick",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lifecycle",
+                "pipeline",
+                "force-tick"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Drain Parked",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lifecycle/pipeline/parked/drain?limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lifecycle",
+                "pipeline",
+                "parked",
+                "drain"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Ops",
+      "item": [
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "status"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Action Log",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/actions?subsystem={{subsystem}}&limit={{limit}}&cursor={{cursor}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "actions"
+              ],
+              "query": [
+                {
+                  "key": "subsystem",
+                  "value": "{{subsystem}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Governance Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/governance/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "governance",
+                "summary"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Governance Webhook Risk",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/governance/webhooks/risk?limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "governance",
+                "webhooks",
+                "risk"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Governance Abuse Risk",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/governance/abuse/risk?limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "governance",
+                "abuse",
+                "risk"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Governance Over Quota",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/governance/over-quota?limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "governance",
+                "over-quota"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Abuse Reviews",
+      "item": [
+        {
+          "name": "List Review Queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/abuse/reviews?status={{abuseReviewStatus}}&source={{abuseSource}}&slug={{slug}}&limit={{limit}}&cursor={{cursor}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "abuse",
+                "reviews"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "{{abuseReviewStatus}}"
+                },
+                {
+                  "key": "source",
+                  "value": "{{abuseSource}}"
+                },
+                {
+                  "key": "slug",
+                  "value": "{{slug}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Manual Case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/abuse/reviews/manual",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "abuse",
+                "reviews",
+                "manual"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{slug}}\",\n  \"summary\": \"manual review\",\n  \"detailSummary\": \"opened from Postman\",\n  \"riskScore\": 75,\n  \"quarantineNow\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Quarantine Case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/abuse/reviews/{{caseId}}/quarantine",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "abuse",
+                "reviews",
+                "{{caseId}}",
+                "quarantine"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resolutionNote\": \"quarantine from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Release Case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/abuse/reviews/{{caseId}}/release",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "abuse",
+                "reviews",
+                "{{caseId}}",
+                "release"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resolutionNote\": \"release from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Dismiss Case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/abuse/reviews/{{caseId}}/dismiss",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "abuse",
+                "reviews",
+                "{{caseId}}",
+                "dismiss"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resolutionNote\": \"dismiss from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Workspace Abuse",
+      "item": [
+        {
+          "name": "Current Policy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/abuse/policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "abuse",
+                "policy"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Policy",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/abuse/policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "abuse",
+                "policy"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rawIpReviewEnabled\": true,\n  \"punycodeReviewEnabled\": true,\n  \"repeatedHostQuarantineThreshold\": 5,\n  \"redirectRateLimitQuarantineThreshold\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Host Rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/abuse/host-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "abuse",
+                "host-rules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Host Rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/abuse/host-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "abuse",
+                "host-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"host\": \"{{hostname}}\",\n  \"ruleType\": \"allow\",\n  \"note\": \"local testing\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Host Rule",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/abuse/host-rules/{{ruleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "abuse",
+                "host-rules",
+                "{{ruleId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Trends",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/abuse/trends",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "abuse",
+                "trends"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Owner",
+      "item": [
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/owner/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "owner",
+                "api-keys"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"{{apiKeyLabel}}\",\n  \"expiresAt\": \"{{expiresAt}}\",\n  \"scopes\": [\n    \"links:read\",\n    \"links:write\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List API Keys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/owner/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "owner",
+                "api-keys"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Rotate API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/owner/api-keys/{{keyId}}/rotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "owner",
+                "api-keys",
+                "{{keyId}}",
+                "rotate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresAt\": \"{{expiresAt}}\",\n  \"scopes\": [\n    \"links:read\",\n    \"links:write\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke API Key",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/owner/api-keys/{{keyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "owner",
+                "api-keys",
+                "{{keyId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Security Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/owner/security-events?type={{securityEventType}}&since={{fromDateTime}}&limit={{limit}}&cursor={{cursor}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "owner",
+                "security-events"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "{{securityEventType}}"
+                },
+                {
+                  "key": "since",
+                  "value": "{{fromDateTime}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Workspace Plan And Policy",
+      "item": [
+        {
+          "name": "Current Plan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "plan"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Current Usage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/usage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "usage"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Current Retention",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/retention",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "retention"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Current Enterprise Policy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/enterprise-policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "enterprise-policy"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Retention",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/retention",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "retention"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clickHistoryDays\": 90,\n  \"securityEventsDays\": 180,\n  \"webhookDeliveriesDays\": 30,\n  \"abuseCasesDays\": 365,\n  \"operatorActionLogDays\": 365\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Run Retention Purge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/retention/purge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "retention",
+                "purge"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Enterprise Policy",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/enterprise-policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "enterprise-policy"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"privilegedActionApprovalRequired\": true,\n  \"privilegedActionApprovalWindowMinutes\": 15\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Privileged Action",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/privileged-actions/{{actionType}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "privileged-actions",
+                "{{actionType}}",
+                "approve"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"initiatorOwnerId\": \"{{ownerId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Workspace Plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/workspaces/{{workspaceSlug}}/plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "plan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"PRO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Workspace Subscription",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ops/workspaces/{{workspaceSlug}}/subscription",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ops",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "subscription"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subscriptionStatus\": \"active\",\n  \"graceUntil\": \"{{expiresAt}}\",\n  \"scheduledPlanCode\": \"PRO\",\n  \"scheduledPlanEffectiveAt\": \"{{expiresAt}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Workspaces",
+      "item": [
+        {
+          "name": "List Workspaces",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Workspace",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{newWorkspaceSlug}}\",\n  \"displayName\": \"{{workspaceDisplayName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Current Workspace",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "members"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "members"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerId\": \"{{targetOwnerId}}\",\n  \"role\": \"member\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Member",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/members/{{ownerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "members",
+                "{{ownerId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Member",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/members/{{ownerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "members",
+                "{{ownerId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Suspend Member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/members/{{ownerId}}/suspend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "members",
+                "{{ownerId}}",
+                "suspend"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"{{operatorReason}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resume Member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/members/{{ownerId}}/resume",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "members",
+                "{{ownerId}}",
+                "resume"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Transfer Ownership",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/ownership/transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "ownership",
+                "transfer"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromOwnerId\": \"{{ownerId}}\",\n  \"toOwnerId\": \"{{targetOwnerId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Workspace Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\",\n  \"reason\": \"{{operatorReason}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Invitations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/invitations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "invitations"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/invitations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "invitations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{inviteEmail}}\",\n  \"role\": \"member\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/invitations/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "invitations",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{invitationToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke Invitation",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/invitations/{{invitationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "invitations",
+                "{{invitationId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Service Accounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/service-accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "service-accounts"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Service Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/service-accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "service-accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{serviceAccountName}}\",\n  \"slug\": \"{{serviceAccountSlug}}\",\n  \"role\": \"member\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Service Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/service-accounts/{{serviceAccountId}}/disable",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "{{workspaceSlug}}",
+                "service-accounts",
+                "{{serviceAccountId}}",
+                "disable"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "List Subscriptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{webhookName}}\",\n  \"callbackUrl\": \"{{webhookCallbackUrl}}\",\n  \"eventTypes\": [\n    \"link.created\",\n    \"link.updated\"\n  ],\n  \"enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Subscription",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks/{{subscriptionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks",
+                "{{subscriptionId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{webhookName}}\",\n  \"enabled\": true,\n  \"eventTypes\": [\n    \"link.created\",\n    \"link.updated\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Rotate Secret",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks/{{subscriptionId}}/rotate-secret",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks",
+                "{{subscriptionId}}",
+                "rotate-secret"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks/{{subscriptionId}}/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks",
+                "{{subscriptionId}}",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Fire",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks/{{subscriptionId}}/test-fire",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks",
+                "{{subscriptionId}}",
+                "test-fire"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Subscription Health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks/{{subscriptionId}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks",
+                "{{subscriptionId}}",
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks/{{subscriptionId}}/deliveries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks",
+                "{{subscriptionId}}",
+                "deliveries"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replay Delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/webhooks/{{subscriptionId}}/deliveries/{{deliveryId}}/replay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "webhooks",
+                "{{subscriptionId}}",
+                "deliveries",
+                "{{deliveryId}}",
+                "replay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Workspace Exports Imports Recovery",
+      "item": [
+        {
+          "name": "List Exports",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/exports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "exports"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Export",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/exports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "exports"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"includeClicks\": true,\n  \"includeSecurityEvents\": true,\n  \"includeAbuseCases\": true,\n  \"includeWebhooks\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/exports/{{exportId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "exports",
+                "{{exportId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Download Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/exports/{{exportId}}/download",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "exports",
+                "{{exportId}}",
+                "download"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Imports",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/imports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "imports"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Import",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/imports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "imports"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceExportId\": \"{{exportId}}\",\n  \"payloadJson\": \"{}\",\n  \"dryRun\": true,\n  \"overwriteConflicts\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Import",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/imports/{{importId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "imports",
+                "{{importId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Apply Import",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/imports/{{importId}}/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "imports",
+                "{{importId}}",
+                "apply"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Recovery Drills",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/recovery-drills",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "recovery-drills"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Recovery Drill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/recovery-drills",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "recovery-drills"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceExportId\": \"{{exportId}}\",\n  \"targetMode\": \"dry-run\",\n  \"dryRun\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Recovery Drill",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/workspaces/current/recovery-drills/{{drillId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "workspaces",
+                "current",
+                "recovery-drills",
+                "{{drillId}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Projection Jobs",
+      "item": [
+        {
+          "name": "List Projection Jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projection-jobs?limit={{limit}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projection-jobs"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Projection Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projection-jobs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projection-jobs"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jobType\": \"rebuild_links\",\n  \"reason\": \"manual rebuild\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Projection Job",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearerToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
+                "key": "X-Workspace-Slug",
+                "value": "{{workspaceSlug}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projection-jobs/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projection-jobs",
+                "{{id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }
