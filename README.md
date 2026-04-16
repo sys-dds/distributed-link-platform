@@ -1,15 +1,38 @@
 # Important Commands
 
 ```powershell
-# Start local platform infrastructure
+# Start the full local multi-runtime stack
+docker compose -f infra/docker-compose/docker-compose.yml up -d --build
+
+# Stop the full local multi-runtime stack and remove volumes
+docker compose -f infra/docker-compose/docker-compose.yml down -v
+
+# Start proof-profile services for degraded-runtime scenarios
+docker compose -f infra/docker-compose/docker-compose.yml --profile proof up -d --build
+
+# Start the standalone platform smoke stack used by CI compose validation
 docker compose -f infra/docker-compose/docker-compose.platform.yml up -d --build
 
-# Stop local platform infrastructure
+# Stop the standalone platform smoke stack and remove volumes
 docker compose -f infra/docker-compose/docker-compose.platform.yml down -v
+
+# Validate the full local compose file
+docker compose -f infra/docker-compose/docker-compose.yml config
+
+# Validate the standalone platform compose file
+docker compose -f infra/docker-compose/docker-compose.platform.yml config
 
 # Compile backend
 cd apps/api
 .\mvnw.cmd -DskipTests compile
+
+# Run backend application locally from source
+cd apps/api
+.\mvnw.cmd spring-boot:run
+
+# Run backend in a specific runtime mode from source
+cd apps/api
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--link-platform.runtime.mode=control-plane-api"
 
 # Run backend tests
 cd apps/api
@@ -19,8 +42,16 @@ cd apps/api
 cd apps/api
 .\mvnw.cmd "-Dtest=ProjectionJobsControllerIntegrationTest" test
 
-# Validate Docker Compose config
-docker compose -f infra/docker-compose/docker-compose.platform.yml config
+# Run the GitHub Actions backend hardening test baseline
+cd apps/api
+.\mvnw.cmd "-Dtest=WebhookCallbackValidationIntegrationTest,WebhookApiPathEndToEndIntegrationTest,WebhooksControllerIntegrationTest,WebhookDeliveryRelayIntegrationTest,WorkspacePlanControllerIntegrationTest,ProjectionJobWorkspaceVisibilityIntegrationTest,ProjectionJobsControllerIntegrationTest,WorkspaceQuotaEndToEndIntegrationTest" test
+
+# Build the backend Docker image
+docker build -f apps/api/Dockerfile -t link-platform-api:local .
+
+# Import Postman collection and local environment
+postman\Link-Platform.postman_collection.json
+postman\Link-Platform.local.postman_environment.json
 ```
 
 ---
