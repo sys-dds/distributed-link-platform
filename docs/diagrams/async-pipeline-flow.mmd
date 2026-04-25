@@ -1,0 +1,11 @@
+flowchart TD
+Click[Click Event] --> Outbox[Analytics Outbox]
+Outbox --> Lease[Lease Batch]
+Lease --> Publish[Publish/Process]
+Publish --> Worker[Worker Runtime]
+Worker --> Projection[Update Projections]
+Worker --> Fail{Failure?}
+Fail -->|retryable| Retry[Retry with Backoff]
+Fail -->|poison| Park[Parked Record]
+Fail -->|ok| Done[Processed]
+Park --> Ops[Pipeline Ops Surface]

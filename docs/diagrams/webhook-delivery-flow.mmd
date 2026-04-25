@@ -1,0 +1,10 @@
+flowchart TD
+Event[Platform Event] --> Delivery[Delivery Record]
+Delivery --> Sign[Sign Payload]
+Sign --> Dispatch[Dispatch]
+Dispatch --> Success[Delivered]
+Dispatch --> Retry[Retry Later]
+Dispatch --> Failed[Failed]
+Retry --> Dispatch
+Failed --> Replay[Manual Replay]
+Delivery --> Health[Subscription Health]

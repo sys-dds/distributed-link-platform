@@ -1,0 +1,15 @@
+sequenceDiagram
+participant Owner
+participant API
+participant Access
+participant Quota
+participant Idem
+participant DB
+participant Outbox
+Owner->>API: Create link
+API->>Access: Resolve owner/workspace/scopes
+API->>Quota: Check plan + usage
+API->>Idem: Check idempotency
+API->>DB: Persist link
+API->>Outbox: Record lifecycle event
+API-->>Owner: Created/replayed response

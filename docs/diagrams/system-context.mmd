@@ -1,0 +1,11 @@
+flowchart LR
+Owner --> ControlPlane[Control Plane API]
+PublicUser --> Redirect[Redirect Runtime]
+ControlPlane --> Postgres[(PostgreSQL)]
+ControlPlane --> Redis[(Redis)]
+Redirect --> Redis
+Redirect --> Postgres
+Redirect --> Kafka[(Kafka)]
+Kafka --> Worker[Worker Runtime]
+Worker --> Analytics[Analytics Projections]
+ControlPlane --> Analytics

@@ -1,0 +1,7 @@
+flowchart LR
+User --> Primary[Redirect eu-west-1]
+Primary --> Healthy{Healthy?}
+Healthy -->|yes| Response[307]
+Healthy -->|no + failover| Secondary[Redirect us-east-1]
+Secondary --> Response
+Healthy -->|no + no failover| FailClosed[Fail Closed]

@@ -1,0 +1,7 @@
+flowchart TD
+Request[Create Projection Job] --> Persist[Persist Job]
+Persist --> Rebuild[Rebuild Derived View]
+Rebuild --> Progress[Update Progress]
+Progress --> Reconcile[Reconcile Counts]
+Reconcile --> Complete[Complete]
+Complete --> Reads[Owner Reads Aligned]

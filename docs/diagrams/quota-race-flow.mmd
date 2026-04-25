@@ -1,0 +1,10 @@
+sequenceDiagram
+participant A as Request A
+participant B as Request B
+participant Quota
+participant DB
+A->>Quota: Check active link quota
+B->>Quota: Check active link quota
+Quota->>DB: Atomic usage/active count guard
+DB-->>A: allowed
+DB-->>B: rejected if limit reached

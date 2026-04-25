@@ -1,0 +1,6 @@
+flowchart TD
+Export[Workspace Export] --> Artifact[Export Artifact]
+Artifact --> Import[Workspace Import]
+Import --> Apply[Apply Restore]
+Apply --> Verify[Verify Ownership/Data]
+Verify --> Drill[Recovery Drill Record]

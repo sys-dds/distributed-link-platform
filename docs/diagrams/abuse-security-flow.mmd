@@ -1,0 +1,7 @@
+flowchart TD
+CreateLink[Create Link] --> HostRule[Host Rule Check]
+HostRule --> AbusePolicy[Workspace Abuse Policy]
+AbusePolicy --> Risk[Risk/Trend]
+Risk --> Allow[Allow]
+Risk --> Review[Abuse Review]
+Risk --> Block[Block]

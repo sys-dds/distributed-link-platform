@@ -1,0 +1,7 @@
+flowchart LR
+ControlPlane --> QueryDB[Query Datasource]
+QueryDB --> Health{Healthy and Fresh?}
+Health -->|yes| ReadReplica[Read Replica]
+Health -->|no| Primary[(Primary PostgreSQL)]
+Primary --> ControlPlane
+ReadReplica --> ControlPlane

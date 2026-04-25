@@ -1,0 +1,18 @@
+sequenceDiagram
+participant User
+participant Redirect
+participant Redis
+participant DB
+participant Kafka
+User->>Redirect: GET /slug
+Redirect->>Redis: Lookup slug
+Redis-->>Redirect: miss
+Redirect->>DB: Load destination
+Redirect->>Redis: Cache mapping
+Redirect->>Kafka: Emit click
+Redirect-->>User: 307 Location
+User->>Redirect: GET /slug
+Redirect->>Redis: Lookup slug
+Redis-->>Redirect: hit
+Redirect->>Kafka: Emit click
+Redirect-->>User: 307 Location

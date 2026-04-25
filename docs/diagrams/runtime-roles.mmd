@@ -1,0 +1,7 @@
+flowchart TB
+Codebase[One Spring Boot Codebase] --> ControlPlane[Control Plane API]
+Codebase --> RedirectEU[Redirect EU]
+Codebase --> RedirectUS[Redirect US]
+Codebase --> Worker[Worker]
+Codebase --> QueryFallback[Query Fallback Proof]
+Codebase --> NoFailover[No-Failover Redirect Proof]
